@@ -15,6 +15,7 @@ extends Node3D
 ##   --key-test        inject key presses and assert the keyboard path still drives movement
 ##   --cast-test       assert the full cast round-trip: cooldown, pooling, flight, impact
 ##   --twothumb-test   hold the stick and the cast button at once, on separate fingers
+##   --knockback-test  assert the instability curve and the distance a hit carries
 ## Screenshots need real rendering, so DO NOT pass --headless with --shot.
 ## The two input tests ALSO need a real window: the headless display driver does not
 ## route injected InputEventScreenTouch/Key to _input(), so every assertion silently
@@ -23,13 +24,22 @@ extends Node3D
 ## Where the player is put on start and after falling off.
 @export var spawn_point := Vector3(0.0, 1.2, 3.5)
 
+## Where the training dummy stands.
+@export var dummy_spawn := Vector3(0.0, 1.0, -3.0)
+
 ## Falling below this counts as off the arena. The real elimination system replaces this.
 @export var fall_limit := -10.0
+
+## How a hit is turned into speed. A Resource so the central mechanic is tuned by editing
+## data, never by editing logic - see combat/knockback/knockback_rules.gd.
+@export var knockback_rules: KnockbackRules = null
 
 @onready var _player: Player = $Player
 @onready var _input: PlayerInputController = $PlayerInputController
 @onready var _mobile: MobileControls = $MobileControls
 @onready var _pool: ProjectilePool = $ProjectilePool
+@onready var _dummy: Player = $TrainingDummy
+@onready var _hud: Hud = $Hud
 
 var _trace := false
 
@@ -44,6 +54,10 @@ func _ready() -> void:
 	# hand-it-its-dependencies pattern already used for the character above.
 	_mobile.joystick.vector_changed.connect(_input.set_touch_vector)
 	_wire_combat()
+	# The HUD reads instability and nothing else. It is handed its sources here rather than
+	# hunting for them, so a second fighter is one more line and not a rewrite.
+	_hud.add_readout("YOU", _player.instability())
+	_hud.add_readout("DUMMY", _dummy.instability())
 	_player.respawn_at(spawn_point)
 	_parse_harness_args()
 
@@ -51,11 +65,10 @@ func _ready() -> void:
 func _process(_delta: float) -> void:
 	if Input.is_action_just_pressed("debug_respawn"):
 		_player.respawn_at(spawn_point)
-	if _player.global_position.y < fall_limit:
-		print("[fall] player left the arena at %.1f,%.1f" % [
-			_player.global_position.x, _player.global_position.z
-		])
-		_player.respawn_at(spawn_point)
+	# Both fighters fall the same way. Elimination replaces this wholesale in Session 5;
+	# respawning keeps the prototype testable rather than leaving a body in the void.
+	_check_fall(_player, spawn_point, "player")
+	_check_fall(_dummy, dummy_spawn, "dummy")
 
 
 func _parse_harness_args() -> void:
@@ -91,6 +104,8 @@ func _parse_harness_args() -> void:
 			_run_cast_tests()
 		elif arg == "--twothumb-test":
 			_run_two_thumb_tests()
+		elif arg == "--knockback-test":
+			_run_knockback_tests()
 		elif arg == "--layout-probe":
 			_probe_layout()
 		elif arg.begins_with("--cast-at:"):
@@ -415,10 +430,33 @@ func _on_cast_requested(ability: Ability, origin: Vector3, direction: Vector3, c
 			push_warning("cast type %d not implemented yet (%s)" % [ability.cast_type, ability.id])
 
 
-## What a hit MEANS is not decided here and not decided by the projectile. Instability and
-## knockback arrive in Session 4 and will be applied from this one place.
+## What a hit MEANS. The projectile reports contact and stops there; this is the one place
+## instability is raised and the one place knockback is handed out.
 func _on_projectile_hit(body: Node3D, direction: Vector3, ability: Ability) -> void:
-	print("[hit] %s hit %s travelling %s" % [ability.id, body.name, direction])
+	var fighter := body as Player
+	if fighter == null:
+		return
+
+	# Instability is raised FIRST, and the knockback reads the new value. So a hit is
+	# amplified by the destabilisation it just caused, which makes a landed combo escalate
+	# instead of plateauing. The alternative - reading the value from before the hit - is
+	# defensible and duller.
+	var inst := fighter.instability()
+	if inst != null:
+		inst.add(ability.instability)
+	var level := inst.current if inst != null else 0.0
+
+	var impulse := Knockback.velocity(ability.knockback, direction, level, knockback_rules)
+	fighter.apply_knockback(impulse)
+	print("[hit] %s -> %s | instability %.0f%% | knockback %.1f m/s" % [
+		ability.id, body.name, level, Vector2(impulse.x, impulse.z).length()])
+
+
+func _check_fall(fighter: Player, respawn: Vector3, label: String) -> void:
+	if not is_instance_valid(fighter) or fighter.global_position.y >= fall_limit:
+		return
+	print("[fall] %s left the arena" % label)
+	fighter.respawn_at(respawn)
 
 
 func _run_cast_tests() -> void:
@@ -605,3 +643,142 @@ func _run_two_thumb_tests() -> void:
 func _cast_at(seconds: float) -> void:
 	await get_tree().create_timer(seconds).timeout
 	_input.request_ability(0)
+
+
+# ---------------------------------------------------------------------------------------
+# Knockback harness
+#
+# The central mechanic, so it is checked by measurement rather than by feel. Two things must
+# hold: the same hit at the same instability always carries the same distance, and that
+# distance is the one the formula intends. Linear drag makes the second checkable in closed
+# form - v squared over 2f - which is exactly why the drag is linear.
+# ---------------------------------------------------------------------------------------
+
+## Hits the dummy with a known speed and returns how far it slid on the ground plane.
+func _measure_slide(speed: float, instability: float) -> float:
+	_dummy.respawn_at(dummy_spawn)
+	for i in 20:
+		await get_tree().physics_frame
+	var start := _dummy.global_position
+	var impulse := Knockback.velocity(speed, Vector3(0, 0, -1), instability, knockback_rules)
+	_dummy.apply_knockback(impulse)
+	var guard := 0
+	while _dummy.knockback_velocity().length() > 0.001 and guard < 600:
+		await get_tree().physics_frame
+		guard += 1
+	var moved := _dummy.global_position - start
+	return Vector2(moved.x, moved.z).length()
+
+
+func _run_knockback_tests() -> void:
+	await _settle()
+	var rules := knockback_rules
+	print("[knockback] rules: base=%.1f per100=%.1f max=%.1f lift=%.1f | dummy friction=%.1f" % [
+		rules.base_multiplier, rules.per_100_instability, rules.max_multiplier, rules.lift,
+		_dummy.knockback_friction])
+
+	# --- the curve is pure arithmetic, check it directly ---------------------------------
+	_expect("multiplier at 0% is 1.0",
+		is_equal_approx(Knockback.multiplier(0.0, rules), 1.0),
+		"%.3f" % Knockback.multiplier(0.0, rules))
+	_expect("multiplier at 100% is 2.0",
+		is_equal_approx(Knockback.multiplier(100.0, rules), 2.0),
+		"%.3f" % Knockback.multiplier(100.0, rules))
+	_expect("multiplier at 150% is 2.5",
+		is_equal_approx(Knockback.multiplier(150.0, rules), 2.5),
+		"%.3f" % Knockback.multiplier(150.0, rules))
+	_expect("multiplier is capped",
+		is_equal_approx(Knockback.multiplier(9999.0, rules), rules.max_multiplier),
+		"%.3f" % Knockback.multiplier(9999.0, rules))
+
+	# --- direction: you are thrown the way the spell was travelling ----------------------
+	var dir_impulse := Knockback.velocity(6.0, Vector3(0, 0, -1), 0.0, rules)
+	_expect("thrown along the spell's line", dir_impulse.z < -5.9 and absf(dir_impulse.x) < 0.01,
+		"impulse=%s" % dir_impulse)
+	_expect("a hit adds lift", is_equal_approx(dir_impulse.y, rules.lift),
+		"y=%.2f" % dir_impulse.y)
+
+	# --- measured slide matches the closed form ------------------------------------------
+	var base_speed := 6.0
+	var predicted := Knockback.slide_distance(base_speed, _dummy.knockback_friction)
+	var measured := await _measure_slide(base_speed, 0.0)
+	_expect("slide at 0% matches v^2/2f",
+		absf(measured - predicted) / predicted < 0.15,
+		"predicted %.2fm, measured %.2fm" % [predicted, measured])
+
+	# --- the same hit twice carries the same distance ------------------------------------
+	var again := await _measure_slide(base_speed, 0.0)
+	_expect("identical hits carry identical distance",
+		absf(again - measured) < 0.02, "%.4fm then %.4fm" % [measured, again])
+
+	# --- instability escalates it, quadratically -----------------------------------------
+	# Speed scales by the multiplier, and distance goes as speed squared, so 50% instability
+	# (1.5x speed) must carry 2.25x as far. That relationship is the whole tension curve.
+	var at50 := await _measure_slide(base_speed, 50.0)
+	var ratio := at50 / measured
+	_expect("50% instability carries ~2.25x as far", absf(ratio - 2.25) < 0.25,
+		"%.2fm vs %.2fm = %.2fx" % [at50, measured, ratio])
+
+	# --- and eventually it throws you off ------------------------------------------------
+	_dummy.respawn_at(dummy_spawn)
+	for i in 20:
+		await get_tree().physics_frame
+	var hard := Knockback.velocity(base_speed, Vector3(0, 0, -1), 200.0, knockback_rules)
+	_dummy.apply_knockback(hard)
+	var left_arena := false
+	for i in 240:
+		await get_tree().physics_frame
+		var p := _dummy.global_position
+		if Vector2(p.x, p.z).length() > 7.2 or p.y < 0.0:
+			left_arena = true
+			break
+	_expect("a hit at 200% throws the target off the arena", left_arena,
+		"ended at %s" % _dummy.global_position)
+	_dummy.respawn_at(dummy_spawn)
+	for i in 20:
+		await get_tree().physics_frame
+
+	# --- instability accumulates, and a respawn clears it ---------------------------------
+	var inst := _dummy.instability()
+	_expect("dummy starts stable", is_equal_approx(inst.current, 0.0), "%.1f%%" % inst.current)
+	inst.add(12.0)
+	inst.add(12.0)
+	_expect("instability accumulates", is_equal_approx(inst.current, 24.0),
+		"%.1f%%" % inst.current)
+	_dummy.respawn_at(dummy_spawn)
+	_expect("respawn resets instability", is_equal_approx(inst.current, 0.0),
+		"%.1f%%" % inst.current)
+
+	# --- hitstun exists and expires ------------------------------------------------------
+	_dummy.apply_knockback(Knockback.velocity(base_speed, Vector3(0, 0, -1), 0.0, rules))
+	_expect("a hit causes hitstun", _dummy.is_in_hitstun(), "in hitstun=%s" % _dummy.is_in_hitstun())
+	var waited := 0
+	while _dummy.is_in_hitstun() and waited < 300:
+		await get_tree().physics_frame
+		waited += 1
+	_expect("hitstun expires", not _dummy.is_in_hitstun(), "after %d ticks" % waited)
+
+	# --- end to end: a real Fireball raises instability and moves the target --------------
+	_dummy.respawn_at(dummy_spawn)
+	_player.respawn_at(spawn_point)
+	for i in 20:
+		await get_tree().physics_frame
+	var before_pos := _dummy.global_position
+	_player.abilities().try_cast(0, Vector3(0, 0, -1))
+	var hit_seen := false
+	for i in 120:
+		await get_tree().physics_frame
+		if _dummy.instability().current > 0.0:
+			hit_seen = true
+			break
+	_expect("a cast Fireball raises the target's instability", hit_seen,
+		"instability=%.1f%%" % _dummy.instability().current)
+	for i in 60:
+		await get_tree().physics_frame
+	var shifted := (_dummy.global_position - before_pos)
+	_expect("and pushes it away from the caster", shifted.z < -0.3,
+		"moved %.2fm along z" % shifted.z)
+
+	print("[knockback] %s (%d failure(s))" % [
+		"ALL PASS" if _touch_failures == 0 else "FAILURES", _touch_failures])
+	get_tree().quit(1 if _touch_failures > 0 else 0)

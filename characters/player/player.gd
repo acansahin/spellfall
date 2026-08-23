@@ -1,7 +1,12 @@
 class_name Player
 extends CharacterBody3D
 
-## The wizard the player steers.
+## A fighter. Usually the wizard the player steers.
+##
+## Not necessarily the human's character: an `input_controller` of null simply means
+## nobody is driving, which is exactly what the training dummy is, and a bot will be this
+## same script driven by a bot controller. The class is still called Player because
+## renaming it would churn every scene for no behavioural gain; read it as "fighter".
 ##
 ## Movement is integrated by hand on a CharacterBody3D rather than handed to a RigidBody3D.
 ##
@@ -41,8 +46,50 @@ extends CharacterBody3D
 ## movement, so turning can never eat an input.
 @export var turn_speed := 14.0
 
+@export_group("Knockback")
+## How fast an incoming knockback bleeds off, in m/s per second.
+##
+## LINEAR, not exponential, and that is the important part. Linear drag means the distance a
+## hit carries you has a closed form - v squared over 2f - so "how much knockback throws
+## someone off a 7m arena?" is a question with an answer instead of a playtest. An
+## exponential decay never quite stops, and makes the same question guesswork.
+##
+## This lives on the fighter, not on KnockbackRules, because it describes how THIS body
+## slides. A heavier character would take the identical hit and travel less far.
+@export var knockback_friction := 14.0
+
+## Seconds of reduced control per m/s of incoming knockback. A harder hit takes you out of
+## the fight for longer, which is what stops a player simply walking out of every knockback
+## and makes positioning matter.
+@export var hitstun_per_speed := 0.030
+
+## How much steering authority remains during hitstun. 0.0 removes all agency and feels
+## terrible; this leaves enough to angle a recovery without cancelling the hit.
+@export_range(0.0, 1.0, 0.05) var hitstun_control := 0.2
+
 ## Set by the level once, so the character does not reach out and find its own input.
 var input_controller: PlayerInputController = null
+
+## Horizontal velocity the player is ASKING for, before knockback is added.
+##
+## Held separately rather than read back off `velocity`, because `move_and_slide()` writes
+## its own result there. Reading that back as "what I was doing" folds last frame's knockback
+## into this frame's input, and any reduced-authority path (hitstun, airborne) then retains a
+## fraction of it and adds the knockback again on top - the hit compounds with itself and a
+## single Fireball launches someone across the arena. Two accumulators, summed once, at the
+## end.
+var _input_velocity := Vector3.ZERO
+
+## Velocity from being hit, kept SEPARATE from the velocity the player asks for.
+##
+## This is not optional bookkeeping. With accel_time at 0 the input path assigns
+## `velocity.x` outright every tick, so a knockback folded into `velocity` would be erased on
+## the very next frame. Holding it apart and summing at the end is what lets movement stay
+## instant - which the game needs - while a hit still carries.
+var _knockback := Vector3.ZERO
+
+## Seconds left of reduced control after being hit.
+var _hitstun := 0.0
 
 @onready var _visual: Node3D = $Visual
 
@@ -58,40 +105,47 @@ func _physics_process(delta: float) -> void:
 	if input_controller != null:
 		wish = input_controller.command.move_dir
 
+	if _hitstun > 0.0:
+		_hitstun = maxf(0.0, _hitstun - delta)
+
 	_apply_horizontal(wish, delta)
+	# The single place the two accumulators meet. Assigned, never accumulated, so nothing
+	# `move_and_slide()` left in `velocity` can leak into the next tick.
+	velocity.x = _input_velocity.x + _knockback.x
+	velocity.z = _input_velocity.z + _knockback.z
+	velocity.y += _knockback.y
 	_apply_gravity(delta)
 	move_and_slide()
+	_decay_knockback(delta)
 	_face_travel(delta)
 	_service_casting()
 
 
-## Drives the XZ plane toward the requested direction. Knockback will later add its own
-## velocity here before this runs, which is why the target is computed and blended rather
-## than assigned straight onto `velocity`.
+## Drives `_input_velocity` toward the requested direction. Touches only the steering
+## accumulator - knockback is summed in afterwards, in _physics_process.
 func _apply_horizontal(wish: Vector2, delta: float) -> void:
 	var target := Vector3(wish.x, 0.0, wish.y) * move_speed
-	var current := Vector3(velocity.x, 0.0, velocity.z)
 
 	var authority := 1.0 if is_on_floor() else air_control
-	if authority <= 0.0:
-		return
+	if _hitstun > 0.0:
+		authority = minf(authority, hitstun_control)
+
+	# Scaling the TARGET rather than blending toward the previous value keeps this
+	# stateless: no authority setting can leave a residue that outlives the hitstun.
+	target *= authority
 
 	var ramp := accel_time if target.length_squared() > 0.0 else decel_time
-	var next: Vector3
 	if ramp <= 0.0:
-		next = target
+		_input_velocity = target
 	else:
-		next = current.move_toward(target, (move_speed / ramp) * delta)
-
-	if authority < 1.0:
-		next = current.lerp(next, authority)
-
-	velocity.x = next.x
-	velocity.z = next.z
+		_input_velocity = _input_velocity.move_toward(target, (move_speed / ramp) * delta)
 
 
 func _apply_gravity(delta: float) -> void:
-	if is_on_floor():
+	# `velocity.y <= 0.0` matters: without it the downward pin would squash the upward lift
+	# on a knockback, and every hit would grind the victim along the floor instead of
+	# popping them clear of the arena lip.
+	if is_on_floor() and velocity.y <= 0.0:
 		# Small downward bias keeps the body pinned to the floor across slope seams so
 		# is_on_floor() does not flicker, which would flicker air_control with it.
 		velocity.y = -0.1
@@ -114,7 +168,13 @@ func _face_travel(delta: float) -> void:
 ## will call this; for now the R key does, so falling off is testable immediately.
 func respawn_at(point: Vector3) -> void:
 	velocity = Vector3.ZERO
+	_input_velocity = Vector3.ZERO
+	_knockback = Vector3.ZERO
+	_hitstun = 0.0
 	global_position = point
+	var inst := instability()
+	if inst != null:
+		inst.reset()
 
 
 ## Turns a latched ability request into a cast. Casting is deliberately AFTER movement and
@@ -138,3 +198,40 @@ func _service_casting() -> void:
 ## pool and the HUD can read cooldowns.
 func abilities() -> AbilityComponent:
 	return _abilities
+
+
+## Takes a hit. `impulse` is a velocity in m/s, already scaled by the target's instability -
+## see combat/knockback/knockback.gd, which is the only thing allowed to compute it.
+##
+## Knockback REPLACES rather than accumulates. Two hits landing a frame apart should not stack
+## into a launch neither of them earned; the harder one wins, which keeps "what does this hit
+## do" answerable without knowing the history of the last few frames.
+func apply_knockback(impulse: Vector3) -> void:
+	var flat := Vector3(impulse.x, 0.0, impulse.z)
+	if flat.length() >= Vector3(_knockback.x, 0.0, _knockback.z).length():
+		_knockback = impulse
+	_hitstun = maxf(_hitstun, flat.length() * hitstun_per_speed)
+
+
+func _decay_knockback(delta: float) -> void:
+	if _knockback == Vector3.ZERO:
+		return
+	# The vertical part is handed to gravity on the frame it is applied, so only the ground
+	# plane decays here. Bleeding Y as well would fight gravity and make falls float.
+	_knockback.y = 0.0
+	_knockback = _knockback.move_toward(Vector3.ZERO, knockback_friction * delta)
+
+
+## True while recovering from a hit. The HUD and future VFX can read it.
+func is_in_hitstun() -> bool:
+	return _hitstun > 0.0
+
+
+## Current knockback velocity, for tests and debug readouts.
+func knockback_velocity() -> Vector3:
+	return _knockback
+
+
+## The fighter's instability tracker, or null if it has none.
+func instability() -> InstabilityComponent:
+	return get_node_or_null(^"Instability") as InstabilityComponent

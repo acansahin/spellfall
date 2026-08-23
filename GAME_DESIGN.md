@@ -1,6 +1,7 @@
 # Spellfall — Game Design
 
-> Status: **Phase 1 prototype, movement only.** Everything marked _(planned)_ is design
+> Status: **Phase 1 prototype.** Movement, touch controls, Fireball, instability and
+> knockback are built. Everything marked _(planned)_ is design
 > intent, not built code. Keep that distinction honest — this file has one job, which is to
 > stop us from misremembering what already exists.
 
@@ -62,14 +63,20 @@ Why this instead of health:
 - **It reads without a tutorial.** A number that goes up and makes you fly further is easier
   to grasp than armour types or damage mitigation.
 
-Knockback is computed as a modular formula, roughly:
+Knockback is computed as a modular formula:
 
 ```
-final_knockback = ability_base_knockback * instability_multiplier * situational_modifiers
+final_knockback = ability_base_knockback * instability_multiplier
+instability_multiplier = base + (instability / 100) * per_100      (clamped)
 ```
 
 It deliberately does **not** live inside individual spell scripts. One place to read, one
-place to tune, one place a future server has to agree with.
+place to tune, one place a future server has to agree with — `combat/knockback/knockback.gd`.
+
+At the shipped values the multiplier is 1x at 0%, 2x at 100% and 2.5x at 150%. Because the
+distance you travel goes as speed *squared*, 50% instability carries you **2.25x** as far.
+That quadratic is the whole tension curve: the number climbs gently, the consequences climb
+fast. Tuning lives in `data/knockback_rules.tres`.
 
 ## Controls
 

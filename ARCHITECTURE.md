@@ -4,8 +4,9 @@ Engine: **Godot 4.7**, GDScript, **Forward Mobile** renderer.
 Read `GAME_DESIGN.md` first for what the game is. This file is how it is put together.
 
 > Everything described as _(planned)_ does not exist yet. What is built: the arena, the
-> wizard, movement, the fixed camera, the touch controls, and the ability framework with
-> one spell. Instability, knockback, rounds and the bot are not built.
+> wizard, movement, the fixed camera, the touch controls, the ability framework with one
+> spell, instability, knockback and the HUD readout. Rounds, elimination and the bot are
+> not built.
 
 ## Ground rules
 
@@ -30,21 +31,21 @@ res://
     utilities/
   characters/
     player/        player.tscn + player.gd
-    dummy/         training_dummy.tscn - a static target, prototype only
+    dummy/         training_dummy.tscn - a driverless fighter, prototype only
     bot/           (planned) AI opponent
-    components/    (planned) instability, abilities, haptics
+    components/    instability_component.gd; haptics later
   combat/
     abilities/     ability.gd (Resource) + ability_component.gd (runtime)
     projectiles/   projectile.gd/.tscn + projectile_pool.gd
-    knockback/     (planned) the one knockback formula
+    knockback/     knockback.gd (the formula) + knockback_rules.gd (its tuning)
   arena/           arena.tscn, arena_camera.gd
   ui/
-    hud/           (planned) instability readout, round score
+    hud/           hud.gd/.tscn - instability readout; round score later
     mobile_controls/ touch_stick, ability_button, mobile_controls; aim later
   systems/
     round/         (planned) RoundManager
     spawn/         (planned)
-  data/            abilities/fireball.tres; character Resources still planned
+  data/            abilities/fireball.tres, knockback_rules.tres
   network/         (planned) Phase C onward
   audio/  vfx/  tests/  assets/
 ```
@@ -288,18 +289,70 @@ black bars. The 3D camera keeps vertical FOV, and the arena already fits vertica
 - so a wider phone gains **void at the sides, not more arena.** No screen shape sees more of
 the playfield than another, which matters once this is competitive.
 
-## Knockback and instability _(planned)_
+## Knockback and instability
 
-Two separate components, deliberately:
+Two separate pieces, deliberately:
 
 - **`InstabilityComponent`** tracks one number, raises it on hit, resets between rounds and
-  emits when it changes. It does not know what knockback is.
-- **The knockback formula** lives once, in `combat/knockback/`. Abilities supply a base value
-  and a direction; the formula reads the target's instability and returns a velocity. No spell
-  script computes its own knockback.
+  emits when it changes. It does not know what knockback is and must never learn.
+- **`Knockback`** (`combat/knockback/knockback.gd`) is the formula, as pure static functions.
+  Abilities supply a base value and a direction; it reads the target's instability and returns
+  a velocity. No spell script, no projectile and no receiving body computes its own knockback.
 
-Keeping them apart means the UI can show instability without touching combat, and the formula
+Keeping them apart means the HUD can show instability without touching combat, and the formula
 can be rebalanced without touching either.
+
+`KnockbackRules` is a **Resource** (`data/knockback_rules.tres`) so the game's central
+mechanic is tuned by editing data, never logic. It describes the **hit**; how fast a body
+slides to a stop and how long it loses control for are properties of the **fighter** and live
+on `player.gd`, because a heavier character should travel less from the identical hit.
+
+### The curve is linear on purpose
+
+`multiplier = base + (instability / 100) * per_100`, clamped. At the shipped values that is
+1x at 0%, 2x at 100%, 2.5x at 150%. Linear because a player has to be able to look at a number
+and predict what the next hit does; an exponential curve makes that guesswork.
+
+Distance goes as **speed squared**, so 50% instability (1.5x speed) carries 2.25x as far. That
+quadratic is the tension curve — the numbers climb gently and the consequences climb fast.
+
+### Drag is linear on purpose too
+
+`knockback_friction` bleeds the hit off at a constant m/s², which gives the slide a closed
+form: **v² / 2f**. So "how much knockback throws someone off a 7m arena?" has an answer
+instead of a playtest, and the harness can check that the measured slide is the intended one.
+Exponential decay never quite stops and makes the same question unanswerable.
+
+### Two velocity accumulators
+
+`player.gd` keeps `_input_velocity` and `_knockback` **separate**, summing them once per tick.
+This is load-bearing, not tidiness. With `accel_time` at 0 the input path assigns `velocity.x`
+outright every tick, so a knockback folded into `velocity` is erased on the very next frame.
+Worse, reading `velocity` back after `move_and_slide()` as "what I was doing" folds the last
+frame's knockback into this frame's input, and any reduced-authority path (hitstun, airborne)
+then keeps a fraction of it *and* adds the knockback again — the hit compounds with itself and
+one Fireball launches someone across the arena. Two accumulators, summed at the end, assigned
+rather than accumulated.
+
+Knockback **replaces** rather than stacks: two hits a frame apart should not combine into a
+launch neither earned, so the harder one wins.
+
+`_apply_gravity` checks `velocity.y <= 0.0` before pinning to the floor. Without it the
+downward pin squashes the `lift` on every hit, and victims grind along the floor instead of
+popping clear of the arena lip.
+
+### Hitstun
+
+A hit costs control for `hitstun_per_speed` seconds per m/s, during which steering authority
+drops to `hitstun_control`. That is what stops a player simply walking out of every knockback.
+Authority scales the **target** velocity rather than blending toward the previous one, so no
+setting can leave a residue that outlives the hitstun.
+
+### Who applies a hit
+
+`main.gd._on_projectile_hit` is the single place. Instability is raised **first** and the
+knockback reads the new value, so a landed hit is amplified by the destabilisation it just
+caused and combos escalate. Reading the pre-hit value is defensible and duller.
 
 ## Abilities
 
@@ -438,6 +491,7 @@ argument-gated harness. Everything after a bare `--` reaches `OS.get_cmdline_use
 | `--cast-test` | Asserts the cast round-trip: cooldown, pooling, flight, impact |
 | `--twothumb-test` | Holds the stick and the cast button at once, on separate fingers |
 | `--cast-at:N` | Casts the primary spell N seconds in, so a delayed shot catches it |
+| `--knockback-test` | Asserts the instability curve and the distance a hit carries |
 
 **None of these may be run with `--headless`.** `--shot` needs real rendering, and the input
 tests need a real window: the headless display driver does not route injected

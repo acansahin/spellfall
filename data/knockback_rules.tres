@@ -1,0 +1,10 @@
+[gd_resource type="Resource" script_class="KnockbackRules" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://combat/knockback/knockback_rules.gd" id="1_rules"]
+
+[resource]
+script = ExtResource("1_rules")
+base_multiplier = 1.0
+per_100_instability = 1.0
+max_multiplier = 6.0
+lift = 2.5

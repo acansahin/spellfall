@@ -62,13 +62,21 @@ Small, actionable items. Tick things off as they land. Phase gates live in `ROAD
 - [x] Fix: injected input needed `Input.flush_buffered_events()` to be deterministic
 - [x] Fix: `AbilityComponent` guarded `abilities` but indexed `_cooldowns`
 
-## Session 4 — Instability and knockback
+## Session 4 — Instability and knockback ✅
 
-- [ ] `InstabilityComponent`: track, add, reset, emit on change
-- [ ] Knockback formula in `combat/knockback/`, reading instability
-- [ ] Apply knockback as velocity on `CharacterBody3D`, not physics impulse
-- [ ] HUD instability readout
-- [ ] Confirm the same hit at the same instability always throws the same distance
+- [x] `InstabilityComponent`: track, add, reset, emit on change
+- [x] Knockback formula in `combat/knockback/`, reading instability
+- [x] `KnockbackRules` Resource so the central mechanic is tuned as data
+- [x] Apply knockback as velocity on `CharacterBody3D`, not physics impulse
+- [x] Separate input velocity from knockback velocity so instant movement cannot erase a hit
+- [x] Hitstun, so a hit cannot simply be walked out of
+- [x] HUD instability readout, colour-coded by danger band
+- [x] Training dummy rebuilt as a driverless fighter, so it can be knocked off
+- [x] Confirm the same hit at the same instability always throws the same distance
+      (measured 1.3364m twice — identical to four decimals)
+- [x] Confirm the measured slide matches the closed form v²/2f
+- [x] Fix: reading `velocity` back after `move_and_slide()` compounded knockback with itself
+- [x] Fix: the floor pin squashed the upward lift on every hit
 
 ## Session 5 — Falling, elimination, rounds
 
@@ -106,8 +114,15 @@ Small things deliberately left, so they do not get silently forgotten.
       lives only on this machine. Reconsider committing it once a build actually succeeds —
       CI would need it, and it holds no secrets (the keystore path is an editor setting).
 - [ ] No CI. Worth adding once there is something worth building automatically.
-- [ ] `characters/components/`, `core/utilities/`, `network/` are empty placeholders.
+- [ ] `core/utilities/`, `network/`, `data/characters/` are empty placeholders.
+- [ ] Knockback is horizontal plus a fixed `lift`. Per-ability launch angles are a
+      tuning surface nobody has asked for yet.
+- [ ] `InstabilityComponent.add()` ignores negative amounts. If a spell should ever
+      reduce instability, that is a design decision to make deliberately.
 - [ ] `TrainingDummy` is a prototype target, not a design feature. The bot replaces it.
+- [ ] `Player` now means "a fighter" — the dummy uses the same script with no input
+      controller, and the bot will too. Renaming the class was judged more churn than
+      it is worth; revisit if it starts confusing people.
 - [ ] `Ability.charges`, `area`, `cone_angle` are authored but not read yet — they belong
       to Blink, splash and Force Wave, which arrive in Session 7.
 - [ ] Cast types CONE, DASH and BUFF warn loudly and do nothing. Only PROJECTILE runs.
