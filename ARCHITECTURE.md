@@ -4,7 +4,8 @@ Engine: **Godot 4.7**, GDScript, **Forward Mobile** renderer.
 Read `GAME_DESIGN.md` first for what the game is. This file is how it is put together.
 
 > Everything described as _(planned)_ does not exist yet. What is built: the arena, the
-> wizard, movement, the fixed camera, and the touch controls. Nothing combat-related.
+> wizard, movement, the fixed camera, the touch controls, and the ability framework with
+> one spell. Instability, knockback, rounds and the bot are not built.
 
 ## Ground rules
 
@@ -29,20 +30,21 @@ res://
     utilities/
   characters/
     player/        player.tscn + player.gd
+    dummy/         training_dummy.tscn - a static target, prototype only
     bot/           (planned) AI opponent
     components/    (planned) instability, abilities, haptics
   combat/
-    abilities/     (planned) Ability resources + runtime
-    projectiles/   (planned)
+    abilities/     ability.gd (Resource) + ability_component.gd (runtime)
+    projectiles/   projectile.gd/.tscn + projectile_pool.gd
     knockback/     (planned) the one knockback formula
   arena/           arena.tscn, arena_camera.gd
   ui/
     hud/           (planned) instability readout, round score
-    mobile_controls/ touch_stick + mobile_controls; spell buttons and aim later
+    mobile_controls/ touch_stick, ability_button, mobile_controls; aim later
   systems/
     round/         (planned) RoundManager
     spawn/         (planned)
-  data/            (planned) ability + character Resources
+  data/            abilities/fireball.tres; character Resources still planned
   network/         (planned) Phase C onward
   audio/  vfx/  tests/  assets/
 ```
@@ -149,6 +151,25 @@ outside the deadzone the output is ~0.02, where a clipping deadzone would give ~
 
 Magnitude is always clamped **circularly**, never per-axis, so a diagonal is never faster than
 a cardinal. This holds for the keyboard too, and both are asserted.
+
+#### The ability button
+
+`ability_button.tscn` is built the same way as the stick and for the same reason: one claimed
+touch index, foreign fingers ignored and never consumed. That is what lets a left thumb hold
+the stick while a right thumb taps to cast, which `--twothumb-test` asserts directly.
+
+It casts on **press, not release**. In a game where a dodge is a third of a second, waiting
+for the lift adds latency the player feels and cannot explain.
+
+It reads the spellbook, but only to draw — the spell's colour and the cooldown wedge. That is
+the normal direction for UI (a view reads its model). What would be wrong is holding gameplay
+state here, or writing to it. It never calls `try_cast`; it emits `pressed_slot`, the level
+turns that into `request_ability()`, and touch therefore takes the identical route to the
+Space key.
+
+The cooldown wedge is verified by **measuring pixels**, not by eye: casting at t=1.0s with a
+0.9s cooldown and sampling the button disc at +0.05s, +0.45s and +0.85s gives 94%, 50% and 5%
+darkened.
 
 #### Placement and screen shapes
 
@@ -280,11 +301,72 @@ Two separate components, deliberately:
 Keeping them apart means the UI can show instability without touching combat, and the formula
 can be rebalanced without touching either.
 
-## Abilities _(planned)_
+## Abilities
 
-An ability is a **`Resource`** (name, cooldown, cast type, range, instability, knockback,
-projectile speed, area, charges) plus a small runtime that reads it. Adding a spell should be
-authoring a data file, not writing a fifth unrelated script.
+A spell is a **`Resource`** (`combat/abilities/ability.gd`) holding identity, cast type,
+cooldown, combat numbers and projectile numbers. `data/abilities/fireball.tres` is the first
+one. Adding a spell is authoring a file; it is not writing a fifth unrelated script.
+
+Not every field applies to every cast type — `projectile_speed` means nothing to a buff — and
+unused fields simply stay at their defaults. A subclass per cast type would buy nothing until
+a spell needs different **control flow** rather than different numbers.
+
+The pipeline, and who is allowed to know what:
+
+```
+  AbilityComponent          decides a cast MAY happen (cooldown, slot valid)
+        | cast_requested
+        v
+  main.gd                   turns the request into an effect
+        | ProjectilePool.fire()
+        v
+  Projectile                travels, detects a hit, emits `hit`
+        | projectile_hit (relayed by the pool)
+        v
+  main.gd                   decides what a hit MEANS  <- instability/knockback land here
+```
+
+Three deliberate splits:
+
+- **`AbilityComponent` spawns nothing.** It cannot know where the projectile pool lives, and
+  keeping it ignorant is what lets a bot or a dummy carry the same component. It is also the
+  natural interception point when casting becomes server-authoritative: validate at
+  `cast_requested`, and the client's own component degrades into a prediction.
+- **The projectile decides nothing.** It emits `hit` and lets the combat layer apply the
+  consequences. A projectile that knew about knockback would be a second place the formula
+  lived, which is exactly what `GAME_DESIGN.md` forbids.
+- **Cooldowns tick in `_physics_process`**, on the fixed 60Hz gameplay tick, so a 30fps phone
+  and a 144fps desktop agree on how long a spell takes to come back.
+
+`ability_component.gd` guards **both** its arrays. Checking `abilities.size()` and then
+indexing `_cooldowns` crashed once, because the bounds that were tested were not the bounds
+that were used; `abilities` now resizes the cooldown array through its setter, so a spellbook
+assigned at runtime cannot desync the two.
+
+### Projectile pooling
+
+`ProjectilePool` prewarms eight projectiles and reuses them. Spawning and freeing nodes
+mid-fight is the classic mobile stutter, and a four-player fight throws a lot of spells. It is
+a pool, not an object-pool framework: one scene, grows if it runs dry, no eviction policy.
+Generalise it when a second pooled type actually exists.
+
+The harness asserts reuse rather than growth — six casts leave `total_count()` at eight.
+
+### Aim
+
+`InputCommand.aim_dir` currently mirrors `move_dir`: you cast where you are heading, and a
+caster with no aim falls back to its own facing. Drag-to-aim will fill those two fields from a
+second thumb and **nothing downstream changes**, because the character already reads the field
+rather than asking how it was produced. That is the whole reason it is a separate field.
+
+### Casting is latched, not sampled
+
+`ability_pressed` is held by `PlayerInputController` until someone calls `consume_ability()`.
+Input is read in `_process` (render rate) and acted on in `_physics_process` (fixed 60Hz), so
+a press read as "just happened" can be missed entirely when two render frames land between
+ticks, or acted on twice when two ticks land between frames. Latching makes a tap exactly one
+cast. The touch button and the Space key both go through `request_ability()`, which is what
+stops the two drifting apart.
 
 ## Networking _(planned, Phase C+)_
 
@@ -353,6 +435,9 @@ argument-gated harness. Everything after a bare `--` reaches `OS.get_cmdline_use
 | `--key-test` | Injects key presses and asserts the keyboard path still drives movement |
 | `--layout-probe` | Prints where the stick actually landed, for anchor checks |
 | `--stick-hold=X,Y` | Holds the stick deflected so a screenshot shows a live thumb |
+| `--cast-test` | Asserts the cast round-trip: cooldown, pooling, flight, impact |
+| `--twothumb-test` | Holds the stick and the cast button at once, on separate fingers |
+| `--cast-at:N` | Casts the primary spell N seconds in, so a delayed shot catches it |
 
 **None of these may be run with `--headless`.** `--shot` needs real rendering, and the input
 tests need a real window: the headless display driver does not route injected
@@ -384,6 +469,21 @@ Each of these cost real time in the first session.
   events does nothing useful under `--headless`, and `--resolution` is ignored there as well
   (the viewport came back 1280x1280). An input test that "fails" headless is telling you
   about the display driver, not the code.
+- **`Area3D.monitorable = false` silently disables body detection.** Its documented job is
+  "other monitoring areas can detect this area", which reads as free to switch off for a
+  projectile nothing else looks for. In Godot 4.7 it also kills `body_entered` and
+  `get_overlapping_bodies()` on that area — with `monitoring` still reporting `true`, layers
+  correct, shape correct. A manual `intersect_shape()` using the node's own shape, transform
+  and mask found the target while the area saw nothing. Isolated with two identical areas
+  flown through the same body; only the `monitorable` one detected it.
+- **Injected input is buffered.** `Input.parse_input_event()` alone leaves the event queued
+  for an unpredictable number of frames, so a scripted test passes or fails depending on how
+  many frames it happened to wait — and sends you hunting for a bug in the code under test.
+  Call `Input.flush_buffered_events()` straight after. The harness's `_dispatch()` does.
+- **Check `substr()` offsets against the prefix length.** `"--cast-at:"` is ten characters;
+  `substr(9)` yields `":1.0"`, which `float()` parses as **0.0** without complaint. The spell
+  fired at t=0 instead of t=1, every screenshot caught an expired cooldown, and two correct
+  drawing implementations were rewritten chasing a bug that was in the argument parser.
 - **A wrong facing formula passes every numeric test.** Godot yaw 0 faces -Z, and yaw `a`
   faces `(-sin a, 0, -cos a)`; solving that for a travel direction needs `atan2(-x, -z)`.
   Dropping both signs aims the wizard exactly backwards, and position/velocity traces look

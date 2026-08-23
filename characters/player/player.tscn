@@ -1,6 +1,9 @@
-[gd_scene load_steps=7 format=3]
+[gd_scene load_steps=10 format=3]
 
 [ext_resource type="Script" path="res://characters/player/player.gd" id="1_player"]
+[ext_resource type="Script" path="res://combat/abilities/ability_component.gd" id="2_abilities"]
+[ext_resource type="Resource" path="res://data/abilities/fireball.tres" id="3_fireball"]
+[ext_resource type="Script" path="res://combat/abilities/ability.gd" id="4_ability"]
 
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_body"]
 radius = 0.5
@@ -44,3 +47,7 @@ surface_material_override/0 = SubResource("Mat_body")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.3, -0.75)
 mesh = SubResource("BoxMesh_facing")
 surface_material_override/0 = SubResource("Mat_facing")
+
+[node name="Abilities" type="Node" parent="."]
+script = ExtResource("2_abilities")
+abilities = Array[ExtResource("4_ability")]([ExtResource("3_fireball")])

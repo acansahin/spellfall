@@ -27,16 +27,30 @@ var command := InputCommand.new()
 
 var _touch_vector := Vector2.ZERO
 var _touch_active := false
+var _pending_ability := -1
 var _override_vector := Vector2.ZERO
 var _override_active := false
 
 
 func _process(_delta: float) -> void:
+	_poll_ability_keys()
 	var raw := _read_raw()
 	var world := _screen_to_world(raw)
 	command.move_dir = world
 	command.has_move_input = world.length_squared() > 0.0
+	# Aim mirrors movement for now - you cast where you are heading. When drag-to-aim lands
+	# it fills these two fields from a second thumb and nothing downstream moves.
+	command.aim_dir = world
+	command.has_aim = command.has_move_input
+	command.ability_pressed = _pending_ability
 	command_updated.emit(command)
+
+
+## Desktop casting. The touch buttons call `request_ability()` directly, so this is only
+## the keyboard's way into the same latch.
+func _poll_ability_keys() -> void:
+	if Input.is_action_just_pressed("cast_primary"):
+		request_ability(0)
 
 
 ## Called by the virtual joystick once it exists. `vector` is in screen space with
@@ -44,6 +58,22 @@ func _process(_delta: float) -> void:
 func set_touch_vector(vector: Vector2, active: bool) -> void:
 	_touch_vector = vector
 	_touch_active = active
+
+
+## Asks for an ability. Called by a touch button, by the keyboard poll above, and by the
+## test harness. The request is held rather than acted on here - this node decides what the
+## player WANTS, never what happens.
+func request_ability(slot: int) -> void:
+	_pending_ability = slot
+
+
+## Takes the pending request and clears it, so one press produces exactly one cast. A
+## character calls this from _physics_process; anything that only wants to look should read
+## `command.ability_pressed` instead.
+func consume_ability() -> int:
+	var slot := _pending_ability
+	_pending_ability = -1
+	return slot
 
 
 ## Test-harness entry point. Lets an automated run steer the player without synthetic

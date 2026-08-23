@@ -1,0 +1,26 @@
+[gd_scene load_steps=4 format=3]
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_dummy"]
+radius = 0.5
+height = 2.0
+
+[sub_resource type="CapsuleMesh" id="CapsuleMesh_dummy"]
+radius = 0.5
+height = 2.0
+radial_segments = 12
+rings = 5
+
+[sub_resource type="StandardMaterial3D" id="Mat_dummy"]
+albedo_color = Color(0.827451, 0.32549, 0.443137, 1)
+roughness = 0.7
+
+[node name="TrainingDummy" type="StaticBody3D"]
+collision_layer = 2
+collision_mask = 0
+
+[node name="Mesh" type="MeshInstance3D" parent="."]
+mesh = SubResource("CapsuleMesh_dummy")
+surface_material_override/0 = SubResource("Mat_dummy")
+
+[node name="Collision" type="CollisionShape3D" parent="."]
+shape = SubResource("CapsuleShape3D_dummy")

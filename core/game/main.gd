@@ -13,6 +13,8 @@ extends Node3D
 ##   --touch-ui:on|off force the mobile controls visible or hidden, whatever the device
 ##   --touch-test      inject a scripted multi-touch sequence and assert the results
 ##   --key-test        inject key presses and assert the keyboard path still drives movement
+##   --cast-test       assert the full cast round-trip: cooldown, pooling, flight, impact
+##   --twothumb-test   hold the stick and the cast button at once, on separate fingers
 ## Screenshots need real rendering, so DO NOT pass --headless with --shot.
 ## The two input tests ALSO need a real window: the headless display driver does not
 ## route injected InputEventScreenTouch/Key to _input(), so every assertion silently
@@ -27,6 +29,7 @@ extends Node3D
 @onready var _player: Player = $Player
 @onready var _input: PlayerInputController = $PlayerInputController
 @onready var _mobile: MobileControls = $MobileControls
+@onready var _pool: ProjectilePool = $ProjectilePool
 
 var _trace := false
 
@@ -40,6 +43,7 @@ func _ready() -> void:
 	# stick reusable and keeps PlayerInputController unaware that a UI exists - the same
 	# hand-it-its-dependencies pattern already used for the character above.
 	_mobile.joystick.vector_changed.connect(_input.set_touch_vector)
+	_wire_combat()
 	_player.respawn_at(spawn_point)
 	_parse_harness_args()
 
@@ -74,14 +78,23 @@ func _parse_harness_args() -> void:
 		elif arg == "--shot":
 			_shoot("user://shot.png", 0.0)
 		elif arg.begins_with("--shot:"):
-			var secs := float(arg.substr(7))
-			_shoot("user://shot_%d.png" % int(secs), secs)
+			# Name from the raw argument, not int(seconds): --shot:1.05 and --shot:1.85 both
+			# rounded to "shot_1.png" and silently overwrote each other, so a run that asked
+			# for three frames quietly produced one.
+			var label := arg.substr(7).replace(".", "_")
+			_shoot("user://shot_%s.png" % label, float(arg.substr(7)))
 		elif arg == "--touch-test":
 			_run_touch_tests()
 		elif arg == "--key-test":
 			_run_key_tests()
+		elif arg == "--cast-test":
+			_run_cast_tests()
+		elif arg == "--twothumb-test":
+			_run_two_thumb_tests()
 		elif arg == "--layout-probe":
 			_probe_layout()
+		elif arg.begins_with("--cast-at:"):
+			_cast_at(float(arg.substr(10)))
 		elif arg.begins_with("--stick-hold="):
 			var hp := arg.substr(13).split(",")
 			if hp.size() == 2:
@@ -133,20 +146,37 @@ func _emit_touch(index: int, position: Vector2, pressed: bool) -> void:
 	event.index = index
 	event.position = position
 	event.pressed = pressed
-	Input.parse_input_event(event)
+	_dispatch(event)
 
 
 func _emit_drag(index: int, position: Vector2) -> void:
 	var event := InputEventScreenDrag.new()
 	event.index = index
 	event.position = position
+	_dispatch(event)
+
+
+## Pushes an injected event through immediately.
+##
+## Godot buffers input by default (`use_accumulated_input`), so parse_input_event() alone
+## leaves the event sitting in a queue for an unpredictable number of frames - which shows
+## up as a test that passes or fails depending on how many frames it happened to wait, and
+## sends you hunting for a bug in the code under test. Flushing makes the dispatch
+## deterministic, which is the whole point of a scripted run.
+func _dispatch(event: InputEvent) -> void:
 	Input.parse_input_event(event)
+	Input.flush_buffered_events()
 
 
-## Waits long enough for an injected event to reach _input() AND for the controller's
-## _process to have folded it into the command every downstream reader sees.
+## Waits for the whole input pipeline to turn over.
+##
+## An injected event is flushed, read by PlayerInputController in _process, and acted on by
+## the character in _physics_process. Two idle frames can straddle the flush and leave the
+## command one frame behind the inputs that produced it - which looks exactly like a bug and
+## is not one. Awaiting a physics frame between two idle frames covers every ordering.
 func _settle() -> void:
 	await get_tree().process_frame
+	await get_tree().physics_frame
 	await get_tree().process_frame
 
 
@@ -261,7 +291,7 @@ func _emit_key(physical_keycode: Key, pressed: bool) -> void:
 	var event := InputEventKey.new()
 	event.physical_keycode = physical_keycode
 	event.pressed = pressed
-	Input.parse_input_event(event)
+	_dispatch(event)
 
 
 ## Proves the desktop path still reaches the character now that a stick shares the pipeline.
@@ -346,3 +376,232 @@ func _probe_layout() -> void:
 		view.x, view.y, view.x / view.y, r, r.position.x, view.y - r.end.y,
 		_mobile.joystick.is_visible_in_tree()])
 	get_tree().quit()
+
+
+# ---------------------------------------------------------------------------------------
+# Combat wiring
+#
+# The spellbook decides a cast MAY happen; this turns that into something in the world. The
+# component cannot do it itself without knowing where the projectile pool lives, and the
+# pool has no opinion about cooldowns. Joining them is the level's job, exactly like the
+# joystick above.
+#
+# This is also the seam a server slots into: when casts become authoritative, the request is
+# validated here (or refused) rather than anywhere inside the character.
+# ---------------------------------------------------------------------------------------
+
+func _wire_combat() -> void:
+	var book := _player.abilities()
+	if book == null:
+		push_warning("player has no AbilityComponent; casting disabled")
+		return
+	book.cast_requested.connect(_on_cast_requested)
+	_pool.projectile_hit.connect(_on_projectile_hit)
+	# The button reports a press; the controller latches it; the character consumes it on
+	# the next tick. Touch therefore takes exactly the same route as the Space key, which
+	# is what stops the two drifting apart.
+	_mobile.cast_button.pressed_slot.connect(_input.request_ability)
+	# Read-only, for drawing the cooldown wedge and the spell's colour.
+	_mobile.cast_button.source = book
+
+
+func _on_cast_requested(ability: Ability, origin: Vector3, direction: Vector3, caster: Node3D) -> void:
+	match ability.cast_type:
+		Ability.CastType.PROJECTILE:
+			_pool.fire(ability, origin, direction, caster)
+		_:
+			# Cone, dash and buff are authored in the Ability but have no runtime yet. Warn
+			# loudly rather than failing silently, so a half-built spell is obvious.
+			push_warning("cast type %d not implemented yet (%s)" % [ability.cast_type, ability.id])
+
+
+## What a hit MEANS is not decided here and not decided by the projectile. Instability and
+## knockback arrive in Session 4 and will be applied from this one place.
+func _on_projectile_hit(body: Node3D, direction: Vector3, ability: Ability) -> void:
+	print("[hit] %s hit %s travelling %s" % [ability.id, body.name, direction])
+
+
+func _run_cast_tests() -> void:
+	await _settle()
+	var book := _player.abilities()
+	var fireball := book.ability_in(0)
+	print("[cast-test] %s: cooldown=%.2fs speed=%.0fm/s lifetime=%.2fs" % [
+		fireball.id, fireball.cooldown, fireball.projectile_speed, fireball.lifetime])
+
+	# --- the spellbook is data-driven ---------------------------------------------------
+	_expect("slot 0 holds an Ability resource", fireball != null and fireball.id == &"fireball",
+		"id=%s" % fireball.id)
+	_expect("starts off cooldown", book.is_ready(0), "ready=%s" % book.is_ready(0))
+
+	# --- pool starts prewarmed, nothing in flight ----------------------------------------
+	var built_at_start := _pool.total_count()
+	_expect("pool prewarmed, nothing in flight",
+		_pool.active_count() == 0 and built_at_start > 0,
+		"built=%d active=%d" % [built_at_start, _pool.active_count()])
+
+	# --- a cast produces exactly one projectile ------------------------------------------
+	var fired: bool = book.try_cast(0, Vector3(0, 0, -1))
+	await _settle()
+	_expect("try_cast succeeded", fired, "returned %s" % fired)
+	_expect("one projectile in flight", _pool.active_count() == 1,
+		"active=%d" % _pool.active_count())
+	_expect("cast put the slot on cooldown", not book.is_ready(0),
+		"remaining=%.2fs" % book.cooldown_remaining(0))
+	_expect("cooldown fraction near 1.0 right after casting",
+		book.cooldown_fraction(0) > 0.85, "fraction=%.2f" % book.cooldown_fraction(0))
+
+	# --- a second cast during cooldown is refused ----------------------------------------
+	var again: bool = book.try_cast(0, Vector3(0, 0, -1))
+	_expect("second cast refused while on cooldown", not again, "returned %s" % again)
+	_expect("refused cast spawned nothing", _pool.active_count() == 1,
+		"active=%d" % _pool.active_count())
+
+	# --- it actually flies, in the aimed direction ---------------------------------------
+	var shot: Projectile = null
+	for child in _pool.get_children():
+		if (child as Projectile).is_active():
+			shot = child
+			break
+	var start_z: float = shot.global_position.z
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	var moved: float = start_z - shot.global_position.z
+	_expect("projectile travels along the aim (-Z)", moved > 0.1,
+		"moved %.3fm in 3 ticks" % moved)
+
+	# --- it hits the dummy, and the pool takes it back -----------------------------------
+	var hit_body: Array = []
+	_pool.projectile_hit.connect(func(b, _d, _a): hit_body.append(b), CONNECT_ONE_SHOT)
+	var waited := 0.0
+	while _pool.active_count() > 0 and waited < 2.0:
+		await get_tree().physics_frame
+		waited += 1.0 / 60.0
+	_expect("projectile reached the training dummy", hit_body.size() == 1,
+		"hits=%d after %.2fs" % [hit_body.size(), waited])
+	_expect("pool reclaimed it", _pool.active_count() == 0,
+		"active=%d" % _pool.active_count())
+	_expect("the caster was not hit by its own spell",
+		hit_body.size() == 1 and hit_body[0] != _player,
+		"hit %s" % (hit_body[0].name if hit_body.size() > 0 else "<nothing>"))
+
+	# --- cooldown expires and the slot comes back ----------------------------------------
+	while not book.is_ready(0):
+		await get_tree().physics_frame
+	_expect("slot ready again after cooldown", book.is_ready(0),
+		"fraction=%.2f" % book.cooldown_fraction(0))
+
+	# --- reuse, not growth ----------------------------------------------------------------
+	for i in 5:
+		book.try_cast(0, Vector3(1, 0, 0))
+		while not book.is_ready(0):
+			await get_tree().physics_frame
+		while _pool.active_count() > 0:
+			await get_tree().physics_frame
+	_expect("pool reuses instead of allocating", _pool.total_count() == built_at_start,
+		"built %d at start, %d after 6 casts" % [built_at_start, _pool.total_count()])
+
+	# --- the input latch turns one press into exactly one cast ----------------------------
+	while not book.is_ready(0):
+		await get_tree().physics_frame
+	_input.request_ability(0)
+	await _settle()
+	_expect("a latched request casts once", _pool.active_count() == 1,
+		"active=%d" % _pool.active_count())
+	await _settle()
+	_expect("the latch does not re-fire", book.cooldown_remaining(0) > 0.0 and _pool.active_count() <= 1,
+		"active=%d remaining=%.2f" % [_pool.active_count(), book.cooldown_remaining(0)])
+
+	print("[cast-test] %s (%d failure(s))" % [
+		"ALL PASS" if _touch_failures == 0 else "FAILURES", _touch_failures])
+	get_tree().quit(1 if _touch_failures > 0 else 0)
+
+
+## The test the whole ownership design exists for: a left thumb steering while a right thumb
+## casts. Two controls, two finger indices, neither aware of the other. If this ever fails,
+## the game is unplayable on a phone no matter how good everything else is.
+func _run_two_thumb_tests() -> void:
+	await _settle()
+	var stick := _mobile.joystick
+	var button := _mobile.cast_button
+	var book := _player.abilities()
+	var stick_centre := stick.get_global_rect().get_center()
+	var button_centre := button.get_global_rect().get_center()
+	print("[twothumb] stick=%s button=%s (gap %.0f units)" % [
+		stick_centre, button_centre, stick_centre.distance_to(button_centre)])
+
+	_expect("stick and button do not overlap",
+		not stick.get_global_rect().grow(44.0).intersects(button.get_global_rect().grow(16.0)),
+		"stick=%s button=%s" % [stick.get_global_rect(), button.get_global_rect()])
+
+	# --- left thumb takes the stick -------------------------------------------------------
+	_emit_touch(0, stick_centre, true)
+	_emit_drag(0, stick_centre + Vector2(stick.base_radius, 0.0))
+	await _settle()
+	_expect("finger 0 owns the stick", stick.touch_index() == 0,
+		"stick owner=%d" % stick.touch_index())
+	_expect("button untouched by the stick's finger", button.touch_index() == -1,
+		"button owner=%d" % button.touch_index())
+	var moving_before: Vector2 = _input.command.move_dir
+
+	# --- right thumb taps the button, while the left is still down ------------------------
+	var before_active := _pool.active_count()
+	_emit_touch(1, button_centre, true)
+	await _settle()
+	_expect("finger 1 owns the button", button.touch_index() == 1,
+		"button owner=%d" % button.touch_index())
+	_expect("stick keeps its own finger", stick.touch_index() == 0,
+		"stick owner=%d" % stick.touch_index())
+	_expect("movement is unaffected by the cast",
+		_input.command.move_dir.is_equal_approx(moving_before),
+		"before=%s after=%s" % [moving_before, _input.command.move_dir])
+	_expect("the tap actually cast", _pool.active_count() == before_active + 1,
+		"active %d -> %d" % [before_active, _pool.active_count()])
+	_expect("casting put the slot on cooldown", not book.is_ready(0),
+		"remaining=%.2fs" % book.cooldown_remaining(0))
+
+	# --- releasing the right thumb must not disturb the left ------------------------------
+	_emit_touch(1, button_centre, false)
+	await _settle()
+	_expect("button released cleanly", button.touch_index() == -1,
+		"button owner=%d" % button.touch_index())
+	_expect("stick still steering after the button lifted",
+		stick.touch_index() == 0 and _input.command.move_dir.is_equal_approx(moving_before),
+		"stick owner=%d move_dir=%s" % [stick.touch_index(), _input.command.move_dir])
+
+	# --- and the wizard really is moving while all this happens ---------------------------
+	var pos_before: Vector3 = _player.global_position
+	for i in 10:
+		await get_tree().physics_frame
+	var travelled: float = _player.global_position.distance_to(pos_before)
+	_expect("wizard moved while casting", travelled > 0.3,
+		"travelled %.2fm in 10 ticks" % travelled)
+
+	# --- left thumb lifts -----------------------------------------------------------------
+	_emit_touch(0, stick_centre, false)
+	await _settle()
+	_expect("both controls idle after both fingers lift",
+		stick.touch_index() == -1 and button.touch_index() == -1
+			and _input.command.move_dir.length() < 0.0001,
+		"stick=%d button=%d move_dir=%s" % [
+			stick.touch_index(), button.touch_index(), _input.command.move_dir])
+
+	# --- a finger landing on neither control disturbs nothing -----------------------------
+	var empty_spot := get_viewport().get_visible_rect().size * 0.5
+	_emit_touch(3, empty_spot, true)
+	await _settle()
+	_expect("a touch on empty screen claims nothing",
+		stick.touch_index() == -1 and button.touch_index() == -1,
+		"stick=%d button=%d" % [stick.touch_index(), button.touch_index()])
+	_emit_touch(3, empty_spot, false)
+	await _settle()
+
+	print("[twothumb] %s (%d failure(s))" % [
+		"ALL PASS" if _touch_failures == 0 else "FAILURES", _touch_failures])
+	get_tree().quit(1 if _touch_failures > 0 else 0)
+
+
+## Casts the primary spell N seconds in, so a delayed --shot can catch a spell mid-flight.
+func _cast_at(seconds: float) -> void:
+	await get_tree().create_timer(seconds).timeout
+	_input.request_ability(0)

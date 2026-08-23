@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="Ability" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://combat/abilities/ability.gd" id="1_ability"]
+
+[resource]
+script = ExtResource("1_ability")
+id = &"fireball"
+display_name = "Fireball"
+colour = Color(1, 0.478431, 0.180392, 1)
+cast_type = 0
+cooldown = 0.9
+charges = 1
+instability = 12.0
+knockback = 6.0
+projectile_speed = 18.0
+projectile_radius = 0.35
+lifetime = 1.2
+spawn_offset = 0.9
+area = 0.0
+cone_angle = 45.0

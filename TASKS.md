@@ -45,15 +45,22 @@ Small, actionable items. Tick things off as they land. Phase gates live in `ROAD
 - [x] Harness: `--touch-test`, `--key-test`, `--layout-probe`, `--stick-hold`, `--touch-ui`
 - [x] Renamed off `VirtualJoystick` — Godot 4.7 ships a native class with that name
 
-## Session 3 — Ability framework and Fireball
+## Session 3 — Ability framework and Fireball ✅
 
-- [ ] `Ability` Resource: name, cooldown, cast type, range, instability, knockback, speed, area
-- [ ] `AbilityComponent` on the wizard: holds a set, runs cooldowns, casts
-- [ ] Extend `InputCommand` with ability intents and an aim direction
-- [ ] Projectile scene with a pooled spawner
-- [ ] Fireball as a data file, not a bespoke script
-- [ ] Four spell buttons in the HUD with cooldown sweeps
-- [ ] Verify a full cast round-trip in a scripted run
+- [x] `Ability` Resource: identity, cast type, cooldown, combat and projectile numbers
+- [x] `AbilityComponent` on the wizard: holds a set, runs cooldowns, gates casts
+- [x] Extend `InputCommand` with a latched ability intent and an aim direction
+- [x] Projectile scene with a pooled spawner (prewarm 8, reuse asserted)
+- [x] Fireball as a data file, not a bespoke script
+- [x] **One** spell button with a cooldown wedge — three more when three more spells exist
+- [x] Training dummy so a cast has something to hit
+- [x] Verify a full cast round-trip in a scripted run (`--cast-test`, 17 assertions)
+- [x] Verify stick + button on separate fingers (`--twothumb-test`, 13 assertions)
+- [x] Fix: `Area3D.monitorable = false` silently disabled all hit detection
+- [x] Fix: harness `substr()` off-by-one made `--cast-at:N` fire at t=0
+- [x] Fix: `--shot:1.05` and `--shot:1.85` both wrote `shot_1.png`
+- [x] Fix: injected input needed `Input.flush_buffered_events()` to be deterministic
+- [x] Fix: `AbilityComponent` guarded `abilities` but indexed `_cooldowns`
 
 ## Session 4 — Instability and knockback
 
@@ -99,7 +106,11 @@ Small things deliberately left, so they do not get silently forgotten.
       lives only on this machine. Reconsider committing it once a build actually succeeds —
       CI would need it, and it holds no secrets (the keystore path is an editor setting).
 - [ ] No CI. Worth adding once there is something worth building automatically.
-- [ ] `characters/components/`, `core/utilities/`, `data/`, `network/` are empty placeholders.
+- [ ] `characters/components/`, `core/utilities/`, `network/` are empty placeholders.
+- [ ] `TrainingDummy` is a prototype target, not a design feature. The bot replaces it.
+- [ ] `Ability.charges`, `area`, `cone_angle` are authored but not read yet — they belong
+      to Blink, splash and Force Wave, which arrive in Session 7.
+- [ ] Cast types CONE, DASH and BUFF warn loudly and do nothing. Only PROJECTILE runs.
 - [ ] Character shadow is faint at the current light angle. Cosmetic; revisit in the feel pass.
 - [ ] `PlayerInputController` samples input in `_process` (render rate) while the character
       consumes it in `_physics_process` (fixed 60Hz). Harmless now, but a predicting client

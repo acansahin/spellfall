@@ -1,9 +1,13 @@
-[gd_scene load_steps=3 format=3]
+[gd_scene load_steps=4 format=3]
 
 [ext_resource type="Script" path="res://ui/mobile_controls/mobile_controls.gd" id="1_root"]
 [ext_resource type="PackedScene" path="res://ui/mobile_controls/touch_stick.tscn" id="2_stick"]
+[ext_resource type="PackedScene" path="res://ui/mobile_controls/ability_button.tscn" id="3_button"]
 
 [node name="MobileControls" type="CanvasLayer"]
 script = ExtResource("1_root")
 
 [node name="TouchStick" parent="." instance=ExtResource("2_stick")]
+
+[node name="CastButton" parent="." instance=ExtResource("3_button")]
+slot = 0

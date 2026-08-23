@@ -46,6 +46,10 @@ var input_controller: PlayerInputController = null
 
 @onready var _visual: Node3D = $Visual
 
+## Optional: a wizard without a spellbook simply never casts, which is what a training
+## dummy or a not-yet-armed character wants.
+@onready var _abilities: AbilityComponent = get_node_or_null(^"Abilities") as AbilityComponent
+
 var _gravity: float = ProjectSettings.get_setting("physics/3d/default_gravity", 9.8)
 
 
@@ -58,6 +62,7 @@ func _physics_process(delta: float) -> void:
 	_apply_gravity(delta)
 	move_and_slide()
 	_face_travel(delta)
+	_service_casting()
 
 
 ## Drives the XZ plane toward the requested direction. Knockback will later add its own
@@ -110,3 +115,26 @@ func _face_travel(delta: float) -> void:
 func respawn_at(point: Vector3) -> void:
 	velocity = Vector3.ZERO
 	global_position = point
+
+
+## Turns a latched ability request into a cast. Casting is deliberately AFTER movement and
+## facing: a spell fired on the same tick you changed direction should come out of where the
+## wizard now is and where they now point, not where they were.
+func _service_casting() -> void:
+	if input_controller == null or _abilities == null:
+		return
+	var slot := input_controller.consume_ability()
+	if slot < 0:
+		return
+	var command := input_controller.command
+	var aim := Vector3.ZERO
+	if command.has_aim:
+		aim = Vector3(command.aim_dir.x, 0.0, command.aim_dir.y)
+	# A zero aim means "no direction given"; AbilityComponent falls back to facing.
+	_abilities.try_cast(slot, aim)
+
+
+## The wizard's spellbook, or null. Exposed so the level can wire casts to the projectile
+## pool and the HUD can read cooldowns.
+func abilities() -> AbilityComponent:
+	return _abilities

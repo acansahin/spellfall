@@ -1,0 +1,9 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://ui/mobile_controls/ability_button.gd" id="1_button"]
+
+[node name="AbilityButton" type="Control"]
+offset_right = 144.0
+offset_bottom = 144.0
+mouse_filter = 2
+script = ExtResource("1_button")
