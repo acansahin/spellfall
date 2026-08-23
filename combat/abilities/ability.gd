@@ -84,3 +84,24 @@ enum CastType {
 ## folded into the existing formula, where blocking needs projectile ownership and hit
 ## cancellation and a visual language of its own. See GAME_DESIGN.md.
 @export var knockback_resist: float = 1.0
+
+
+## How far this spell reaches, in metres, whatever kind of spell it is.
+##
+## Range is stated differently by every cast type - a projectile's is speed times lifetime, a
+## cone's is its area, a dash's is its distance - and the aim indicator has to draw all four.
+## Answering it here keeps that arithmetic beside the numbers it reads, so a spell whose
+## reach changes cannot leave the line drawn for it stale.
+##
+## A BUFF has no reach at all, and says so with 0.0 rather than with a number nobody should
+## draw.
+func effective_range() -> float:
+	match cast_type:
+		CastType.PROJECTILE:
+			return projectile_speed * lifetime
+		CastType.CONE:
+			return area
+		CastType.DASH:
+			return dash_distance
+		_:
+			return 0.0

@@ -124,5 +124,11 @@ func is_active() -> bool:
 
 
 ## The ability currently in flight, or null. Handy for tests and debug readouts.
+## The way it is travelling, for the harness: an aim test that only checks the cast happened
+## has not checked that the spell went where the thumb pointed.
+func direction() -> Vector3:
+	return _direction
+
+
 func ability() -> Ability:
 	return _ability

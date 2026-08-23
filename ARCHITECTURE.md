@@ -5,8 +5,9 @@ Read `GAME_DESIGN.md` first for what the game is. This file is how it is put tog
 
 > Everything described as _(planned)_ does not exist yet. What is built: the arena, the
 > wizard, movement, the fixed camera, the touch controls, the ability framework with one
-> spell, instability, knockback, the HUD, elimination, the round loop, the bot opponent and
-> all four spells. Drag-to-aim and the game-feel pass are not built.
+> spell, instability, knockback, the HUD, elimination, the round loop, the bot opponent,
+> all four spells, and drag-to-aim with its ground indicators. The game-feel pass is not
+> built.
 
 ## Ground rules
 
@@ -40,13 +41,14 @@ res://
   arena/           arena.tscn, arena_camera.gd, kill_zone.gd
   ui/
     hud/           hud.gd/.tscn - instability, round number, score, banner
-    mobile_controls/ touch_stick, ability_button, mobile_controls; aim later
+    mobile_controls/ touch_stick, ability_button (press-drag-lift to aim), mobile_controls
   systems/
     round/         round_manager.gd - countdown, elimination, score, reset
     spawn/         (planned)
   data/            abilities/fireball.tres, knockback_rules.tres
   network/         (planned) Phase C onward
-  vfx/             spell_flash.gd - the fan Force Wave draws
+  vfx/             ground_shapes.gd - flat meshes; spell_flash.gd - the fan Force Wave
+                   draws; aim_indicator.gd - what a spell will do, before it does it
   audio/  tests/  assets/
 ```
 
@@ -108,7 +110,10 @@ _mobile.joystick.vector_changed.connect(_input.set_touch_vector)
 
 That is the whole `TouchStick -> PlayerInputController` link. The stick is connected *to* the
 controller rather than holding a reference *to* it, which is the "signals decouple upward"
-rule — and it means a second stick (aiming, later) is a new connection, not a new code path.
+rule — and it means a second control feeding the same command is a new connection, not a new
+code path. That prediction was tested by drag-to-aim: aiming turned out to belong on the spell
+buttons rather than on a second stick, and it still cost three `connect` lines in `main.gd` and
+nothing at all downstream.
 
 **Why it is not called `VirtualJoystick`:** Godot 4.7 ships a **native `VirtualJoystick`
 Control**, so that `class_name` is taken. The native one is also a poor fit here: it drives
@@ -161,10 +166,16 @@ a cardinal. This holds for the keyboard too, and both are asserted.
 
 `ability_button.tscn` is built the same way as the stick and for the same reason: one claimed
 touch index, foreign fingers ignored and never consumed. That is what lets a left thumb hold
-the stick while a right thumb taps to cast, which `--twothumb-test` asserts directly.
+the stick while a right thumb aims and casts, which `--twothumb-test` asserts directly.
 
-It casts on **press, not release**. In a game where a dodge is a third of a second, waiting
-for the lift adds latency the player feels and cannot explain.
+It casts on the **lift**, not the press — and it used to be the other way round, deliberately,
+because waiting for a lift adds latency in a game where a dodge is a third of a second. Aiming
+bought that latency back and more: a thumb has no other way to say *where*, and a spell aimed
+where you meant it beats the same spell fired 60ms sooner at wherever you happened to be
+walking. A tap is still a cast; it is just a cast whose aim you did not give.
+
+The button deliberately does **not** release when the finger slides off its disc. Dragging away
+is the gesture, not a mistake, so the claimed index holds until the finger actually lifts.
 
 It reads the spellbook, but only to draw — the spell's colour and the cooldown wedge. That is
 the normal direction for UI (a view reads its model). What would be wrong is holding gameplay
@@ -481,7 +492,10 @@ nobody has written code for yet. Its query objects are `static` and reused, beca
 `SphereShape3D` per cast allocates mid-fight.
 
 `SpellFlash` (`vfx/`) draws the fan, taking its reach and angle **from the same two fields the
-hit test reads**, so the shape on screen cannot drift from the shape that hits. It is a child
+hit test reads**, so the shape on screen cannot drift from the shape that hits. The fan itself
+is built by `GroundShapes`, which is also what the aim indicator uses — the fan you sighted
+down and the fan that went off are one mesh builder called twice, not two pieces of
+trigonometry that happen to agree. It is a child
 of each fighter, which is why nothing pools it: there is one per wizard, it is already where
 the caster is, and a fighter's body never rotates — only its `Visual` does — so a local yaw is
 a world yaw.
@@ -512,10 +526,62 @@ The harness asserts reuse rather than growth — six casts leave `total_count()`
 
 ### Aim
 
-`InputCommand.aim_dir` currently mirrors `move_dir`: you cast where you are heading, and a
-caster with no aim falls back to its own facing. Drag-to-aim will fill those two fields from a
-second thumb and **nothing downstream changes**, because the character already reads the field
-rather than asking how it was produced. That is the whole reason it is a separate field.
+**Press a spell button, drag to aim, lift to cast.** The prediction written here before it was
+built held exactly: `InputCommand.aim_dir` gained a second source and **nothing downstream
+changed**, because the character already read the field rather than asking how it was produced.
+
+Three things can fill the aim, and `PlayerInputController._publish_aim()` picks between them in
+this order:
+
+1. **A live drag.** A finger is on a spell button and has passed the deadzone.
+2. **The aim latched with a released cast**, until the cast is consumed. See below.
+3. **`move_dir`.** You cast where you are heading — which is all a tap has ever done.
+
+The deadzone (`aim_deadzone`, 28 canvas units) lives in the controller, not in the button, for
+the same reason the stick's does. The drag is measured from **where the finger landed**, not
+from the button's centre: a thumb lands wherever it lands, and measuring from the centre folds
+that landing error into every shot.
+
+#### The aim is latched WITH the cast
+
+This is the part that needed care. The finger lifts during an input flush; the character
+consumes the cast on the next physics tick; `_process` runs at render rate in between and would
+overwrite `aim_dir` with wherever the player is walking. The spell then leaves in a direction
+nobody chose — rarely, and only when the two clocks line up, which on a desktop is roughly
+never and on a loaded phone is often.
+
+So `end_aim()` stores the direction **in world space** alongside the latched slot, and
+`consume_ability()` releases both together. `player.gd` also reads the aim *before* consuming
+the slot rather than after, so the correctness does not depend on the order the controller
+happens to clear things in. `--aim-test` asserts it directly: aim forward, walk right, lift,
+and check which one the spell believed.
+
+#### The indicators
+
+`vfx/aim_indicator.gd` is a child of every fighter and is shown for the human only. Each cast
+type draws its own shape, built by `GroundShapes` from the ability's own numbers:
+
+| Cast type | Drawn | Reach |
+|---|---|---|
+| `PROJECTILE` | a lane, starting at `spawn_offset` | `speed x lifetime`, **trimmed at the rim** |
+| `CONE` | the fan, at the spell's own half-angle | `area`, never trimmed |
+| `DASH` | a line to a ring on the landing spot | the **clamped** landing distance |
+| `BUFF` | a ring around the caster | none — it has no direction to give |
+
+Two of those are decisions rather than drawings:
+
+- **The lane stops at the arena rim.** Fireball flies 21.6m and the arena is 14m across, so an
+  honest lane is a stripe over a void where there is nothing left to hit.
+- **The fan is NOT trimmed**, because a wave cast at the edge really does catch someone hanging
+  over it. Shortening it would be a lie about who gets hit.
+- **The dash line ends where the dash ends.** `main.gd._blink_landing()` answers that question
+  once and both the preview and the cast ask it, so the line cannot promise a landing spot the
+  spell then refuses. `--aim-test` measures the drawn length and the travelled distance and
+  requires them equal.
+
+The level drives the indicator every rendered frame, rather than on a signal, because the thing
+being previewed moves: you walk while you aim. It is driven by `main.gd` and not by the fighter
+for the same reason Blink is clamped there — the arena's size is the level's knowledge.
 
 ### Casting is latched, not sampled
 
@@ -685,6 +751,8 @@ argument-gated harness. Everything after a bare `--` reaches `OS.get_cmdline_use
 | `--bot-skill:S` | `calm`, `steady` or `sharp`, to play a different difficulty |
 | `--spells-test` | Asserts Force Wave, Blink and Arcane Shield do what they claim |
 | `--button-test` | Asserts a finger on button N casts spell N and nothing else |
+| `--aim-test` | Asserts drag-to-aim: the indicator, the direction, the latch, and the dash clamp |
+| `--aim-hold:S,X,Y` | Holds a drag on button S toward X,Y and never lifts, so a shot catches the indicator |
 
 **None of these may be run with `--headless`.** `--shot` needs real rendering, and the input
 tests need a real window: the headless display driver does not route injected
@@ -746,6 +814,11 @@ Each of these cost real time in the first session.
   rate: the spell had crossed the arena and the cooldown had visibly drained before anything
   was read. Measured here at fraction 0.70 where the assertion wanted 0.85, reproducing on the
   commit before the bot existed. Wait on `physics_frame` for anything that is gameplay state.
+- **A latched input needs everything it will be acted on with, latched with it.** The cast
+  slot was held across the gap between the lift and the physics tick, and the aim was not —
+  so `_process` could overwrite the direction in between and the spell left sideways. It
+  reproduces on a slow renderer and never on a fast one, which is the worst shape a bug can
+  have. Latch the whole decision, and release it in one place.
 - **A wrong facing formula passes every numeric test.** Godot yaw 0 faces -Z, and yaw `a`
   faces `(-sin a, 0, -cos a)`; solving that for a travel direction needs `atan2(-x, -z)`.
   Dropping both signs aims the wizard exactly backwards, and position/velocity traces look

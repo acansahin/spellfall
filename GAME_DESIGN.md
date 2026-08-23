@@ -87,11 +87,12 @@ Landscape only. Designed for thumbs, tested with a keyboard.
 
 - **Left thumb — movement.** Virtual joystick with a deadzone and configurable sensitivity.
 - **Right thumb — four spells.** A cluster of four buttons: the primary in the corner, three
-  smaller ones fanned along the arc a thumb sweeps. Tap to cast where you are heading — built.
-  **Press, drag to aim, release to fire**, with an indicator showing direction, cone or range,
-  is _(planned)_ and is the next step after this one.
-- **Desktop (development only).** WASD or arrow keys to move. Mouse aiming arrives with the
-  first ability.
+  smaller ones fanned along the arc a thumb sweeps. **Press, drag to aim, lift to cast**, with
+  an indicator on the ground showing the lane, the fan or the landing spot — built. A tap with
+  no drag still casts, where you are heading, which is what tapping always did.
+- **Desktop (development only).** WASD or arrow keys to move. The number row and Space cast
+  instantly, where you are heading; a mouse drives the buttons through touch emulation, so
+  drag-to-aim can be played with a mouse on a dev build.
 
 The layout is our own. It follows general mobile-action conventions — movement left, actions
 bottom-right, aim by dragging — because those are conventions, but no other game's specific

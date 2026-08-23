@@ -22,6 +22,15 @@ signal command_updated(command: InputCommand)
 ## Scales how far the joystick must travel to reach full speed.
 @export_range(0.1, 2.0, 0.05) var touch_sensitivity := 1.0
 
+## How far a thumb must drag off a spell button, in canvas units, before it counts as aiming
+## rather than as a tap. Below this the cast falls back to where you are heading, which is
+## exactly what tapping did before drag-to-aim existed.
+##
+## Measured against the button's own grab room: a finger resting on a 72-unit button rolls a
+## good 15 units without the player meaning anything by it. 28 clears that and still lands
+## well inside the button, so a deliberate aim never has to leave it.
+@export var aim_deadzone := 28.0
+
 ## The live command. Read this, don't cache it — it is refreshed in place each frame.
 var command := InputCommand.new()
 
@@ -31,6 +40,23 @@ var _pending_ability := -1
 var _override_vector := Vector2.ZERO
 var _override_active := false
 
+## The slot a finger is currently holding, and where that finger has dragged to. Screen
+## space, y-up, already past the deadzone - `_aim_vector` stays zero while the drag is still
+## inside it, which is what makes a tap a tap.
+var _aim_slot := -1
+var _aim_vector := Vector2.ZERO
+
+## The aim a released cast was fired with, WORLD space, held until the cast is consumed.
+##
+## This is the whole reason drag-to-aim needed care rather than a signal. The finger lifts
+## during an input flush; the character consumes the cast on the next physics tick; in
+## between, `_process` runs and would overwrite `aim_dir` with wherever the player happened
+## to be walking. The spell would then come out in a direction the player never chose, and
+## only when the two clocks lined up a certain way - which is the kind of bug that shows up
+## once in twenty casts and gets blamed on the touchscreen.
+var _latched_aim := Vector2.ZERO
+var _latched_has_aim := false
+
 
 func _process(_delta: float) -> void:
 	_poll_ability_keys()
@@ -38,12 +64,29 @@ func _process(_delta: float) -> void:
 	var world := _screen_to_world(raw)
 	command.move_dir = world
 	command.has_move_input = world.length_squared() > 0.0
-	# Aim mirrors movement for now - you cast where you are heading. When drag-to-aim lands
-	# it fills these two fields from a second thumb and nothing downstream moves.
-	command.aim_dir = world
-	command.has_aim = command.has_move_input
+	_publish_aim(world)
+	command.aiming_slot = _aim_slot
 	command.ability_pressed = _pending_ability
 	command_updated.emit(command)
+
+
+## Decides which of the three things speaking gets to fill the aim, in priority order.
+##
+## A live drag wins: the thumb is pointing right now. Failing that, a cast already released
+## but not yet consumed keeps the direction it was fired with, so the tick that casts it
+## cannot be handed a stale walking direction instead. Failing both, aim mirrors movement,
+## which is what tapping has always done.
+func _publish_aim(world_move: Vector2) -> void:
+	if _aim_slot != -1 and _aim_vector != Vector2.ZERO:
+		command.aim_dir = _screen_to_world(_aim_vector)
+		command.has_aim = true
+		return
+	if _latched_has_aim:
+		command.aim_dir = _latched_aim
+		command.has_aim = true
+		return
+	command.aim_dir = world_move
+	command.has_aim = command.has_move_input
 
 
 ## Desktop casting. The touch buttons call `request_ability()` directly, so this is only the
@@ -74,12 +117,87 @@ func request_ability(slot: int) -> void:
 	_pending_ability = slot
 
 
+## A finger landed on a spell button. Nothing is cast yet - this only opens the aim.
+##
+## Press used to cast outright, and deliberately so: waiting for a lift adds latency in a
+## game where a dodge is a third of a second. Aiming is worth paying that for. A thumb has no
+## other way to say WHERE, and a spell aimed where you meant it beats the same spell fired
+## 60ms sooner at where you happened to be walking. A tap still casts - it just casts on the
+## lift - so the only thing lost is firing without seeing the aim.
+func begin_aim(slot: int) -> void:
+	_aim_slot = slot
+	_aim_vector = Vector2.ZERO
+
+
+## The finger moved. `vector` is screen space, y-UP (the TouchStick convention), measured
+## from where the finger LANDED rather than from the button's centre, so a player can start
+## the drag anywhere on the button and still aim from under their own thumb.
+##
+## The deadzone is applied here rather than in the button for the same reason the stick's
+## lives here: the widget reports honestly where the thumb is, and the gameplay layer decides
+## how much of that it believes.
+func update_aim(slot: int, vector: Vector2) -> void:
+	if slot != _aim_slot:
+		return
+	if vector.length() < aim_deadzone:
+		_aim_vector = Vector2.ZERO
+		return
+	_aim_vector = vector.normalized()
+
+
+## The finger lifted: latch the cast, and latch the aim with it.
+##
+## Both together, always. Latching the slot without the direction is the bug written up on
+## `_latched_aim` above.
+func end_aim(slot: int) -> void:
+	if slot != _aim_slot:
+		return
+	if _aim_vector != Vector2.ZERO:
+		_latched_aim = _screen_to_world(_aim_vector)
+		_latched_has_aim = true
+		# Write it through immediately as well. The physics tick that consumes this cast may
+		# land before the next _process, and a cast must not depend on which of the two
+		# happened to run first.
+		command.aim_dir = _latched_aim
+		command.has_aim = true
+	_aim_slot = -1
+	_aim_vector = Vector2.ZERO
+	command.aiming_slot = -1
+	request_ability(slot)
+
+
+## Drops an aim without casting. Nothing calls this yet; it is the seam a drag-back-to-cancel
+## gesture would use, and it exists so that gesture is a button change rather than a rewrite.
+func cancel_aim() -> void:
+	_aim_slot = -1
+	_aim_vector = Vector2.ZERO
+	command.aiming_slot = -1
+
+
+## The slot being aimed, or -1. For the indicator, for the button, and for the harness.
+func aiming_slot() -> int:
+	return _aim_slot
+
+
+## Where the live drag is pointing, screen space and y-up, or zero. Only the harness and the
+## button's own nub want this; gameplay reads `command.aim_dir`, which is in world space.
+func aim_vector() -> Vector2:
+	return _aim_vector
+
+
 ## Takes the pending request and clears it, so one press produces exactly one cast. A
 ## character calls this from _physics_process; anything that only wants to look should read
 ## `command.ability_pressed` instead.
+##
+## Consuming the cast also releases the aim latched with it: that direction was held only to
+## survive the gap between the lift and this tick, and holding it any longer would pin the
+## wizard's facing to the last thing they cast.
 func consume_ability() -> int:
 	var slot := _pending_ability
 	_pending_ability = -1
+	if slot >= 0:
+		_latched_has_aim = false
+		_latched_aim = Vector2.ZERO
 	return slot
 
 

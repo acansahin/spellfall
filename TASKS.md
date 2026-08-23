@@ -148,13 +148,46 @@ whether three spells that share nothing with Fireball could be added without tou
 - [x] Harness: `--spells-test` (21 assertions), `--button-test` (14), `--cast-at:N,S`
 - [x] Photographed the fan and the shield bubble rather than trusting the numbers
 
-## Session 8 — Game feel
+## Session 8 — Drag-to-aim and the indicators ✅
+
+ROADMAP step 8. The seam was written for this in Session 1: `InputCommand.aim_dir` existed as
+a separate field precisely so a second source could fill it. The test of that was whether
+aiming could land without a single line changing downstream of the input controller.
+
+- [x] `AbilityButton` becomes press-drag-lift: it reports `aim_started`, `aim_moved` and
+      `cast_released`, and still casts nothing itself
+- [x] The cast moves from the press to the **lift**, reversing a Session 3 decision on
+      purpose — a thumb has no other way to say *where*, and that is worth the latency
+- [x] Deadzone in `PlayerInputController`, not in the button, matching the stick
+- [x] The drag is measured from where the finger LANDED, not from the button's centre
+- [x] The button holds its finger after it slides off the disc — dragging away is the gesture
+- [x] **The aim is latched WITH the cast** and released with it, so a `_process` between the
+      lift and the physics tick cannot overwrite the direction the spell goes out with
+- [x] `player.gd` reads the aim before consuming the slot, so nothing depends on the order the
+      controller clears things in
+- [x] `AimIndicator` on every fighter, shown for the human: lane, fan, dash line and ring,
+      self ring — one per cast type, all from the ability's own numbers
+- [x] `GroundShapes` — one fan builder for the indicator AND for `SpellFlash`, so the shape
+      you sight down is the shape that goes off
+- [x] `Ability.effective_range()` — range asked once, whatever kind of spell is asking
+- [x] `main.gd._blink_landing()` shared by the cast and the preview, so the line cannot
+      promise a landing spot the spell refuses
+- [x] The projectile lane is trimmed at the arena rim; the fan deliberately is not
+- [x] An aim nub on the button itself, so the thumb doing the aiming can be seen doing it
+- [x] Harness: `--aim-test` (23 assertions), `--aim-hold:S,X,Y`
+- [x] Photographed all three shapes rather than trusting the meshes
+- [x] Re-ran all nine existing suites; `--twothumb-test` updated for cast-on-lift
+
+## Session 9 — Game feel
+
+ROADMAP step 11, and the last thing before the Phase 1 gate.
 
 - [ ] Hit particles, impact audio, brief hit pause
 - [ ] Small camera shake on heavy knockback
 - [ ] Haptics on cast, heavy hit, elimination
 - [ ] Round start and victory audio
 - [ ] Readability check: nothing hides a projectile
+- [ ] A trail or afterimage on Blink, which still has no visual at all
 
 ---
 
@@ -190,7 +223,18 @@ Small things deliberately left, so they do not get silently forgotten.
       is the shipping decision recorded in GAME_DESIGN.md, not an oversight.
 - [ ] The bot spends Shield on a plain instability threshold. It has no idea whether a hit is
       actually coming, which is the difference between a read and a habit.
-- [ ] Nothing shows the player where a spell will land before they cast it. That is step 8.
+- [ ] Casting on the lift adds the press-to-lift duration to every cast. Correct for aiming,
+      and it is a real cost. If it ever feels sluggish the dial is a quick-cast setting, not a
+      return to casting on the press.
+- [ ] There is no way to cancel an aim once started - lifting always casts.
+      `PlayerInputController.cancel_aim()` exists and nothing calls it; a drag back onto the
+      button, or into a cancel zone, is the obvious gesture and is a button change away.
+- [ ] The indicator does not say whether the spell is READY. The button's cooldown wedge does,
+      and the button is under a thumb. Watch for players sighting down a lane that cannot fire.
+- [ ] The projectile lane stops at the rim, so aiming at someone already knocked over the void
+      draws a line that stops short of them. The direction is still right.
+- [ ] Keyboard casts are still instant and preview nothing. Desktop aiming works only through
+      mouse-to-touch emulation on the buttons.
 - [ ] No round timer. A stalemate where nobody attacks currently lasts forever.
 - [ ] The winner banner conjugates "YOU" as a special case in `main.gd`. Fine while the
       level owns both titles; revisit if titles ever come from elsewhere.

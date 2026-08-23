@@ -1,11 +1,11 @@
 class_name AbilityButton
 extends Control
 
-## A round spell button for the right thumb.
+## A round spell button for the right thumb. Press it, drag to aim, lift to cast.
 ##
-## Same deal as TouchStick: it reports a press and draws a state. It never casts anything,
-## never touches a cooldown, and never decides whether a cast is allowed - it emits
-## `pressed_slot` and the level turns that into a request. If this script ever calls
+## Same deal as TouchStick: it reports where a finger is and draws a state. It never casts
+## anything, never touches a cooldown, and never decides whether a cast is allowed - it emits
+## what the thumb did and the level turns that into a request. If this script ever calls
 ## `try_cast`, the input pipeline has been bypassed and touch has stopped behaving like the
 ## keyboard.
 ##
@@ -14,13 +14,26 @@ extends Control
 ## is holding gameplay state here, or writing to it.
 ##
 ## TOUCH OWNERSHIP works exactly as it does on the stick - one claimed index, foreign fingers
-## ignored and never consumed. That is what lets a thumb hold the stick while another taps
-## this, which is the entire point of building them the same way.
+## ignored and never consumed. That is what lets a thumb hold the stick while another drags
+## this one, which is the entire point of building them the same way.
+##
+## The AIM DEADZONE is not here. It lives in PlayerInputController, for the reason written on
+## TouchStick: this widget reports honestly where the thumb went, and the gameplay layer
+## decides how much of that it believes. So the nub below can sit slightly off-centre while
+## the cast is still going to come out as a tap - exactly as the stick's thumb leaves its
+## centre before the wizard starts moving.
 
-## Emitted the moment a finger lands on the button. Press, not release: in a game where a
-## dodge is a third of a second, waiting for the lift adds latency the player feels and
-## cannot explain.
-signal pressed_slot(slot: int)
+## A finger landed. The player is now aiming this slot; nothing has been cast.
+signal aim_started(slot: int)
+
+## The finger moved. `vector` is measured from where the finger LANDED, in canvas units, with
+## y pointing UP the screen - the TouchStick convention, so both controls speak one language.
+## Not normalised and not clamped: the length is real, and downstream decides what counts.
+signal aim_moved(slot: int, vector: Vector2)
+
+## The finger lifted. THIS is the cast. See PlayerInputController.begin_aim for why the cast
+## moved off the press and onto the lift.
+signal cast_released(slot: int)
 
 ## Which slot in the AbilityComponent this button drives.
 @export var slot: int = 0
@@ -40,6 +53,9 @@ signal pressed_slot(slot: int)
 @export var idle_ring := Color(1, 1, 1, 0.45)
 @export var cooldown_veil := Color(0, 0, 0, 0.55)
 @export var press_flash := Color(1, 1, 1, 0.22)
+## The little marker that follows the drag, so the player can see the aim they are giving
+## without looking away from their wizard.
+@export var aim_nub := Color(1, 1, 1, 0.85)
 
 ## Read-only view of the caster's spellbook, assigned by the level. Null is fine - the
 ## button then draws itself as an empty slot rather than crashing.
@@ -49,6 +65,15 @@ var source: AbilityComponent = null:
 		queue_redraw()
 
 var _touch_index := -1
+
+## Where the claiming finger first touched, in global canvas space. The aim is measured from
+## HERE and not from the button's centre: a thumb lands wherever it lands, and measuring from
+## the centre would fold that landing error into every shot.
+var _press_at := Vector2.ZERO
+
+## Live drag offset, y-up, in canvas units. Zero until the finger moves.
+var _drag := Vector2.ZERO
+
 var _centre := Vector2.ZERO
 var _last_fraction := -1.0
 
@@ -85,22 +110,44 @@ func _input(event: InputEvent) -> void:
 	if event is InputEventScreenTouch:
 		_handle_touch(event)
 	elif event is InputEventScreenDrag and event.index == _touch_index:
-		# Own the drag so a finger sliding off the button is not handed to anything else,
-		# but there is nothing to update - this is a button, not a stick.
-		get_viewport().set_input_as_handled()
+		_handle_drag(event)
 
 
 func _handle_touch(event: InputEventScreenTouch) -> void:
 	if event.pressed:
 		if _touch_index == -1 and _claims(event.position):
 			_touch_index = event.index
-			pressed_slot.emit(slot)
+			_press_at = event.position
+			_drag = Vector2.ZERO
+			aim_started.emit(slot)
 			queue_redraw()
 			get_viewport().set_input_as_handled()
 	elif event.index == _touch_index:
+		# A lift carries a position of its own, and on a real device it usually differs from
+		# the last drag. Use it, so a fast flick that ends between drag events still aims
+		# where it actually ended.
+		_track(event.position)
+		cast_released.emit(slot)
 		_touch_index = -1
+		_drag = Vector2.ZERO
 		queue_redraw()
 		get_viewport().set_input_as_handled()
+
+
+## Own the drag: a finger that slid off the button is still aiming this spell, and must not
+## be handed to anything underneath. The button deliberately does NOT let go when the finger
+## leaves its disc - dragging away is the gesture, not a mistake.
+func _handle_drag(event: InputEventScreenDrag) -> void:
+	_track(event.position)
+	get_viewport().set_input_as_handled()
+
+
+func _track(global_pos: Vector2) -> void:
+	var offset := global_pos - _press_at
+	# Screen y grows downward; both touch controls report y-up. Flip here, once.
+	_drag = Vector2(offset.x, -offset.y)
+	aim_moved.emit(slot, _drag)
+	queue_redraw()
 
 
 ## True if `point` lands on this button.
@@ -129,6 +176,11 @@ func touch_index() -> int:
 	return _touch_index
 
 
+## The live drag, y-up, in canvas units. For the harness.
+func aim_drag() -> Vector2:
+	return _drag
+
+
 func _draw() -> void:
 	var ability: Ability = source.ability_in(slot) if source != null else null
 	var tint := ability.colour if ability != null else Color(0.5, 0.5, 0.5)
@@ -141,6 +193,9 @@ func _draw() -> void:
 	var fraction := _fraction()
 	if fraction > 0.0:
 		_draw_cooldown_wedge(fraction)
+
+	if _touch_index != -1 and _drag.length_squared() > 1.0:
+		_draw_aim_nub()
 
 
 ## Darkens the slice of the button still on cooldown, unwinding clockwise from the top.
@@ -158,3 +213,16 @@ func _draw_cooldown_wedge(fraction: float) -> void:
 	var end_angle := start + TAU * fraction
 	var segments := maxi(6, int(48.0 * fraction))
 	draw_arc(_centre, radius * 0.5, start, end_angle, segments, cooldown_veil, radius, false)
+
+
+## A short line and a dot showing which way the thumb is dragging.
+##
+## Small, and kept inside the button on purpose. The REAL aim feedback is the indicator on
+## the ground, which is where the player is already looking; this is here only so the finger
+## doing the aiming can be seen doing it, under a thumb that is covering the button anyway.
+func _draw_aim_nub() -> void:
+	# Screen space again: the drag is y-up, the canvas is y-down.
+	var dir := Vector2(_drag.x, -_drag.y).normalized()
+	var tip := _centre + dir * (radius * 0.72)
+	draw_line(_centre, tip, aim_nub, 4.0, true)
+	draw_circle(tip, 9.0, aim_nub)

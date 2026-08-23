@@ -1,4 +1,4 @@
-[gd_scene load_steps=17 format=3]
+[gd_scene load_steps=18 format=3]
 
 [ext_resource type="Script" path="res://characters/player/player.gd" id="1_player"]
 [ext_resource type="Script" path="res://combat/abilities/ability_component.gd" id="2_abilities"]
@@ -9,6 +9,7 @@
 [ext_resource type="Resource" path="res://data/abilities/blink.tres" id="7_blink"]
 [ext_resource type="Resource" path="res://data/abilities/arcane_shield.tres" id="8_shield"]
 [ext_resource type="Script" path="res://vfx/spell_flash.gd" id="9_flash"]
+[ext_resource type="Script" path="res://vfx/aim_indicator.gd" id="10_aim"]
 
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_body"]
 radius = 0.5
@@ -75,6 +76,14 @@ surface_material_override/0 = SubResource("Mat_shield")
 [node name="SpellFlash" type="MeshInstance3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.94, 0)
 script = ExtResource("9_flash")
+
+[node name="AimIndicator" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.92, 0)
+script = ExtResource("10_aim")
+
+[node name="Shape" type="MeshInstance3D" parent="AimIndicator"]
+
+[node name="Marker" type="MeshInstance3D" parent="AimIndicator"]
 
 [node name="Abilities" type="Node" parent="."]
 script = ExtResource("2_abilities")

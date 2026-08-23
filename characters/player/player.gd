@@ -109,6 +109,7 @@ var _eliminated := false
 ## Optional, like the spellbook. A fighter without these simply shows nothing.
 @onready var _shield_visual: Node3D = get_node_or_null(^"Visual/Shield") as Node3D
 @onready var _flash: SpellFlash = get_node_or_null(^"SpellFlash") as SpellFlash
+@onready var _aim: AimIndicator = get_node_or_null(^"AimIndicator") as AimIndicator
 
 ## Optional: a wizard without a spellbook simply never casts, which is what a training
 ## dummy or a not-yet-armed character wants.
@@ -220,16 +221,20 @@ func respawn_at(point: Vector3) -> void:
 ## Turns a latched ability request into a cast. Casting is deliberately AFTER movement and
 ## facing: a spell fired on the same tick you changed direction should come out of where the
 ## wizard now is and where they now point, not where they were.
+##
+## The aim is read BEFORE the slot is consumed, not after. Consuming releases the aim that
+## was latched with the cast, and reading the two in the wrong order would work today only
+## because of exactly how the controller happens to clear it.
 func _service_casting() -> void:
 	if input_controller == null or _abilities == null or not accepts_input:
-		return
-	var slot := input_controller.consume_ability()
-	if slot < 0:
 		return
 	var command := input_controller.command
 	var aim := Vector3.ZERO
 	if command.has_aim:
 		aim = Vector3(command.aim_dir.x, 0.0, command.aim_dir.y)
+	var slot := input_controller.consume_ability()
+	if slot < 0:
+		return
 	# A zero aim means "no direction given"; AbilityComponent falls back to facing.
 	_abilities.try_cast(slot, aim)
 
@@ -303,6 +308,13 @@ func blink_to(point: Vector3) -> void:
 ## business knowing which spells exist.
 func spell_flash() -> SpellFlash:
 	return _flash
+
+
+## The fighter's aim indicator, or null. Driven by the level for the same reason as the flash,
+## and for one more: a dash's preview stops at the arena rim, and only the level knows where
+## that is. Every fighter carries one; only the human's is ever shown.
+func aim_indicator() -> AimIndicator:
+	return _aim
 
 
 func _decay_knockback(delta: float) -> void:

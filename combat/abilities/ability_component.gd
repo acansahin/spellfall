@@ -74,7 +74,7 @@ func try_cast(slot: int, direction: Vector3 = Vector3.ZERO) -> bool:
 	var ability := abilities[slot]
 	var aim := direction
 	if aim.length_squared() < 0.0001:
-		aim = _caster_facing()
+		aim = caster_facing()
 	aim = aim.normalized()
 
 	_cooldowns[slot] = ability.cooldown
@@ -86,7 +86,11 @@ func try_cast(slot: int, direction: Vector3 = Vector3.ZERO) -> bool:
 
 ## Where the caster is looking, on the ground plane. Falls back to world -Z so a cast can
 ## never produce a zero-length direction.
-func _caster_facing() -> Vector3:
+##
+## Public because the aim indicator has to draw the direction an un-aimed cast would take,
+## and the only honest way to draw it is to ask the thing that decides it. A second copy of
+## this in the drawing code would put a line on the ground that the spell did not follow.
+func caster_facing() -> Vector3:
 	var visual := _caster.get_node_or_null(^"Visual") as Node3D
 	var yaw: float = visual.rotation.y if visual != null else _caster.rotation.y
 	# Godot yaw 0 faces -Z, and yaw `a` faces (-sin a, 0, -cos a). Same convention as

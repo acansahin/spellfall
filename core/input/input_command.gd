@@ -20,15 +20,22 @@ var has_move_input := false
 
 ## Where the player wants to aim, same world-space convention as `move_dir`.
 ##
-## Today this simply mirrors `move_dir` - you cast where you are heading. Drag-to-aim will
-## fill it from a second thumb instead, and NOTHING downstream changes when it does: the
-## character already reads this field rather than asking how it was produced. That is the
-## entire reason it exists as a separate field instead of the caster reading `move_dir`.
+## Filled by whichever of three things is currently speaking: a finger dragging off a spell
+## button, the latched aim of a cast that has been released but not yet consumed, or - when
+## neither is happening - `move_dir`, so you still cast where you are heading. The character
+## reads this field and never asks which of the three produced it, which is why drag-to-aim
+## landed without a single line changing downstream of here.
 var aim_dir := Vector2.ZERO
 
 ## False when no aim was given, in which case a caster should use its own facing rather than
 ## firing at whatever direction happened to be left over.
 var has_aim := false
+
+## Slot the player is currently AIMING - a finger is down on its button and has not lifted -
+## or -1. Distinct from `ability_pressed`, which is a cast that has already been asked for:
+## this one is "a spell is being pointed", which is what the aim indicator draws and what
+## the button draws its nub for. Nothing casts from this field.
+var aiming_slot := -1
 
 ## Ability slot the player asked for, or -1.
 ##

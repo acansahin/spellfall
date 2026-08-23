@@ -19,9 +19,6 @@ extends MeshInstance3D
 ## Alpha at full brightness, before the fade.
 @export var peak_alpha := 0.55
 
-## Straightness of the arc. Sixteen segments is smooth at this size and costs nothing.
-const SEGMENTS := 16
-
 var _life := 0.0
 var _built_reach := -1.0
 var _built_angle := -1.0
@@ -29,12 +26,8 @@ var _material: StandardMaterial3D = null
 
 
 func _ready() -> void:
-	_material = StandardMaterial3D.new()
-	# Unshaded: this is light, not a surface, and it must read the same wherever the key
-	# light happens to be pointing.
-	_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	# Unshaded, two-sided and translucent, for the reasons written on GroundShapes itself.
+	_material = GroundShapes.flat_material(Color(1, 1, 1), peak_alpha)
 	material_override = _material
 	visible = false
 	set_process(false)
@@ -69,29 +62,13 @@ func _process(delta: float) -> void:
 ## Builds the fan mesh, and only when its shape actually changed. A spell's numbers do not
 ## move at runtime, so in practice this runs once per wizard per spell shape and never again
 ## - which is the point, because building an ArrayMesh mid-fight is an allocation.
+##
+## The fan itself comes from GroundShapes, which is the SAME builder the aim indicator uses.
+## What you sighted down and what went off are one shape by construction, not by two pieces
+## of trigonometry that happen to agree today.
 func _rebuild(reach: float, half_angle_deg: float) -> void:
 	if is_equal_approx(reach, _built_reach) and is_equal_approx(half_angle_deg, _built_angle):
 		return
 	_built_reach = reach
 	_built_angle = half_angle_deg
-	var half := deg_to_rad(half_angle_deg)
-
-	var verts := PackedVector3Array()
-	verts.append(Vector3.ZERO)
-	for i in SEGMENTS + 1:
-		var a := lerpf(-half, half, float(i) / float(SEGMENTS))
-		verts.append(Vector3(-sin(a), 0.0, -cos(a)) * reach)
-
-	var indices := PackedInt32Array()
-	for i in SEGMENTS:
-		indices.append(0)
-		indices.append(i + 1)
-		indices.append(i + 2)
-
-	var arrays := []
-	arrays.resize(Mesh.ARRAY_MAX)
-	arrays[Mesh.ARRAY_VERTEX] = verts
-	arrays[Mesh.ARRAY_INDEX] = indices
-	var built := ArrayMesh.new()
-	built.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
-	mesh = built
+	mesh = GroundShapes.fan(reach, half_angle_deg)

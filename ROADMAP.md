@@ -3,8 +3,7 @@
 Phases are gated, not scheduled. **A phase does not start until the one before it is
 genuinely done**, and Phase 1 is judged by whether the game is fun, not by a checklist.
 
-Current position: **Phase 1, steps 1-7, 9 and 10 of 11 complete.** Left: drag-to-aim (#8)
-and the game-feel pass (#11).
+Current position: **Phase 1, steps 1-10 of 11 complete.** Left: the game-feel pass (#11).
 
 ---
 
@@ -22,10 +21,10 @@ progression, no shop, no cosmetics. If that rule gets bent, the project is off t
 | 5 | Knockback system, wired to instability | **done** |
 | 6 | Fall detection and elimination | **done** |
 | 7 | Force Wave, Blink, Arcane Shield | **done** |
-| 8 | Drag-to-aim + aim indicators | next |
+| 8 | Drag-to-aim + aim indicators | **done** |
 | 9 | Round manager: countdown, spawn, win, reset, score | **done** (landed early with #6) |
 | 10 | One simple bot opponent | **done** |
-| 11 | Game feel pass: hit pause, camera shake, particles, audio, haptics | |
+| 11 | Game feel pass: hit pause, camera shake, particles, audio, haptics | next |
 
 **Gate to Phase 2:** every question in `GAME_DESIGN.md` under "What Phase 1 must prove"
 answers yes. Specifically — movement feels good, aiming feels good on a touchscreen,

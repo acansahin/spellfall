@@ -22,6 +22,8 @@ extends Node3D
 ##   --bot-skill:S     play against calm|steady|sharp instead of the scene's setting
 ##   --spells-test     assert Force Wave, Blink and Arcane Shield do what they claim
 ##   --button-test     assert a finger on button N casts spell N and nothing else
+##   --aim-test        assert drag-to-aim: the indicator, the direction, and the latch
+##   --aim-hold:S,X,Y  hold a drag on button S toward X,Y and never lift, for a screenshot
 ##   --cast-at:N[,S]   cast spell S (default 0) N seconds in, so a delayed shot catches it
 ## Screenshots need real rendering, so DO NOT pass --headless with --shot.
 ## The two input tests ALSO need a real window: the headless display driver does not
@@ -59,6 +61,14 @@ var _arena_edge := 7.0
 ## rather than on its lip, where the next breath of knockback removes you anyway.
 const BLINK_EDGE_MARGIN := 0.6
 
+## The direction the last cast actually went out with, and which spell it was.
+##
+## Recorded for the harness alone. "Did it cast?" is easy to assert and answers half the
+## question; drag-to-aim needs the other half - that the spell left along the line the thumb
+## drew - and this is the one place every cast type passes through on its way to happening.
+var _last_cast_dir := Vector3.ZERO
+var _last_cast_id: StringName = &""
+
 
 func _ready() -> void:
 	# The character is handed its input source rather than reaching out for one, so a bot
@@ -90,6 +100,7 @@ func _ready() -> void:
 func _process(_delta: float) -> void:
 	if Input.is_action_just_pressed("debug_respawn"):
 		_rounds.begin_round()
+	_update_aim_indicator()
 
 
 ## The platform's radius, read off the arena's own collision shape rather than typed in a
@@ -155,6 +166,14 @@ func _parse_harness_args() -> void:
 			_run_spell_tests()
 		elif arg == "--button-test":
 			_run_button_tests()
+		elif arg == "--aim-test":
+			_run_aim_tests()
+		elif arg.begins_with("--aim-hold:"):
+			# "--aim-hold:0,1,0" aims spell 0 to screen-right. Eleven characters in the
+			# prefix, counted rather than guessed - see ARCHITECTURE.md on --cast-at.
+			var held := arg.substr(11).split(",")
+			if held.size() == 3:
+				_hold_aim(int(held[0]), Vector2(float(held[1]), float(held[2])))
 		elif arg == "--layout-probe":
 			_probe_layout()
 		elif arg.begins_with("--cast-at:"):
@@ -502,13 +521,21 @@ func _wire_combat() -> void:
 	# next tick. Touch therefore takes the same route as the number keys, which is what stops
 	# the two drifting apart - and it is why four buttons needed no new plumbing at all.
 	for button in _mobile.buttons:
-		button.pressed_slot.connect(_input.request_ability)
+		# Press, drag, lift. The button says what the thumb did; the controller decides what
+		# that means and latches the cast, exactly as the stick's vector is given meaning by
+		# a single line up here rather than inside either node.
+		button.aim_started.connect(_input.begin_aim)
+		button.aim_moved.connect(_input.update_aim)
+		button.cast_released.connect(_input.end_aim)
 		# Read-only, for drawing the cooldown wedge and the spell's colour. The buttons belong
 		# to the human, so they watch the human's spellbook.
 		button.source = _player.abilities()
 
 
 func _on_cast_requested(ability: Ability, origin: Vector3, direction: Vector3, caster: Node3D) -> void:
+	if caster == _player:
+		_last_cast_dir = direction
+		_last_cast_id = ability.id
 	match ability.cast_type:
 		Ability.CastType.PROJECTILE:
 			_pool.fire(ability, origin, direction, caster)
@@ -561,12 +588,21 @@ func _cast_dash(ability: Ability, direction: Vector3, caster: Node3D) -> void:
 	var fighter := caster as Player
 	if fighter == null:
 		return
+	fighter.blink_to(_blink_landing(fighter, direction, ability))
+
+
+## Where a dash from `fighter` along `direction` would put them, clamped to the arena.
+##
+## Pulled out of the cast so the AIM INDICATOR can ask the same question. A preview that drew
+## the unclamped distance would promise a landing spot the cast then refuses to use, and the
+## player would learn to distrust the only thing telling them where they are about to be.
+func _blink_landing(fighter: Player, direction: Vector3, ability: Ability) -> Vector3:
 	var landing := fighter.global_position + direction.normalized() * ability.dash_distance
 	var flat := Vector2(landing.x, landing.z)
 	var limit := maxf(_arena_edge - BLINK_EDGE_MARGIN, 0.5)
 	if flat.length() > limit:
 		flat = flat.normalized() * limit
-	fighter.blink_to(Vector3(flat.x, fighter.global_position.y, flat.y))
+	return Vector3(flat.x, fighter.global_position.y, flat.y)
 
 
 ## Arcane Shield. Reduction rather than blocking - see GAME_DESIGN.md for why blocking is the
@@ -605,6 +641,85 @@ func _apply_hit(body: Node3D, direction: Vector3, ability: Ability) -> void:
 	var shielded := " (shielded)" if fighter.is_shielded() else ""
 	print("[hit] %s -> %s | instability %.0f%% | knockback %.1f m/s%s" % [
 		ability.id, body.name, level, Vector2(impulse.x, impulse.z).length(), shielded])
+
+
+# ---------------------------------------------------------------------------------------
+# Aim indicator
+#
+# The fighter carries the drawing; the level decides what it says. That split is not tidiness
+# - a dash preview has to stop where the arena does, and the arena's size is knowledge this
+# node owns and the wizard deliberately does not.
+#
+# Driven every rendered frame rather than on a signal, because the thing being previewed
+# moves: the wizard walks while aiming, and a preview refreshed only when the thumb moves
+# would trail behind their own feet.
+# ---------------------------------------------------------------------------------------
+
+func _update_aim_indicator() -> void:
+	var indicator := _player.aim_indicator()
+	if indicator == null:
+		return
+	var slot := _input.command.aiming_slot
+	var book := _player.abilities()
+	if slot < 0 or book == null or _player.is_eliminated() or not _player.accepts_input:
+		indicator.clear()
+		return
+	var ability := book.ability_in(slot)
+	if ability == null:
+		indicator.clear()
+		return
+	var aim := _preview_direction(book)
+	indicator.show_for(ability, aim, _preview_reach(ability, aim))
+
+
+## The direction a cast would go out with RIGHT NOW, decided exactly the way the cast decides
+## it: the command's aim if there is one, and the caster's own facing if there is not.
+##
+## Asking AbilityComponent for the fallback rather than working it out again is the point. The
+## two answers agreeing is then a property of there being one answer.
+func _preview_direction(book: AbilityComponent) -> Vector3:
+	var command := _input.command
+	if command.has_aim and command.aim_dir.length_squared() > 0.0001:
+		return Vector3(command.aim_dir.x, 0.0, command.aim_dir.y).normalized()
+	return book.caster_facing().normalized()
+
+
+## How far the preview should reach, which is not always how far the spell does.
+##
+## A dash stops where it will actually land. A projectile stops at the rim: Fireball flies
+## 21.6m and the arena is 14m across, so an honest lane is a stripe across the whole screen,
+## most of it over a void where there is nothing left to hit. The fan is NOT trimmed - a wave
+## cast at the edge really does catch someone hanging over it, and shortening the drawing
+## would be a lie about who gets hit.
+func _preview_reach(ability: Ability, aim: Vector3) -> float:
+	match ability.cast_type:
+		Ability.CastType.DASH:
+			var landing := _blink_landing(_player, aim, ability)
+			var travel := landing - _player.global_position
+			return Vector2(travel.x, travel.z).length()
+		Ability.CastType.PROJECTILE:
+			return minf(ability.effective_range(), _distance_to_rim(_player.global_position, aim))
+		_:
+			return ability.effective_range()
+
+
+## Metres from `from` to the arena's rim along `aim`, on the ground plane.
+##
+## A ray against a circle, solved rather than stepped. `from` is assumed to be inside the
+## arena, which makes the near root negative and the far one the answer; a wizard already
+## over the void gets the clamp below rather than a square root of a negative number.
+func _distance_to_rim(from: Vector3, aim: Vector3) -> float:
+	var p := Vector2(from.x, from.z)
+	var d := Vector2(aim.x, aim.z)
+	if d.length_squared() < 0.0001:
+		return _arena_edge
+	d = d.normalized()
+	var b := p.dot(d)
+	var c := p.length_squared() - _arena_edge * _arena_edge
+	var disc := b * b - c
+	if disc <= 0.0:
+		return _arena_edge
+	return maxf(-b + sqrt(disc), 0.5)
 
 
 # ---------------------------------------------------------------------------------------
@@ -823,17 +938,21 @@ func _run_two_thumb_tests() -> void:
 		"button owner=%d" % button.touch_index())
 	_expect("stick keeps its own finger", stick.touch_index() == 0,
 		"stick owner=%d" % stick.touch_index())
-	_expect("movement is unaffected by the cast",
+	_expect("movement is unaffected by the aim",
 		_input.command.move_dir.is_equal_approx(moving_before),
 		"before=%s after=%s" % [moving_before, _input.command.move_dir])
-	_expect("the tap actually cast", _pool.active_count() == before_active + 1,
+	# The press opens an aim and casts nothing. That is drag-to-aim, not a regression -
+	# --aim-test is where the whole gesture is asserted.
+	_expect("the press only starts aiming", _pool.active_count() == before_active,
+		"active %d -> %d" % [before_active, _pool.active_count()])
+
+	# --- releasing the right thumb casts, and must not disturb the left -------------------
+	_emit_touch(1, button_centre, false)
+	await _settle()
+	_expect("the lift actually cast", _pool.active_count() == before_active + 1,
 		"active %d -> %d" % [before_active, _pool.active_count()])
 	_expect("casting put the slot on cooldown", not book.is_ready(0),
 		"remaining=%.2fs" % book.cooldown_remaining(0))
-
-	# --- releasing the right thumb must not disturb the left ------------------------------
-	_emit_touch(1, button_centre, false)
-	await _settle()
 	_expect("button released cleanly", button.touch_index() == -1,
 		"button owner=%d" % button.touch_index())
 	_expect("stick still steering after the button lifted",
@@ -1624,3 +1743,234 @@ func _run_button_tests() -> void:
 	print("[buttons] %s (%d failure(s))" % [
 		"ALL PASS" if _touch_failures == 0 else "FAILURES", _touch_failures])
 	get_tree().quit(1 if _touch_failures > 0 else 0)
+
+
+# ---------------------------------------------------------------------------------------
+# Aim harness
+#
+# Drag-to-aim is three claims, and only the first is easy to see by playing: a press opens an
+# aim instead of casting, the lift fires along the line the thumb drew, and the direction
+# latched at the lift survives the gap before the character consumes it. That third one is
+# the reason this suite exists. It fails only when a render frame lands between the lift and
+# the physics tick, which on a desktop is roughly never and on a phone under load is often -
+# so it is exactly the bug that ships.
+# ---------------------------------------------------------------------------------------
+
+## How far the harness drags, in canvas units. Comfortably past the aim deadzone, so a test
+## failing here is about the aim and not about the threshold.
+const AIM_DRAG := 130.0
+
+
+## Screen-right and screen-forward, on the ground plane, read off the live camera.
+##
+## Worked out from the camera rather than assumed to be +X and -Z. The camera is un-yawed
+## today, so the two agree - and the day it is not, this suite says which of the two moved.
+func _screen_axes() -> Array:
+	var cam := get_viewport().get_camera_3d()
+	if cam == null:
+		return [Vector2.RIGHT, Vector2.UP]
+	var right3: Vector3 = cam.global_transform.basis.x
+	var fwd3: Vector3 = -cam.global_transform.basis.z
+	return [
+		Vector2(right3.x, right3.z).normalized(),
+		Vector2(fwd3.x, fwd3.z).normalized(),
+	]
+
+
+## Flat direction of the last cast the player made.
+func _last_aim() -> Vector2:
+	var flat := Vector2(_last_cast_dir.x, _last_cast_dir.z)
+	return flat.normalized() if flat.length_squared() > 0.0001 else Vector2.ZERO
+
+
+## Presses button `slot`, drags `screen_dir` (y-up), and leaves the finger down.
+## Returns where the finger now is, so the caller can lift it in the right place - a lift at
+## the button centre would erase the drag and turn the whole gesture back into a tap.
+func _drag_aim(slot: int, screen_dir: Vector2) -> Vector2:
+	var button: AbilityButton = _mobile.buttons[slot]
+	var centre := button.get_global_rect().get_center()
+	_emit_touch(0, centre, true)
+	await _settle()
+	var to := centre + Vector2(screen_dir.x, -screen_dir.y).normalized() * AIM_DRAG
+	_emit_drag(0, to)
+	await _settle()
+	return to
+
+
+func _run_aim_tests() -> void:
+	await _settle()
+	# Nothing here is about the opponent, and a bot walking into a Fireball would end a round
+	# in the middle of a measurement.
+	_freeze_bot()
+	_input.set_override_vector(Vector2.ZERO, true)
+	await _wait_for_live()
+	var book := _player.abilities()
+	var indicator := _player.aim_indicator()
+	var axes := _screen_axes()
+	var screen_right: Vector2 = axes[0]
+	var screen_fwd: Vector2 = axes[1]
+	var fireball := book.ability_in(0)
+	print("[aim-test] deadzone=%.0f drag=%.0f right=%s forward=%s" % [
+		_input.aim_deadzone, AIM_DRAG, screen_right, screen_fwd])
+
+	_expect("the fighter has an aim indicator", indicator != null,
+		"indicator=%s" % indicator)
+	if indicator == null:
+		get_tree().quit(1)
+		return
+	_expect("nothing is drawn before a finger lands", not indicator.is_showing(), "clear")
+
+	# --- a press opens the aim, and casts nothing -----------------------------------------
+	var button: AbilityButton = _mobile.buttons[0]
+	var centre := button.get_global_rect().get_center()
+	var before := _pool.active_count()
+	_emit_touch(0, centre, true)
+	await _settle()
+	_expect("press starts aiming slot 0", _input.command.aiming_slot == 0,
+		"aiming=%d" % _input.command.aiming_slot)
+	_expect("press alone casts nothing",
+		_pool.active_count() == before and book.is_ready(0),
+		"active=%d ready=%s" % [_pool.active_count(), book.is_ready(0)])
+	_expect("the indicator is up", indicator.is_showing(),
+		"shape=%d" % indicator.shape())
+	_expect("a projectile draws a lane", indicator.shape() == AimIndicator.Shape.LANE,
+		"shape=%d" % indicator.shape())
+
+	# The lane is trimmed at the rim, so the far end of it should be ON the rim - measured
+	# here from the position and the aim, not by asking the code that drew it.
+	var aim_now := _preview_direction(book)
+	var tip := _player.global_position + aim_now * indicator.reach()
+	_expect("the lane stops at the arena rim",
+		indicator.reach() < fireball.effective_range() and absf(_radius_of(tip) - _arena_edge) < 0.05,
+		"reach %.2fm of %.2fm, tip at r=%.2f (edge %.2f)" % [
+			indicator.reach(), fireball.effective_range(), _radius_of(tip), _arena_edge])
+
+	# --- a small roll is a tap, not an aim ------------------------------------------------
+	_emit_drag(0, centre + Vector2(10.0, 0.0))
+	await _settle()
+	_expect("a roll under the deadzone is not an aim", not _input.command.has_aim,
+		"has_aim=%s aim=%s" % [_input.command.has_aim, _input.command.aim_dir])
+
+	# --- drag right: the aim, the wizard and the indicator all turn -----------------------
+	var held := centre + Vector2(AIM_DRAG, 0.0)
+	_emit_drag(0, held)
+	await _settle()
+	var aim: Vector2 = _input.command.aim_dir
+	_expect("dragging right aims screen-right", aim.normalized().dot(screen_right) > 0.99,
+		"aim=%s right=%s" % [aim, screen_right])
+	for i in 24:
+		await get_tree().physics_frame
+	_expect("the wizard turns to face the drag", _facing_of(_player).dot(screen_right) > 0.98,
+		"facing=%s" % _facing_of(_player))
+
+	# --- the lift is the cast, and it goes where the thumb pointed ------------------------
+	_last_cast_dir = Vector3.ZERO
+	_emit_touch(0, held, false)
+	await _settle()
+	_expect("the lift casts", _pool.active_count() == before + 1,
+		"active %d -> %d" % [before, _pool.active_count()])
+	_expect("the spell left along the drag", _last_aim().dot(screen_right) > 0.99,
+		"cast=%s right=%s" % [_last_aim(), screen_right])
+	_expect("the indicator goes away on the lift", not indicator.is_showing(), "cleared")
+
+	# --- the aim latched at the lift survives the tick that consumes it -------------------
+	#
+	# The finger lifts and the character casts on the NEXT physics tick. If the walking
+	# direction is allowed to overwrite the aim in between, the spell comes out sideways -
+	# rarely, and only under load. So: aim forward, walk right, lift, and check which one
+	# the spell believed.
+	while not book.is_ready(0):
+		await get_tree().physics_frame
+	_input.set_override_vector(Vector2(1.0, 0.0), true)
+	var landed := await _drag_aim(0, Vector2(0.0, 1.0))
+	_expect("the drag beats the walking direction",
+		_input.command.aim_dir.normalized().dot(screen_fwd) > 0.99,
+		"aim=%s forward=%s" % [_input.command.aim_dir, screen_fwd])
+	_last_cast_dir = Vector3.ZERO
+	_emit_touch(0, landed, false)
+	await _settle()
+	_expect("the latched aim survived to the cast", _last_aim().dot(screen_fwd) > 0.99,
+		"cast=%s forward=%s move=%s" % [_last_aim(), screen_fwd, _input.command.move_dir])
+
+	# --- and a plain tap still casts where you are heading --------------------------------
+	while not book.is_ready(0):
+		await get_tree().physics_frame
+	_last_cast_dir = Vector3.ZERO
+	_emit_touch(0, centre, true)
+	await _settle()
+	_emit_touch(0, centre, false)
+	await _settle()
+	_expect("a tap still casts where you are heading", _last_aim().dot(screen_right) > 0.99,
+		"cast=%s move=%s" % [_last_aim(), _input.command.move_dir])
+	_input.set_override_vector(Vector2.ZERO, true)
+
+	# --- every cast type draws its own shape ----------------------------------------------
+	var cone_slot := _slot_with(book, Ability.CastType.CONE)
+	var cone := book.ability_in(cone_slot)
+	var cone_at := await _drag_aim(cone_slot, Vector2(0.0, 1.0))
+	_expect("a cone draws a fan", indicator.shape() == AimIndicator.Shape.FAN,
+		"shape=%d" % indicator.shape())
+	_expect("the fan is the spell's own fan",
+		is_equal_approx(indicator.reach(), cone.area)
+			and is_equal_approx(indicator.half_angle(), cone.cone_angle),
+		"reach=%.2f (area %.2f) half=%.1f (cone %.1f)" % [
+			indicator.reach(), cone.area, indicator.half_angle(), cone.cone_angle])
+	_emit_touch(0, cone_at, false)
+	await _settle()
+
+	var buff_slot := _slot_with(book, Ability.CastType.BUFF)
+	var buff_at := await _drag_aim(buff_slot, Vector2(0.0, 1.0))
+	_expect("a self-cast draws a ring around you",
+		indicator.shape() == AimIndicator.Shape.SELF, "shape=%d" % indicator.shape())
+	_emit_touch(0, buff_at, false)
+	await _settle()
+
+	# --- a dash previews where it will REALLY land ----------------------------------------
+	#
+	# Standing 3m out and aiming outward, a 5m Blink would leave the arena, so the preview
+	# has to be shorter than the spell. Then the lift proves the promise: the wizard travels
+	# exactly as far as the line said it would.
+	var dash_slot := _slot_with(book, Ability.CastType.DASH)
+	var dash := book.ability_in(dash_slot)
+	await _place_fighters(Vector3(0.0, 1.2, -3.5), Vector3(3.0, 1.2, 0.0))
+	var dash_at := await _drag_aim(dash_slot, Vector2(1.0, 0.0))
+	_expect("a dash draws a line to a landing spot",
+		indicator.shape() == AimIndicator.Shape.DASH, "shape=%d" % indicator.shape())
+	var previewed := indicator.reach()
+	_expect("the preview is clamped by the arena", previewed < dash.dash_distance - 0.5,
+		"previewed %.2fm of %.2fm" % [previewed, dash.dash_distance])
+	var from := _player.global_position
+	_emit_touch(0, dash_at, false)
+	await _settle()
+	var travelled := Vector2(_player.global_position.x - from.x,
+		_player.global_position.z - from.z).length()
+	_expect("the wizard lands exactly where the line ended",
+		absf(travelled - previewed) < 0.05,
+		"drew %.2fm, travelled %.2fm" % [previewed, travelled])
+	_expect("and lands inside the arena", _radius_of(_player.global_position) <= _arena_edge,
+		"r=%.2f edge=%.2f" % [_radius_of(_player.global_position), _arena_edge])
+
+	print("[aim] %s (%d failure(s))" % [
+		"ALL PASS" if _touch_failures == 0 else "FAILURES", _touch_failures])
+	get_tree().quit(1 if _touch_failures > 0 else 0)
+
+
+## Holds a drag on a spell button and never lifts it, so a delayed --shot photographs the
+## indicator. Nothing casts: the cast is the lift, and this run never lifts.
+func _hold_aim(slot: int, direction: Vector2) -> void:
+	await _wait_for_live()
+	if slot < 0 or slot >= _mobile.buttons.size():
+		push_warning("--aim-hold: no button %d" % slot)
+		return
+	var dir := direction
+	if dir.length_squared() < 0.0001:
+		dir = Vector2(0.0, 1.0)
+	dir = dir.normalized()
+	var button: AbilityButton = _mobile.buttons[slot]
+	var centre := button.get_global_rect().get_center()
+	# A finger index nothing else in the harness uses, so an --aim-hold can be combined with
+	# another injected gesture without the two claiming each other's events.
+	_emit_touch(9, centre, true)
+	await _settle()
+	_emit_drag(9, centre + Vector2(dir.x, -dir.y) * AIM_DRAG)
+	print("[harness] holding aim on slot %d toward %s" % [slot, dir])
