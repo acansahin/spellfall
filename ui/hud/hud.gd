@@ -19,6 +19,9 @@ const RISING := Color(1.0, 0.85, 0.35)
 const DANGER := Color(1.0, 0.45, 0.35)
 
 @onready var _rows: VBoxContainer = $Root/Rows
+@onready var _banner: Label = $Root/Banner
+@onready var _score: Label = $Root/Score
+@onready var _round_label: Label = $Root/RoundLabel
 
 var _labels: Dictionary = {}
 
@@ -57,3 +60,25 @@ func _tint(value: float) -> Color:
 	if value >= 50.0:
 		return RISING
 	return SAFE
+
+
+## Big centre text: the countdown, "GO", the winner. An empty string hides it.
+##
+## Centred and large because it is read in the half-second between looking up and looking
+## back at the fight, which is the only attention anyone has spare for it mid-match.
+func set_banner(text: String, tint: Color = Color.WHITE) -> void:
+	_banner.text = text
+	_banner.add_theme_color_override("font_color", tint)
+	_banner.visible = text != ""
+
+
+## `entries` is [[title, wins], ...], exactly as RoundManager reports it.
+func set_score(entries: Array) -> void:
+	var parts := PackedStringArray()
+	for entry in entries:
+		parts.append("%s %d" % [entry[0], entry[1]])
+	_score.text = "   ".join(parts)
+
+
+func set_round(number: int) -> void:
+	_round_label.text = "ROUND %d" % number

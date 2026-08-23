@@ -5,8 +5,8 @@ Read `GAME_DESIGN.md` first for what the game is. This file is how it is put tog
 
 > Everything described as _(planned)_ does not exist yet. What is built: the arena, the
 > wizard, movement, the fixed camera, the touch controls, the ability framework with one
-> spell, instability, knockback and the HUD readout. Rounds, elimination and the bot are
-> not built.
+> spell, instability, knockback, the HUD, elimination and the round loop. The bot, the
+> other three spells and drag-to-aim are not built.
 
 ## Ground rules
 
@@ -38,12 +38,12 @@ res://
     abilities/     ability.gd (Resource) + ability_component.gd (runtime)
     projectiles/   projectile.gd/.tscn + projectile_pool.gd
     knockback/     knockback.gd (the formula) + knockback_rules.gd (its tuning)
-  arena/           arena.tscn, arena_camera.gd
+  arena/           arena.tscn, arena_camera.gd, kill_zone.gd
   ui/
-    hud/           hud.gd/.tscn - instability readout; round score later
+    hud/           hud.gd/.tscn - instability, round number, score, banner
     mobile_controls/ touch_stick, ability_button, mobile_controls; aim later
   systems/
-    round/         (planned) RoundManager
+    round/         round_manager.gd - countdown, elimination, score, reset
     spawn/         (planned)
   data/            abilities/fireball.tres, knockback_rules.tres
   network/         (planned) Phase C onward
@@ -289,6 +289,51 @@ black bars. The 3D camera keeps vertical FOV, and the arena already fits vertica
 - so a wider phone gains **void at the sides, not more arena.** No screen shape sees more of
 the playfield than another, which matters once this is competitive.
 
+## Rounds and elimination
+
+Three pieces that each refuse to know about the others:
+
+| Piece | Knows |
+|---|---|
+| `KillZone` (`arena/kill_zone.gd`) | that a body left the world. Not what that means. |
+| `RoundManager` (`systems/round/`) | the round loop and the score. Nothing about combat. |
+| `Player.eliminate()` | how to take itself out of play. Nothing about rounds. |
+
+`main.gd` joins them, as it joins everything else.
+
+**Why a real `Area3D` and not the `y < fall_limit` check it replaced.** A threshold test only
+runs for bodies something remembered to poll, so every new fighter had to be added to a list
+by hand. The area detects anything on the players layer, including a fighter nobody has
+written code for yet — which is precisely the case that a 2v2 or a free-for-all creates.
+
+`RoundManager` never reads instability, never applies knockback and never spawns anything.
+`report_fall()` is the only way in, so a future out-of-bounds rule, a self-destruct, or a
+server reporting a disconnect all arrive through one door. That is the separation the brief
+warns about with "do not build a giant GameManager": a round system tangled into combat cannot
+be tested without playing the game.
+
+### The loop
+
+```
+COUNTDOWN  fighters revived at spawns, input frozen, banner counts down
+   |  countdown_seconds
+LIVE       input returned; falls are accepted
+   |  a fall leaves one fighter standing
+OVER       winner scores, banner shown, input frozen again
+   |  interlude_seconds
+COUNTDOWN  next round, or a new match if someone reached wins_needed
+```
+
+Freezing is `Player.accepts_input`, not disabled physics: during a countdown everyone stands
+still, but gravity still applies and a knockback landed on the last frame of the previous
+round still resolves. Nobody hangs in mid-air.
+
+Elimination **stops physics processing** rather than merely ignoring the body, so a fallen
+fighter cannot keep accelerating into the void forever, and cannot be hit on the way down by a
+spell already in flight. Its collision layer is cleared with `set_deferred`, because
+elimination is reached from inside an `Area3D` callback where changing collision state
+directly is not allowed.
+
 ## Knockback and instability
 
 Two separate pieces, deliberately:
@@ -492,6 +537,7 @@ argument-gated harness. Everything after a bare `--` reaches `OS.get_cmdline_use
 | `--twothumb-test` | Holds the stick and the cast button at once, on separate fingers |
 | `--cast-at:N` | Casts the primary spell N seconds in, so a delayed shot catches it |
 | `--knockback-test` | Asserts the instability curve and the distance a hit carries |
+| `--round-test` | Asserts a full round cycle: countdown, elimination, score, reset |
 
 **None of these may be run with `--headless`.** `--shot` needs real rendering, and the input
 tests need a real window: the headless display driver does not route injected
@@ -538,6 +584,14 @@ Each of these cost real time in the first session.
   `substr(9)` yields `":1.0"`, which `float()` parses as **0.0** without complaint. The spell
   fired at t=0 instead of t=1, every screenshot caught an expired cooldown, and two correct
   drawing implementations were rewritten chasing a bug that was in the argument parser.
+- **GDScript lambdas capture local variables BY VALUE.** A closure doing `found = true`
+  writes to its own copy, and the outer local stays false forever — with no warning. Arrays
+  and other reference types work, which makes the failure look inconsistent rather than
+  systematic. Use an Array, or a member variable.
+- **A test that freezes must wait for the game to un-freeze.** Once the round loop landed,
+  every suite that casts or steers had to `await _wait_for_live()` first; without it they
+  measure a fighter that was correctly told to stand still, which looks exactly like a broken
+  control.
 - **A wrong facing formula passes every numeric test.** Godot yaw 0 faces -Z, and yaw `a`
   faces `(-sin a, 0, -cos a)`; solving that for a travel direction needs `atan2(-x, -z)`.
   Dropping both signs aims the wizard exactly backwards, and position/velocity traces look

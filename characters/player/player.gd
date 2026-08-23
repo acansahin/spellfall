@@ -70,6 +70,11 @@ extends CharacterBody3D
 ## Set by the level once, so the character does not reach out and find its own input.
 var input_controller: PlayerInputController = null
 
+## While false the fighter ignores steering and casting, but still falls and still takes
+## knockback. That is what a countdown wants: everyone stands still, nobody is frozen in
+## mid-air, and a hit landed on the last frame of the previous round still resolves.
+var accepts_input := true
+
 ## Horizontal velocity the player is ASKING for, before knockback is added.
 ##
 ## Held separately rather than read back off `velocity`, because `move_and_slide()` writes
@@ -91,6 +96,8 @@ var _knockback := Vector3.ZERO
 ## Seconds left of reduced control after being hit.
 var _hitstun := 0.0
 
+var _eliminated := false
+
 @onready var _visual: Node3D = $Visual
 
 ## Optional: a wizard without a spellbook simply never casts, which is what a training
@@ -102,7 +109,7 @@ var _gravity: float = ProjectSettings.get_setting("physics/3d/default_gravity", 
 
 func _physics_process(delta: float) -> void:
 	var wish := Vector2.ZERO
-	if input_controller != null:
+	if input_controller != null and accepts_input:
 		wish = input_controller.command.move_dir
 
 	if _hitstun > 0.0:
@@ -181,7 +188,7 @@ func respawn_at(point: Vector3) -> void:
 ## facing: a spell fired on the same tick you changed direction should come out of where the
 ## wizard now is and where they now point, not where they were.
 func _service_casting() -> void:
-	if input_controller == null or _abilities == null:
+	if input_controller == null or _abilities == null or not accepts_input:
 		return
 	var slot := input_controller.consume_ability()
 	if slot < 0:
@@ -235,3 +242,40 @@ func knockback_velocity() -> Vector3:
 ## The fighter's instability tracker, or null if it has none.
 func instability() -> InstabilityComponent:
 	return get_node_or_null(^"Instability") as InstabilityComponent
+
+
+## Takes the fighter out of the round: no input, no physics, no collision, not drawn.
+##
+## Physics processing stops rather than merely being ignored, so an eliminated body cannot
+## keep falling forever and cannot be hit on its way down by a spell already in flight.
+func eliminate() -> void:
+	if _eliminated:
+		return
+	_eliminated = true
+	accepts_input = false
+	velocity = Vector3.ZERO
+	_input_velocity = Vector3.ZERO
+	_knockback = Vector3.ZERO
+	_hitstun = 0.0
+	visible = false
+	set_physics_process(false)
+	# Stop being a valid target while out. Deferred because this can be reached from inside
+	# a physics callback (an Area3D body_entered), where changing collision state directly
+	# is not allowed.
+	set_deferred("collision_layer", 0)
+
+
+## Puts the fighter back in play at `point`, fully reset.
+func revive_at(point: Vector3) -> void:
+	_eliminated = false
+	set_physics_process(true)
+	visible = true
+	set_deferred("collision_layer", 2)
+	accepts_input = true
+	respawn_at(point)
+	if _abilities != null:
+		_abilities.reset()
+
+
+func is_eliminated() -> bool:
+	return _eliminated

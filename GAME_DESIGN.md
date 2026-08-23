@@ -1,7 +1,7 @@
 # Spellfall — Game Design
 
-> Status: **Phase 1 prototype.** Movement, touch controls, Fireball, instability and
-> knockback are built. Everything marked _(planned)_ is design
+> Status: **Phase 1 prototype.** Movement, touch controls, Fireball, instability,
+> knockback, elimination and the round loop are built. Everything marked _(planned)_ is design
 > intent, not built code. Keep that distinction honest — this file has one job, which is to
 > stop us from misremembering what already exists.
 
@@ -35,6 +35,9 @@ to future art and audio too.
 6. Last wizard standing takes the round.
 7. _(planned)_ The loser picks one of three upgrades — a small catch-up mechanic.
 8. Next round. First to a set number of round wins takes the match.
+
+Steps 1-6 and 8 are built. A round opens with a frozen three-second countdown, goes live,
+ends when one wizard is left standing, shows the winner, and resets.
 
 Rounds are meant to run roughly 30–60 seconds. A whole match should fit in the time someone
 is waiting for a bus.
@@ -126,7 +129,8 @@ platform is a fall.
 
 - Fall off the arena, and you are eliminated for the round.
 - Last wizard standing wins the round.
-- _(planned)_ First to N round wins takes the match.
+- First to `wins_needed` round wins takes the match (currently 3).
+- If everyone falls in the same instant it is a draw and nobody scores.
 
 ## Modes
 

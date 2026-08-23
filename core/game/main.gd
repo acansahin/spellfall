@@ -16,6 +16,7 @@ extends Node3D
 ##   --cast-test       assert the full cast round-trip: cooldown, pooling, flight, impact
 ##   --twothumb-test   hold the stick and the cast button at once, on separate fingers
 ##   --knockback-test  assert the instability curve and the distance a hit carries
+##   --round-test      assert a full round cycle: countdown, elimination, score, reset
 ## Screenshots need real rendering, so DO NOT pass --headless with --shot.
 ## The two input tests ALSO need a real window: the headless display driver does not
 ## route injected InputEventScreenTouch/Key to _input(), so every assertion silently
@@ -27,9 +28,6 @@ extends Node3D
 ## Where the training dummy stands.
 @export var dummy_spawn := Vector3(0.0, 1.0, -3.0)
 
-## Falling below this counts as off the arena. The real elimination system replaces this.
-@export var fall_limit := -10.0
-
 ## How a hit is turned into speed. A Resource so the central mechanic is tuned by editing
 ## data, never by editing logic - see combat/knockback/knockback_rules.gd.
 @export var knockback_rules: KnockbackRules = null
@@ -40,6 +38,8 @@ extends Node3D
 @onready var _pool: ProjectilePool = $ProjectilePool
 @onready var _dummy: Player = $TrainingDummy
 @onready var _hud: Hud = $Hud
+@onready var _rounds: RoundManager = $Rounds
+@onready var _kill_zone: KillZone = $Arena/KillZone
 
 var _trace := false
 
@@ -58,17 +58,14 @@ func _ready() -> void:
 	# hunting for them, so a second fighter is one more line and not a rewrite.
 	_hud.add_readout("YOU", _player.instability())
 	_hud.add_readout("DUMMY", _dummy.instability())
-	_player.respawn_at(spawn_point)
+	_wire_rounds()
 	_parse_harness_args()
+	_rounds.start_match()
 
 
 func _process(_delta: float) -> void:
 	if Input.is_action_just_pressed("debug_respawn"):
-		_player.respawn_at(spawn_point)
-	# Both fighters fall the same way. Elimination replaces this wholesale in Session 5;
-	# respawning keeps the prototype testable rather than leaving a body in the void.
-	_check_fall(_player, spawn_point, "player")
-	_check_fall(_dummy, dummy_spawn, "dummy")
+		_rounds.begin_round()
 
 
 func _parse_harness_args() -> void:
@@ -106,6 +103,8 @@ func _parse_harness_args() -> void:
 			_run_two_thumb_tests()
 		elif arg == "--knockback-test":
 			_run_knockback_tests()
+		elif arg == "--round-test":
+			_run_round_tests()
 		elif arg == "--layout-probe":
 			_probe_layout()
 		elif arg.begins_with("--cast-at:"):
@@ -452,15 +451,68 @@ func _on_projectile_hit(body: Node3D, direction: Vector3, ability: Ability) -> v
 		ability.id, body.name, level, Vector2(impulse.x, impulse.z).length()])
 
 
-func _check_fall(fighter: Player, respawn: Vector3, label: String) -> void:
-	if not is_instance_valid(fighter) or fighter.global_position.y >= fall_limit:
+# ---------------------------------------------------------------------------------------
+# Round wiring
+#
+# The round system never learns what a KillZone is, and the KillZone never learns what a
+# round is. One reports that a body left the world; the other decides that this means
+# elimination. Joining them is the level's job, like every other seam here.
+# ---------------------------------------------------------------------------------------
+
+func _wire_rounds() -> void:
+	_rounds.add_fighter(_player, spawn_point, "YOU")
+	_rounds.add_fighter(_dummy, dummy_spawn, "DUMMY")
+	_kill_zone.fighter_fell.connect(_rounds.report_fall)
+
+	_rounds.round_started.connect(_on_round_started)
+	_rounds.countdown_changed.connect(_on_countdown)
+	_rounds.fighter_eliminated.connect(_on_eliminated)
+	_rounds.round_ended.connect(_on_round_ended)
+	_rounds.score_changed.connect(_hud.set_score)
+	_rounds.match_ended.connect(_on_match_ended)
+
+
+func _on_round_started(number: int) -> void:
+	_kill_zone.clear()
+	_hud.set_round(number)
+	print("[round] %d start" % number)
+
+
+func _on_countdown(remaining: int) -> void:
+	_hud.set_banner("GO" if remaining <= 0 else str(remaining))
+	if remaining <= 0:
+		# Let "GO" sit for a beat, then clear it rather than leaving it over the fight.
+		await get_tree().create_timer(0.6).timeout
+		if _rounds.is_live():
+			_hud.set_banner("")
+
+
+func _on_eliminated(_fighter: Player, title: String) -> void:
+	print("[round] %s eliminated" % title)
+
+
+func _on_round_ended(winner: Player, title: String) -> void:
+	if winner == null:
+		_hud.set_banner("DRAW", Color(0.85, 0.85, 0.9))
+		print("[round] draw")
 		return
-	print("[fall] %s left the arena" % label)
-	fighter.respawn_at(respawn)
+	# "YOU WINS" reads badly. main.gd owns these titles, so main.gd conjugates them.
+	_hud.set_banner("YOU WIN" if title == "YOU" else "%s WINS" % title,
+		Color(1.0, 0.85, 0.35))
+	print("[round] %s wins the round" % title)
+
+
+func _on_match_ended(_winner: Player, title: String) -> void:
+	_hud.set_banner("YOU TAKE THE MATCH" if title == "YOU" else "%s TAKES THE MATCH" % title,
+		Color(0.55, 1.0, 0.6))
+	print("[round] %s takes the match" % title)
 
 
 func _run_cast_tests() -> void:
 	await _settle()
+	# The countdown freezes fighters, so anything that casts or steers before the
+	# round is live is measuring a fighter that was told to stand still.
+	await _wait_for_live()
 	var book := _player.abilities()
 	var fireball := book.ability_in(0)
 	print("[cast-test] %s: cooldown=%.2fs speed=%.0fm/s lifetime=%.2fs" % [
@@ -560,6 +612,9 @@ func _run_cast_tests() -> void:
 ## the game is unplayable on a phone no matter how good everything else is.
 func _run_two_thumb_tests() -> void:
 	await _settle()
+	# The countdown freezes fighters, so anything that casts or steers before the
+	# round is live is measuring a fighter that was told to stand still.
+	await _wait_for_live()
 	var stick := _mobile.joystick
 	var button := _mobile.cast_button
 	var book := _player.abilities()
@@ -672,6 +727,9 @@ func _measure_slide(speed: float, instability: float) -> float:
 
 func _run_knockback_tests() -> void:
 	await _settle()
+	# The countdown freezes fighters, so anything that casts or steers before the
+	# round is live is measuring a fighter that was told to stand still.
+	await _wait_for_live()
 	var rules := knockback_rules
 	print("[knockback] rules: base=%.1f per100=%.1f max=%.1f lift=%.1f | dummy friction=%.1f" % [
 		rules.base_multiplier, rules.per_100_instability, rules.max_multiplier, rules.lift,
@@ -780,5 +838,129 @@ func _run_knockback_tests() -> void:
 		"moved %.2fm along z" % shifted.z)
 
 	print("[knockback] %s (%d failure(s))" % [
+		"ALL PASS" if _touch_failures == 0 else "FAILURES", _touch_failures])
+	get_tree().quit(1 if _touch_failures > 0 else 0)
+
+
+## Waits until the round is actually live. The countdown freezes input, so a test that
+## steers or casts before this returns is measuring a fighter that has been told to stand
+## still - which looks exactly like a broken control and is not one.
+func _wait_for_live() -> void:
+	var guard := 0
+	while not _rounds.is_live() and guard < 1200:
+		await get_tree().process_frame
+		guard += 1
+
+
+func _run_round_tests() -> void:
+	await _settle()
+	print("[round-test] countdown=%.1fs interlude=%.1fs wins_needed=%d" % [
+		_rounds.countdown_seconds, _rounds.interlude_seconds, _rounds.wins_needed])
+
+	# --- a match opens in countdown, with everyone frozen ---------------------------------
+	_expect("match opens in countdown", _rounds.state == RoundManager.State.COUNTDOWN,
+		"state=%d" % _rounds.state)
+	_expect("fighters are frozen during the countdown",
+		not _player.accepts_input and not _dummy.accepts_input,
+		"player=%s dummy=%s" % [_player.accepts_input, _dummy.accepts_input])
+	_expect("round 1", _rounds.round_number == 1, "round=%d" % _rounds.round_number)
+	_expect("score starts level", _rounds.wins_for("YOU") == 0 and _rounds.wins_for("DUMMY") == 0,
+		"%s" % str(_rounds.scores()))
+
+	# --- steering really is ignored while frozen ------------------------------------------
+	_input.set_override_vector(Vector2(1, 0), true)
+	var frozen_at := _player.global_position
+	for i in 15:
+		await get_tree().physics_frame
+	var drift := Vector2(_player.global_position.x - frozen_at.x,
+		_player.global_position.z - frozen_at.z).length()
+	_expect("a frozen fighter does not move", drift < 0.05, "drifted %.3fm" % drift)
+
+	# --- it goes live ---------------------------------------------------------------------
+	await _wait_for_live()
+	_expect("round goes live after the countdown", _rounds.is_live(), "state=%d" % _rounds.state)
+	_expect("input is returned on go", _player.accepts_input and _dummy.accepts_input,
+		"player=%s dummy=%s" % [_player.accepts_input, _dummy.accepts_input])
+
+	var live_at := _player.global_position
+	for i in 15:
+		await get_tree().physics_frame
+	var moved := Vector2(_player.global_position.x - live_at.x,
+		_player.global_position.z - live_at.z).length()
+	_expect("and the fighter can move again", moved > 0.5, "moved %.2fm" % moved)
+	_input.set_override_vector(Vector2.ZERO, false)
+
+	# --- knock the dummy off and check the whole cascade -----------------------------------
+	_expect("two fighters standing", _rounds.alive_count() == 2,
+		"alive=%d" % _rounds.alive_count())
+	_dummy.apply_knockback(Vector3(0, 4, -40))
+	var guard := 0
+	while _rounds.alive_count() > 1 and guard < 600:
+		await get_tree().physics_frame
+		guard += 1
+	_expect("the faller is eliminated", _dummy.is_eliminated(),
+		"eliminated=%s pos=%s" % [_dummy.is_eliminated(), _dummy.global_position])
+	_expect("an eliminated fighter is hidden", not _dummy.visible, "visible=%s" % _dummy.visible)
+	_expect("round ends when one is left", _rounds.state == RoundManager.State.OVER,
+		"state=%d" % _rounds.state)
+	_expect("the survivor scores", _rounds.wins_for("YOU") == 1,
+		"scores=%s" % str(_rounds.scores()))
+	_expect("the faller does not", _rounds.wins_for("DUMMY") == 0,
+		"scores=%s" % str(_rounds.scores()))
+
+	# --- and it all resets -----------------------------------------------------------------
+	_player.instability().add(40.0)
+	var guard2 := 0
+	while _rounds.round_number < 2 and guard2 < 1200:
+		await get_tree().process_frame
+		guard2 += 1
+	_expect("a new round begins", _rounds.round_number == 2, "round=%d" % _rounds.round_number)
+	_expect("the eliminated fighter is back", not _dummy.is_eliminated() and _dummy.visible,
+		"eliminated=%s visible=%s" % [_dummy.is_eliminated(), _dummy.visible])
+	_expect("both are standing again", _rounds.alive_count() == 2,
+		"alive=%d" % _rounds.alive_count())
+	_expect("instability is cleared on reset",
+		is_equal_approx(_player.instability().current, 0.0),
+		"player=%.1f%%" % _player.instability().current)
+	_expect("fighters are back at their spawns",
+		_dummy.global_position.distance_to(dummy_spawn) < 0.5,
+		"dummy at %s, spawn %s" % [_dummy.global_position, dummy_spawn])
+	_expect("the score carries across rounds", _rounds.wins_for("YOU") == 1,
+		"scores=%s" % str(_rounds.scores()))
+	_expect("the new round starts frozen again",
+		_rounds.state == RoundManager.State.COUNTDOWN, "state=%d" % _rounds.state)
+
+	# --- a fall outside a live round is ignored --------------------------------------------
+	var before := _rounds.alive_count()
+	_rounds.report_fall(_dummy)
+	_expect("a fall during the countdown is ignored", _rounds.alive_count() == before,
+		"alive %d -> %d" % [before, _rounds.alive_count()])
+
+	# --- the match ends when someone reaches the target ------------------------------------
+	# The real 3s countdown and 2s interlude have already been verified above. Shorten them
+	# now so proving the match-end condition does not cost thirty seconds of wall clock.
+	_rounds.countdown_seconds = 0.15
+	_rounds.interlude_seconds = 0.15
+	await _wait_for_live()
+	# An Array, not a bool. GDScript lambdas capture local variables BY VALUE, so
+	# `matched = true` inside the closure would write to a copy and the outer variable would
+	# stay false forever. Arrays are reference types, so appending is visible outside.
+	var matched: Array = []
+	_rounds.match_ended.connect(func(_w, _t): matched.append(true), CONNECT_ONE_SHOT)
+	var safety := 0
+	# Exit on the signal, not on the score: start_match() zeroes the wins the moment the
+	# match is won, so a score-based condition would never see the target reached.
+	while matched.is_empty() and safety < 40:
+		await _wait_for_live()
+		_rounds.report_fall(_dummy)
+		var g := 0
+		while _rounds.state != RoundManager.State.COUNTDOWN and g < 1200:
+			await get_tree().process_frame
+			g += 1
+		safety += 1
+	_expect("reaching the target ends the match", not matched.is_empty(),
+		"wins=%d needed=%d" % [_rounds.wins_for("YOU"), _rounds.wins_needed])
+
+	print("[round-test] %s (%d failure(s))" % [
 		"ALL PASS" if _touch_failures == 0 else "FAILURES", _touch_failures])
 	get_tree().quit(1 if _touch_failures > 0 else 0)

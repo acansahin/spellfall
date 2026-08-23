@@ -78,13 +78,17 @@ Small, actionable items. Tick things off as they land. Phase gates live in `ROAD
 - [x] Fix: reading `velocity` back after `move_and_slide()` compounded knockback with itself
 - [x] Fix: the floor pin squashed the upward lift on every hit
 
-## Session 5 — Falling, elimination, rounds
+## Session 5 — Falling, elimination, rounds ✅
 
-- [ ] Replace the `fall_limit` stopgap in `main.gd` with a proper `KillZone` `Area3D`
-- [ ] Elimination: mark out, disable input, notify the round system
-- [ ] `RoundManager`: countdown, spawn, detect last standing, show winner, reset
-- [ ] Round score
-- [ ] Verify a full round cycle end to end in a scripted run
+- [x] Replace the `fall_limit` stopgap in `main.gd` with a proper `KillZone` `Area3D`
+- [x] Elimination: mark out, disable input, stop physics, notify the round system
+- [x] `RoundManager`: countdown, spawn, detect last standing, show winner, reset
+- [x] Round score, carried across rounds
+- [x] Match end at `wins_needed`, then a fresh match
+- [x] HUD: round number, score, countdown and winner banner
+- [x] Verify a full round cycle end to end in a scripted run (`--round-test`, 23 assertions)
+- [x] Gate the other suites on `_wait_for_live()` now that a countdown freezes fighters
+- [x] Fix: GDScript lambda captured a bool by value, so a test flag never became true
 
 ## Session 6 — Bot
 
@@ -107,7 +111,6 @@ Small, actionable items. Tick things off as they land. Phase gates live in `ROAD
 
 Small things deliberately left, so they do not get silently forgotten.
 
-- [ ] `main.gd` respawns on `y < fall_limit` as a stopgap. Real elimination replaces it (Session 5).
 - [ ] No `README.md` yet — add one when the repo is worth explaining to someone else.
 - [ ] **Android export is untested — export templates are not installed.** See below.
 - [ ] `export_presets.cfg` is in `.gitignore`, so the Android preset written during Session 2
@@ -120,6 +123,10 @@ Small things deliberately left, so they do not get silently forgotten.
 - [ ] `InstabilityComponent.add()` ignores negative amounts. If a spell should ever
       reduce instability, that is a design decision to make deliberately.
 - [ ] `TrainingDummy` is a prototype target, not a design feature. The bot replaces it.
+- [ ] A draw (everyone falls at once) scores nobody. Fine for 1v1; revisit for FFA.
+- [ ] No round timer. A stalemate where nobody attacks currently lasts forever.
+- [ ] The winner banner conjugates "YOU" as a special case in `main.gd`. Fine while the
+      level owns both titles; revisit if titles ever come from elsewhere.
 - [ ] `Player` now means "a fighter" — the dummy uses the same script with no input
       controller, and the bot will too. Renaming the class was judged more churn than
       it is worth; revisit if it starts confusing people.

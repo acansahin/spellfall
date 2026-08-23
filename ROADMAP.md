@@ -3,7 +3,7 @@
 Phases are gated, not scheduled. **A phase does not start until the one before it is
 genuinely done**, and Phase 1 is judged by whether the game is fun, not by a checklist.
 
-Current position: **Phase 1, steps 1-5 of 11 complete.**
+Current position: **Phase 1, steps 1-6 and 9 of 11 complete.**
 
 ---
 
@@ -19,11 +19,11 @@ progression, no shop, no cosmetics. If that rule gets bent, the project is off t
 | 3 | Ability framework (Resource-driven) + Fireball | **done** |
 | 4 | Instability component + HUD readout | **done** |
 | 5 | Knockback system, wired to instability | **done** |
-| 6 | Fall detection and elimination | next |
+| 6 | Fall detection and elimination | **done** |
 | 7 | Force Wave, Blink, Arcane Shield | |
 | 8 | Drag-to-aim + aim indicators | |
-| 9 | Round manager: countdown, spawn, win, reset, score | |
-| 10 | One simple bot opponent | |
+| 9 | Round manager: countdown, spawn, win, reset, score | **done** (landed early with #6) |
+| 10 | One simple bot opponent | next |
 | 11 | Game feel pass: hit pause, camera shake, particles, audio, haptics | |
 
 **Gate to Phase 2:** every question in `GAME_DESIGN.md` under "What Phase 1 must prove"

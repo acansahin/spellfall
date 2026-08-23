@@ -1,4 +1,4 @@
-[gd_scene load_steps=13 format=3]
+[gd_scene load_steps=14 format=3]
 
 [ext_resource type="Script" path="res://core/game/main.gd" id="1_main"]
 [ext_resource type="PackedScene" path="res://arena/arena.tscn" id="2_arena"]
@@ -11,6 +11,7 @@
 [ext_resource type="PackedScene" path="res://characters/dummy/training_dummy.tscn" id="9_dummy"]
 [ext_resource type="Resource" path="res://data/knockback_rules.tres" id="10_rules"]
 [ext_resource type="PackedScene" path="res://ui/hud/hud.tscn" id="11_hud"]
+[ext_resource type="Script" path="res://systems/round/round_manager.gd" id="12_rounds"]
 
 [sub_resource type="Environment" id="Environment_main"]
 background_mode = 1
@@ -48,6 +49,9 @@ projectile_scene = ExtResource("8_projectile")
 
 [node name="TrainingDummy" parent="." instance=ExtResource("9_dummy")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, -3)
+
+[node name="Rounds" type="Node" parent="."]
+script = ExtResource("12_rounds")
 
 [node name="Hud" parent="." instance=ExtResource("11_hud")]
 
