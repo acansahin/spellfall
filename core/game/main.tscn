@@ -1,4 +1,4 @@
-[gd_scene load_steps=15 format=3]
+[gd_scene load_steps=19 format=3]
 
 [ext_resource type="Script" path="res://core/game/main.gd" id="1_main"]
 [ext_resource type="PackedScene" path="res://arena/arena.tscn" id="2_arena"]
@@ -13,6 +13,10 @@
 [ext_resource type="PackedScene" path="res://ui/hud/hud.tscn" id="11_hud"]
 [ext_resource type="Script" path="res://systems/round/round_manager.gd" id="12_rounds"]
 [ext_resource type="Script" path="res://characters/bot/bot_controller.gd" id="13_brain"]
+[ext_resource type="Script" path="res://systems/feel/game_feel.gd" id="14_feel"]
+[ext_resource type="Script" path="res://audio/sound_bank.gd" id="15_sounds"]
+[ext_resource type="Script" path="res://vfx/impact_burst.gd" id="16_sparks"]
+[ext_resource type="Script" path="res://vfx/ground_streak.gd" id="17_streak"]
 
 [sub_resource type="Environment" id="Environment_main"]
 background_mode = 1
@@ -60,6 +64,18 @@ script = ExtResource("12_rounds")
 [node name="Hud" parent="." instance=ExtResource("11_hud")]
 
 [node name="MobileControls" parent="." instance=ExtResource("6_mobile")]
+
+[node name="Feel" type="Node" parent="."]
+script = ExtResource("14_feel")
+
+[node name="Sounds" type="Node" parent="."]
+script = ExtResource("15_sounds")
+
+[node name="Sparks" type="Node3D" parent="."]
+script = ExtResource("16_sparks")
+
+[node name="Streak" type="MeshInstance3D" parent="."]
+script = ExtResource("17_streak")
 
 [node name="CameraRig" type="Node3D" parent="."]
 script = ExtResource("5_camera")

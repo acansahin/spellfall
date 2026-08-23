@@ -24,6 +24,8 @@ extends Node3D
 ##   --button-test     assert a finger on button N casts spell N and nothing else
 ##   --aim-test        assert drag-to-aim: the indicator, the direction, and the latch
 ##   --aim-hold:S,X,Y  hold a drag on button S toward X,Y and never lift, for a screenshot
+##   --feel-test       assert hitstop, shake, sparks, sound and the dash streak all fire
+##   --feel:off        park the game feel, for a suite that measures distance or duration
 ##   --cast-at:N[,S]   cast spell S (default 0) N seconds in, so a delayed shot catches it
 ## Screenshots need real rendering, so DO NOT pass --headless with --shot.
 ## The two input tests ALSO need a real window: the headless display driver does not
@@ -50,6 +52,8 @@ extends Node3D
 @onready var _hud: Hud = $Hud
 @onready var _rounds: RoundManager = $Rounds
 @onready var _kill_zone: KillZone = $Arena/KillZone
+@onready var _camera_rig: ArenaCamera = $CameraRig
+@onready var _feel: GameFeel = $Feel
 
 var _trace := false
 
@@ -80,6 +84,7 @@ func _ready() -> void:
 	_bot.input_controller = _brain
 	_brain.body = _bot
 	_brain.target = _player
+	_wire_feel()
 	_arena_edge = _arena_radius()
 	_brain.arena_radius = _arena_edge
 	# The stick is a dumb widget that reports where a thumb is; this single line is what
@@ -127,6 +132,8 @@ func _parse_harness_args() -> void:
 		elif arg == "--bot:off":
 			_freeze_bot()
 			print("[harness] bot parked")
+		elif arg == "--feel:off":
+			_quiet_feel()
 		elif arg.begins_with("--bot-skill:"):
 			# Twelve characters. Counted, not guessed - see ARCHITECTURE.md on --cast-at.
 			_set_bot_skill(arg.substr(12))
@@ -168,6 +175,8 @@ func _parse_harness_args() -> void:
 			_run_button_tests()
 		elif arg == "--aim-test":
 			_run_aim_tests()
+		elif arg == "--feel-test":
+			_run_feel_tests()
 		elif arg.begins_with("--aim-hold:"):
 			# "--aim-hold:0,1,0" aims spell 0 to screen-right. Eleven characters in the
 			# prefix, counted rather than guessed - see ARCHITECTURE.md on --cast-at.
@@ -200,6 +209,17 @@ func _parse_harness_args() -> void:
 ## expensive kind of test failure. They park it; --bot-test is where it gets to play.
 func _freeze_bot() -> void:
 	_brain.enabled = false
+
+
+## Turns the game feel off for a suite that measures.
+##
+## The same shape as `_freeze_bot()` above and for the same reason: hitstop scales
+## `Engine.time_scale`, so a slide measured over a fixed number of ticks comes out short and a
+## cooldown read after a fixed wait comes out long. Both would be correct behaviour breaking a
+## correct test, which is the most expensive kind of failure to read.
+func _quiet_feel() -> void:
+	_feel.enabled = false
+	print("[harness] game feel parked")
 
 
 func _set_bot_skill(level: String) -> void:
@@ -536,6 +556,7 @@ func _on_cast_requested(ability: Ability, origin: Vector3, direction: Vector3, c
 	if caster == _player:
 		_last_cast_dir = direction
 		_last_cast_id = ability.id
+	_feel.cast(ability, caster == _player)
 	match ability.cast_type:
 		Ability.CastType.PROJECTILE:
 			_pool.fire(ability, origin, direction, caster)
@@ -588,7 +609,10 @@ func _cast_dash(ability: Ability, direction: Vector3, caster: Node3D) -> void:
 	var fighter := caster as Player
 	if fighter == null:
 		return
-	fighter.blink_to(_blink_landing(fighter, direction, ability))
+	var from := fighter.global_position
+	var landing := _blink_landing(fighter, direction, ability)
+	fighter.blink_to(landing)
+	_feel.dashed(from, landing, ability.colour)
 
 
 ## Where a dash from `fighter` along `direction` would put them, clamped to the arena.
@@ -639,8 +663,27 @@ func _apply_hit(body: Node3D, direction: Vector3, ability: Ability) -> void:
 	var impulse := Knockback.velocity(ability.knockback, direction, level, knockback_rules)
 	fighter.apply_knockback(impulse)
 	var shielded := " (shielded)" if fighter.is_shielded() else ""
+	# What the victim ACTUALLY took, not what was thrown at them: the shield is applied inside
+	# apply_knockback, and a hit somebody shrugged off has to feel like one.
+	var landed := Vector2(fighter.knockback_velocity().x, fighter.knockback_velocity().z).length()
+	_feel.hit(fighter.global_position, ability.colour, landed, fighter == _player)
 	print("[hit] %s -> %s | instability %.0f%% | knockback %.1f m/s%s" % [
 		ability.id, body.name, level, Vector2(impulse.x, impulse.z).length(), shielded])
+
+
+# ---------------------------------------------------------------------------------------
+# Game feel
+#
+# Handed its channels here rather than finding them, like everything else in this file. Every
+# one of them is optional on the other side, so a scene missing the sparks node is a scene
+# with no sparks - never a scene that fails to run.
+# ---------------------------------------------------------------------------------------
+
+func _wire_feel() -> void:
+	_feel.camera = _camera_rig
+	_feel.sounds = $Sounds as SoundBank
+	_feel.sparks = $Sparks as ImpactBurst
+	_feel.streak = $Streak as GroundStreak
 
 
 # ---------------------------------------------------------------------------------------
@@ -751,6 +794,7 @@ func _on_round_started(number: int) -> void:
 
 func _on_countdown(remaining: int) -> void:
 	_hud.set_banner("GO" if remaining <= 0 else str(remaining))
+	_feel.countdown(remaining)
 	if remaining <= 0:
 		# Let "GO" sit for a beat, then clear it rather than leaving it over the fight.
 		await get_tree().create_timer(0.6).timeout
@@ -758,7 +802,10 @@ func _on_countdown(remaining: int) -> void:
 			_hud.set_banner("")
 
 
-func _on_eliminated(_fighter: Player, title: String) -> void:
+func _on_eliminated(fighter: Player, title: String) -> void:
+	# Read before `eliminate()` hides the body - which the round system has already done by
+	# the time this fires, but the position it left behind is still the right place to mark.
+	_feel.eliminated(fighter.global_position, fighter == _player)
 	print("[round] %s eliminated" % title)
 
 
@@ -770,6 +817,7 @@ func _on_round_ended(winner: Player, title: String) -> void:
 	# "YOU WINS" reads badly. main.gd owns these titles, so main.gd conjugates them.
 	_hud.set_banner("YOU WIN" if title == "YOU" else "%s WINS" % title,
 		Color(1.0, 0.85, 0.35))
+	_feel.round_over(winner == _player)
 	print("[round] %s wins the round" % title)
 
 
@@ -781,6 +829,7 @@ func _on_match_ended(_winner: Player, title: String) -> void:
 
 func _run_cast_tests() -> void:
 	await _settle()
+	_quiet_feel()
 	# a moving target would make every flight assertion a coin toss.
 	_freeze_bot()
 	# The countdown freezes fighters, so anything that casts or steers before the
@@ -891,6 +940,7 @@ func _run_cast_tests() -> void:
 ## the game is unplayable on a phone no matter how good everything else is.
 func _run_two_thumb_tests() -> void:
 	await _settle()
+	_quiet_feel()
 	# the wizard must move because the STICK moved it, nothing else.
 	_freeze_bot()
 	# The countdown freezes fighters, so anything that casts or steers before the
@@ -1025,6 +1075,7 @@ func _measure_slide(speed: float, instability: float) -> float:
 
 func _run_knockback_tests() -> void:
 	await _settle()
+	_quiet_feel()
 	# a slide with steering in it measures the bot, not the formula.
 	_freeze_bot()
 	# The countdown freezes fighters, so anything that casts or steers before the
@@ -1154,6 +1205,7 @@ func _wait_for_live() -> void:
 
 func _run_round_tests() -> void:
 	await _settle()
+	_quiet_feel()
 	# a fighter that walks off on its own would end the round early.
 	_freeze_bot()
 	print("[round-test] countdown=%.1fs interlude=%.1fs wins_needed=%d" % [
@@ -1327,6 +1379,7 @@ func _facing_of(fighter: Player) -> Vector2:
 
 func _run_bot_tests() -> void:
 	await _settle()
+	_quiet_feel()
 	# The bot rolls its aim error and its strafe timing. A suite that fails one run in ten is
 	# worse than no suite at all, so the random stream is pinned for the duration.
 	_brain.reseed(20260823)
@@ -1540,6 +1593,7 @@ func _drift_of(fighter: Player, seconds: float) -> Vector2:
 
 func _run_spell_tests() -> void:
 	await _settle()
+	_quiet_feel()
 	# The suite casts AT the bot and measures where it ends up, so it must not steer.
 	_freeze_bot()
 	_input.set_override_vector(Vector2.ZERO, true)
@@ -1695,6 +1749,7 @@ func _run_spell_tests() -> void:
 ## while everything above is arithmetic and physics that would run anywhere.
 func _run_button_tests() -> void:
 	await _settle()
+	_quiet_feel()
 	_freeze_bot()
 	_input.set_override_vector(Vector2.ZERO, true)
 	await _wait_for_live()
@@ -1799,6 +1854,7 @@ func _drag_aim(slot: int, screen_dir: Vector2) -> Vector2:
 
 func _run_aim_tests() -> void:
 	await _settle()
+	_quiet_feel()
 	# Nothing here is about the opponent, and a bot walking into a Fireball would end a round
 	# in the middle of a measurement.
 	_freeze_bot()
@@ -1974,3 +2030,135 @@ func _hold_aim(slot: int, direction: Vector2) -> void:
 	await _settle()
 	_emit_drag(9, centre + Vector2(dir.x, -dir.y) * AIM_DRAG)
 	print("[harness] holding aim on slot %d toward %s" % [slot, dir])
+
+
+# ---------------------------------------------------------------------------------------
+# Game feel harness
+#
+# Feel is the one thing in this project that cannot be judged by a number - "does that hit
+# land well" is a question for a human. What CAN be checked is that every channel actually
+# fires, that they scale with the hit rather than being on or off, and that hitstop gives the
+# engine back afterwards. A hitstop that leaks is not a subtle bug: the whole game runs at a
+# tenth speed forever, and it would pass every other suite in this file, because they all
+# park the feel.
+# ---------------------------------------------------------------------------------------
+
+## Waits for a shake to die, so the next reading starts from zero. Bounded, because a stuck
+## shake should fail an assertion rather than hang the run.
+func _settle_shake() -> void:
+	var guard := 0
+	while _camera_rig.shake_level() > 0.001 and guard < 600:
+		await get_tree().process_frame
+		guard += 1
+
+
+## Applies one hit and returns how much shake it added, read on the same frame so nothing has
+## decayed yet.
+func _shake_from_hit(victim: Player, ability: Ability) -> float:
+	await _settle_shake()
+	var inst := victim.instability()
+	if inst != null:
+		inst.reset()
+	var before := _camera_rig.shake_level()
+	_apply_hit(victim, Vector3(1.0, 0.0, 0.0), ability)
+	return _camera_rig.shake_level() - before
+
+
+func _run_feel_tests() -> void:
+	await _settle()
+	_freeze_bot()
+	_input.set_override_vector(Vector2.ZERO, true)
+	await _wait_for_live()
+	# Both fighters in the middle, so a Force Wave at full strength cannot throw either of
+	# them off the arena in the middle of a measurement.
+	await _place_fighters(Vector3(0.0, 1.2, -2.5), Vector3(0.0, 1.2, 0.0))
+	var book := _player.abilities()
+	var light := book.ability_in(0)
+	var heavy := book.ability_in(_slot_with(book, Ability.CastType.CONE))
+	var sounds := $Sounds as SoundBank
+	var sparks := $Sparks as ImpactBurst
+	var streak := $Streak as GroundStreak
+	print("[feel-test] stop=%.3f-%.3fs heavy at %.1f m/s, %d sounds in the bank" % [
+		_feel.stop_min, _feel.stop_max, _feel.heavy_speed, sounds.names().size()])
+
+	_expect("the feel layer has all four channels",
+		_feel.camera != null and _feel.sounds != null and _feel.sparks != null
+			and _feel.streak != null,
+		"camera=%s sounds=%s sparks=%s streak=%s" % [
+			_feel.camera != null, _feel.sounds != null, _feel.sparks != null,
+			_feel.streak != null])
+	for id in [&"cast", &"hit", &"heavy", &"fall", &"tick", &"go", &"win", &"lose", &"blink"]:
+		_expect("the bank has a %s" % id, sounds.has(id), "")
+
+	# --- one hit reaches every channel -----------------------------------------------------
+	await _settle_shake()
+	var sparks_before := sparks.active_count()
+	var began := Time.get_ticks_msec()
+	_apply_hit(_player, Vector3(1.0, 0.0, 0.0), light)
+	_expect("a hit throws sparks", sparks.active_count() > sparks_before,
+		"active %d -> %d" % [sparks_before, sparks.active_count()])
+	_expect("a hit shakes the camera", _camera_rig.shake_level() > 0.0,
+		"shake=%.3f" % _camera_rig.shake_level())
+	_expect("a hit slows the world", _feel.is_stopped() and Engine.time_scale < 1.0,
+		"time_scale=%.3f" % Engine.time_scale)
+	_expect("a hit makes a noise", sounds.playing_count() > 0,
+		"%d voice(s)" % sounds.playing_count())
+
+	# --- and gives the engine back ---------------------------------------------------------
+	#
+	# Measured in WALL CLOCK time, which is the whole point. Counting a hitstop down with a
+	# delta that the hitstop itself scaled stretches it by exactly the factor applied - the
+	# 0.035s stop would last 0.29s and still look like it worked.
+	var guard := 0
+	while Engine.time_scale < 1.0 and guard < 600:
+		await get_tree().process_frame
+		guard += 1
+	var stopped_for := (Time.get_ticks_msec() - began) / 1000.0
+	_expect("the world speeds back up", is_equal_approx(Engine.time_scale, 1.0),
+		"time_scale=%.3f after %d frames" % [Engine.time_scale, guard])
+	# The tolerance is a rendered frame either way: this poll can only notice the engine came
+	# back on a frame boundary, so a 0.072s stop reads as 0.087s on a 60fps run. What it is
+	# really guarding against is an order of magnitude - a hitstop counted down with its own
+	# slowed delta comes out EIGHT times too long and would still look fine in a log.
+	_expect("the hitstop lasted about as long as it asked to (within a frame)",
+		stopped_for >= _feel.stop_min * 0.5 and stopped_for <= _feel.stop_max + 0.10,
+		"%.3fs, asked for %.3f-%.3f" % [stopped_for, _feel.stop_min, _feel.stop_max])
+
+	# --- the channels scale with the hit ---------------------------------------------------
+	var light_shake := await _shake_from_hit(_player, light)
+	var heavy_shake := await _shake_from_hit(_player, heavy)
+	_expect("a heavier hit shakes harder", heavy_shake > light_shake + 0.01,
+		"light %.3f, heavy %.3f" % [light_shake, heavy_shake])
+	var on_bot := await _shake_from_hit(_bot, heavy)
+	_expect("a hit on the opponent shakes less than one on you",
+		on_bot < heavy_shake * 0.9 and on_bot > 0.0,
+		"you %.3f, them %.3f" % [heavy_shake, on_bot])
+
+	# --- a dash leaves a streak, and takes it away again ------------------------------------
+	var dash := book.ability_in(_slot_with(book, Ability.CastType.DASH))
+	_cast_dash(dash, Vector3(1.0, 0.0, 0.0), _player)
+	await get_tree().process_frame
+	_expect("a dash draws a streak", streak.is_showing(), "showing=%s" % streak.is_showing())
+	var waited := 0.0
+	while streak.is_showing() and waited < 2.0:
+		await get_tree().process_frame
+		waited += get_process_delta_time()
+	_expect("the streak fades on its own", not streak.is_showing(),
+		"still up after %.2fs" % waited)
+
+	# --- and the whole thing can be switched off --------------------------------------------
+	while sparks.active_count() > 0:
+		await get_tree().process_frame
+	_feel.enabled = false
+	await _settle_shake()
+	_apply_hit(_player, Vector3(1.0, 0.0, 0.0), heavy)
+	_expect("a parked feel throws no sparks", sparks.active_count() == 0,
+		"active=%d" % sparks.active_count())
+	_expect("a parked feel does not shake", _camera_rig.shake_level() <= 0.001,
+		"shake=%.3f" % _camera_rig.shake_level())
+	_expect("a parked feel leaves time alone", is_equal_approx(Engine.time_scale, 1.0),
+		"time_scale=%.3f" % Engine.time_scale)
+
+	print("[feel] %s (%d failure(s))" % [
+		"ALL PASS" if _touch_failures == 0 else "FAILURES", _touch_failures])
+	get_tree().quit(1 if _touch_failures > 0 else 0)

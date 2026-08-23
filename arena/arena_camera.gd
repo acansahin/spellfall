@@ -42,9 +42,31 @@ extends Node3D
 ## Optional node to drift toward when `follow_weight` is above zero.
 @export var target: Node3D = null
 
+@export_group("Shake")
+## How far the camera may be thrown at full shake, in metres, measured in its OWN plane -
+## so this is screen-space jitter, not a wobble in the world.
+##
+## Small on purpose. The arena rim is the most important thing on screen and shake moves it;
+## enough to feel the hit, not enough to make you misjudge an edge you are standing on.
+@export var shake_offset := 0.42
+
+## How fast a shake dies, in units of shake per second. At 6.0 a full-strength jolt is over
+## in under a fifth of a second, which is roughly the length of the hit that caused it.
+@export var shake_decay := 6.0
+
 @onready var _camera: Camera3D = $Camera3D
 
 var _anchor := Vector3.ZERO
+
+## Current shake, 0..1. The offset applied is this SQUARED, which is what makes a shake feel
+## like it snaps back: a linear fade spends most of its life at a wobble the player can still
+## see, and the eye reads that as the camera being loose rather than as an impact.
+var _shake := 0.0
+
+## Where `_reframe()` put the camera. The shake is added on top of this each frame rather
+## than accumulated into it - reading the shaken position back as "where the camera lives" is
+## how a shake turns into a slow drift nothing ever recovers from.
+var _framed := Vector3.ZERO
 
 
 func _ready() -> void:
@@ -53,6 +75,7 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
+	_tick_shake(delta)
 	if follow_weight <= 0.0 or target == null:
 		return
 	# Frame-rate independent smoothing: the same weight settles at the same rate whether
@@ -67,6 +90,34 @@ func _reframe() -> void:
 	if _camera == null:
 		return
 	var pitch := deg_to_rad(pitch_degrees)
-	_camera.position = Vector3(0.0, sin(pitch), cos(pitch)) * distance
+	_framed = Vector3(0.0, sin(pitch), cos(pitch)) * distance
+	_camera.position = _framed
 	_camera.rotation = Vector3(-pitch, 0.0, 0.0)
 	_camera.fov = fov
+
+
+## Jolts the camera. `amount` is 0..1 and ADDS to whatever is still shaking, clamped - two
+## hits landing together should feel like more, but never like the camera came loose.
+func shake(amount: float) -> void:
+	_shake = clampf(_shake + amount, 0.0, 1.0)
+
+
+## Current shake level, for the harness.
+func shake_level() -> float:
+	return _shake
+
+
+func _tick_shake(delta: float) -> void:
+	if _shake <= 0.0:
+		if _camera != null and _camera.position != _framed:
+			_camera.position = _framed
+		return
+	_shake = maxf(0.0, _shake - shake_decay * delta)
+	if _camera == null:
+		return
+	# Offset in the camera's own x/y, so the jitter is across the screen rather than into it.
+	# A new random point every frame rather than a smooth curve: at 60Hz that is the
+	# difference between an impact and a seasick float.
+	var jolt := shake_offset * _shake * _shake
+	_camera.position = _framed + Vector3(
+		randf_range(-jolt, jolt), randf_range(-jolt, jolt), 0.0)

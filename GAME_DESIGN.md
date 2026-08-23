@@ -98,6 +98,23 @@ The layout is our own. It follows general mobile-action conventions — movement
 bottom-right, aim by dragging — because those are conventions, but no other game's specific
 arrangement, iconography or styling is reproduced.
 
+## What a hit feels like
+
+Knockback is the mechanic; this is how the game says so. A hit stops the world for a few
+hundredths of a second, throws a spray of sparks at the contact point, jolts the camera,
+thumps, and buzzes the handset — all scaled by the same number, the knockback that actually
+landed. A hit somebody shrugged off with Arcane Shield feels shrugged off, because the reading
+is taken after the shield, not before.
+
+None of it is information the player did not already have. It is the same event the HUD
+percentage and the slide already reported, arriving at the moment of contact, where the eye
+already is.
+
+**Everything is placeholder and everything is cheap to change.** The sounds are synthesized
+from tones rather than recorded, the sparks are untextured spheres, and the shake is a number.
+That is deliberate at this phase: the feel is meant to be tuned by playing, and none of it
+should cost anything to throw away.
+
 ## The four starting spells
 
 All four are **built**. Numbers below are placeholders to be tuned in playtesting, and they

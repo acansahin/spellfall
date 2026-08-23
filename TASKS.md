@@ -178,16 +178,36 @@ aiming could land without a single line changing downstream of the input control
 - [x] Photographed all three shapes rather than trusting the meshes
 - [x] Re-ran all nine existing suites; `--twothumb-test` updated for cast-on-lift
 
-## Session 9 — Game feel
+## Session 9 — Game feel ✅
 
-ROADMAP step 11, and the last thing before the Phase 1 gate.
+ROADMAP step 11, and the last thing before the Phase 1 gate. Every Phase 1 step is now built;
+what remains is playing it and answering the gate honestly.
 
-- [ ] Hit particles, impact audio, brief hit pause
-- [ ] Small camera shake on heavy knockback
-- [ ] Haptics on cast, heavy hit, elimination
-- [ ] Round start and victory audio
-- [ ] Readability check: nothing hides a projectile
-- [ ] A trail or afterimage on Blink, which still has no visual at all
+- [x] `GameFeel` — one node holding hitstop, shake, sparks, sound and haptics, because "that
+      hit was heavy" has to mean the same thing to all five
+- [x] Hitstop: `Engine.time_scale` to 0.12 for 35-85ms, scaled by the knockback that landed.
+      Not a freeze — a full stop reads as a dropped frame
+- [x] The strength read back off the fighter AFTER `apply_knockback`, so a hit taken through
+      Arcane Shield feels shrugged off
+- [x] Camera shake in the camera's own screen plane, decaying on a squared curve; a hit on
+      the opponent shakes at 55% of one on you
+- [x] `ImpactBurst` — a pooled `CPUParticles3D` spray at the contact point. Strength scales
+      how far the sparks fly, never how many there are
+- [x] `SoundBank` — ten sounds synthesized from swept sines, filtered noise and an envelope.
+      **Still no audio files in the repo**
+- [x] Cast, blink, shield, hit, heavy hit, fall, countdown tick, GO, win, lose
+- [x] Haptics on a hit you took, on your own Blink, and on your own elimination; mobile-gated
+- [x] `GroundStreak` — the smear a Blink leaves, so the spell finally has a visual
+- [x] `enabled = false`, and eight measuring suites park the feel the way they park the bot
+- [x] Harness: `--feel-test` (22 assertions), `--feel:off`
+- [x] Hitstop deadline in `Time.get_ticks_msec()`, not in delta — counting it down with the
+      clock it slowed makes a 35ms stop last 290ms, and the suite measures wall-clock to prove
+      it does not
+- [x] Fix: sparks cast shadows, which drew black specks around every hit. Screenshot caught it
+- [x] Fix: a 7cm spark is four pixels at this camera. Effect sizes are set against the screen
+- [x] Readability check, photographed: a Fireball crossing a Force Wave fan stays clearly
+      visible, and the sparks do not hide either fighter
+- [x] All ten existing suites re-run and green
 
 ---
 
@@ -216,9 +236,16 @@ Small things deliberately left, so they do not get silently forgotten.
 - [ ] Six suites now depend on `_freeze_bot()`. A seventh that forgets it will fail in a way
       that looks like a code bug.
 - [ ] The Force Wave fan is drawn as a flat mesh at ground height, so a wave cast near the rim
-      hangs over the void. Correct, and it looks odd. Feel pass.
-- [ ] Blink has no visual at all — the wizard simply appears elsewhere. It reads, but a trail
-      or an afterimage is the obvious thing the feel pass should add.
+      hangs over the void. Correct, and it looks odd.
+- [ ] A DRAW makes no sound. The round-ended path returns before the feel call, deliberately —
+      neither the win nor the lose sting is right for it, and a third one was not worth writing
+      before anyone has seen a draw happen.
+- [ ] Nothing in the feel layer distinguishes the killing blow from any other hit. The fall
+      sound covers it, but the hit that ENDS a round is the one moment that could earn more.
+- [ ] Haptics are unverified on real hardware — `vibrate_handheld` is a no-op on desktop, so
+      the harness can only assert that the call is reachable. Check it on a phone.
+- [ ] The synthesized bank has never been heard on a phone speaker. Low tones are the first
+      thing a small speaker loses, and `hit` and `heavy` are both low.
 - [ ] Arcane Shield reduces knockback; it does not block projectiles or stop instability. That
       is the shipping decision recorded in GAME_DESIGN.md, not an oversight.
 - [ ] The bot spends Shield on a plain instability threshold. It has no idea whether a hit is

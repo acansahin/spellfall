@@ -6,8 +6,9 @@ Read `GAME_DESIGN.md` first for what the game is. This file is how it is put tog
 > Everything described as _(planned)_ does not exist yet. What is built: the arena, the
 > wizard, movement, the fixed camera, the touch controls, the ability framework with one
 > spell, instability, knockback, the HUD, elimination, the round loop, the bot opponent,
-> all four spells, and drag-to-aim with its ground indicators. The game-feel pass is not
-> built.
+> all four spells, drag-to-aim with its ground indicators, and the game-feel pass. Every
+> Phase 1 step is built; whether the result is FUN is the open question, and it is a
+> question for a human.
 
 ## Ground rules
 
@@ -44,12 +45,15 @@ res://
     mobile_controls/ touch_stick, ability_button (press-drag-lift to aim), mobile_controls
   systems/
     round/         round_manager.gd - countdown, elimination, score, reset
+    feel/          game_feel.gd - hitstop, shake, sparks, sound and haptics, in one place
     spawn/         (planned)
   data/            abilities/fireball.tres, knockback_rules.tres
   network/         (planned) Phase C onward
   vfx/             ground_shapes.gd - flat meshes; spell_flash.gd - the fan Force Wave
-                   draws; aim_indicator.gd - what a spell will do, before it does it
-  audio/  tests/  assets/
+                   draws; aim_indicator.gd - what a spell will do, before it does it;
+                   impact_burst.gd - sparks; ground_streak.gd - the smear a Blink leaves
+  audio/           sound_bank.gd - every sound, synthesized. There are no audio files
+  tests/  assets/
 ```
 
 Empty folders carry a `.gitkeep` so the structure survives a clone.
@@ -722,6 +726,62 @@ now so it cannot be discovered later.
 
 Performance gets **profiled, not guessed**, once there is enough on screen to profile.
 
+## Game feel
+
+`systems/feel/game_feel.gd` is one node holding hitstop, camera shake, sparks, sound and
+haptics. One node because these are **one decision**: "that hit was heavy" has to mean the
+same thing to the camera, the speaker, the phone's motor and the frame clock, and five
+systems each reading `knockback` separately is five places to disagree about what heavy is.
+They are handed a single strength and scale off it.
+
+It is not a manager. It owns no gameplay state, decides nothing about the fight, and nothing
+reads back out of it. Every call is one-way, and every one can be skipped with no consequence
+beyond a duller game — which is exactly what `enabled = false` does.
+
+It hangs off the doors that already existed. `_apply_hit()` was already the single place a hit
+means something; the feel call sits next to the `print` that was already there. The same is
+true of casts, dashes, eliminations and the countdown: the feel layer is the game's own log
+made audible.
+
+| Channel | What it does | Scaled by |
+|---|---|---|
+| Hitstop | `Engine.time_scale` to 0.12 for 35-85ms | knockback speed |
+| Shake | camera offset in its own screen plane, decaying | knockback speed, halved for a hit on the opponent |
+| Sparks | a pooled `CPUParticles3D` burst at the contact point | knockback speed sets how far they fly, never how many |
+| Sound | one name into `SoundBank` | a light hit and a heavy one are different samples |
+| Haptics | `Input.vibrate_handheld`, mobile only | light or heavy |
+
+Three decisions worth keeping:
+
+- **Hitstop is not a freeze.** 0.12 speed, not 0. A full stop reads as a dropped frame, which
+  on a phone is a complaint rather than a compliment. It is also SHORT, and the numbers to pull
+  down first if the game ever feels sticky: for as long as it lasts, the player's thumb does
+  less than it should, and this is a game about dodging.
+- **The strength a hit FEELS is the one that landed**, read back off the fighter after
+  `apply_knockback` rather than the impulse that was thrown at them. A shield takes 65% of a
+  hit, and a shrugged-off hit has to feel shrugged off.
+- **Sparks scale their spread, not their count.** The count is what the eye uses to decide
+  "did something happen" and should be the same every time; how far they fly is what says how
+  hard it was.
+
+`enabled = false` is not a debug leftover. Eight suites measure distances and durations, and
+hitstop moves both — a slide measured over a fixed number of ticks comes out short, a cooldown
+read after a fixed wait comes out long. They park the feel in their setup exactly as they park
+the bot, and `--feel-test` is where it gets to run.
+
+### Sound is synthesized, and there are no audio files
+
+`audio/sound_bank.gd` builds ten sounds at startup out of swept sines, filtered noise and an
+exponential envelope. That is what "placeholders until the game is fun" means for audio: a
+recorded thump commits to a feel before anyone knows what the hit should feel like, costs a
+licence or a session to replace, and lands in the repo as a binary nobody can diff. A tone with
+an envelope is four numbers, and every one of them is a one-line edit.
+
+The vocabulary is deliberately small — a sweep DOWN is weight (a thump, a fall), a sweep UP is
+effort (a cast, a countdown going somewhere), and noise is the crack on top that says two
+things touched. Real audio is Phase 4 work and will replace `play()` calls, not anything that
+reads this file.
+
 ## Testing without a human
 
 Godot cannot be driven by injected input from an automated session, so `main.gd` carries an
@@ -753,6 +813,8 @@ argument-gated harness. Everything after a bare `--` reaches `OS.get_cmdline_use
 | `--button-test` | Asserts a finger on button N casts spell N and nothing else |
 | `--aim-test` | Asserts drag-to-aim: the indicator, the direction, the latch, and the dash clamp |
 | `--aim-hold:S,X,Y` | Holds a drag on button S toward X,Y and never lifts, so a shot catches the indicator |
+| `--feel-test` | Asserts hitstop, shake, sparks, sound, the dash streak, and that the feel can be switched off |
+| `--feel:off` | Parks the game feel, for a suite that measures a distance or a duration |
 
 **None of these may be run with `--headless`.** `--shot` needs real rendering, and the input
 tests need a real window: the headless display driver does not route injected
@@ -814,6 +876,18 @@ Each of these cost real time in the first session.
   rate: the spell had crossed the arena and the cooldown had visibly drained before anything
   was read. Measured here at fraction 0.70 where the assertion wanted 0.85, reproducing on the
   commit before the bot existed. Wait on `physics_frame` for anything that is gameplay state.
+- **A timer must not be counted down with the clock it slowed.** Hitstop scales
+  `Engine.time_scale`, and `_process`'s delta is scaled with it — so counting the hitstop
+  down in delta stretches it by exactly the factor applied, and a 35ms stop lasts 290ms. It
+  looks like a design problem ("hitstop feels awful"), not like a bug. Deadlines for anything
+  that changes time scale go through `Time.get_ticks_msec()`.
+- **Particles cast shadows by default.** A dozen sparks over a dark arena drew a dozen tiny
+  BLACK specks around every hit, which reads as the impact smudging the floor rather than as
+  light coming off it. `cast_shadow = SHADOW_CASTING_SETTING_OFF`. Only a screenshot showed
+  it; the code looked right.
+- **Effect sizes are set against the SCREEN, not the world.** A physically sensible 7cm spark
+  is four pixels at this camera distance and reads as dirt on the lens. The arena is 14m
+  across and drawn 600px wide, and anything meant to be seen has to be sized for that.
 - **A latched input needs everything it will be acted on with, latched with it.** The cast
   slot was held across the gap between the lift and the physics tick, and the aim was not —
   so `_process` could overwrite the direction in between and the spell left sideways. It

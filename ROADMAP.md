@@ -3,7 +3,8 @@
 Phases are gated, not scheduled. **A phase does not start until the one before it is
 genuinely done**, and Phase 1 is judged by whether the game is fun, not by a checklist.
 
-Current position: **Phase 1, steps 1-10 of 11 complete.** Left: the game-feel pass (#11).
+Current position: **every Phase 1 step is built.** What is left is not a step - it is the
+gate below, and it is answered by playing the game rather than by writing more of it.
 
 ---
 
@@ -24,10 +25,10 @@ progression, no shop, no cosmetics. If that rule gets bent, the project is off t
 | 8 | Drag-to-aim + aim indicators | **done** |
 | 9 | Round manager: countdown, spawn, win, reset, score | **done** (landed early with #6) |
 | 10 | One simple bot opponent | **done** |
-| 11 | Game feel pass: hit pause, camera shake, particles, audio, haptics | next |
+| 11 | Game feel pass: hit pause, camera shake, particles, audio, haptics | **done** |
 
-**Gate to Phase 2:** every question in `GAME_DESIGN.md` under "What Phase 1 must prove"
-answers yes. Specifically — movement feels good, aiming feels good on a touchscreen,
+**Gate to Phase 2 — now the only thing standing between here and Phase 2.** Every question in
+`GAME_DESIGN.md` under "What Phase 1 must prove" answers yes. Specifically — movement feels good, aiming feels good on a touchscreen,
 Fireball and Force Wave are satisfying, knockback is predictable, instability creates real
 tension, falling off is reliable, the bot is a useful sparring partner, rounds reset cleanly,
 and the loop is fun enough that you keep playing after you stop testing.
