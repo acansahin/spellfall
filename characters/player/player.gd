@@ -4,19 +4,28 @@ extends CharacterBody3D
 ## The wizard the player steers.
 ##
 ## Movement is integrated by hand on a CharacterBody3D rather than handed to a RigidBody3D.
-## That is deliberate and load-bearing: knockback is the centrepiece mechanic of this game
-## and it has to be reproducible frame-for-frame on a server that never rendered anything.
-## Rigid-body solvers are tuned for plausible-looking contacts, not for "the same hit always
-## sends you the same distance", and they resolve differently depending on how many bodies
-## are touching. Everything here runs in _physics_process at the fixed 60Hz tick set in
-## project.godot, so behaviour does not change with rendered framerate.
+##
+## The reason is NOT determinism. Godot's physics is floating-point and is not guaranteed to
+## produce identical results across different machines, so nothing here may depend on that.
+## The plan is an authoritative server with client prediction and reconciliation, which
+## assumes divergence and corrects it - see ARCHITECTURE.md.
+##
+## The reason is that hand-integrated movement is cheap to RE-SIMULATE, which is exactly what
+## reconciliation does, many times a second. Replaying a few ticks of "add to velocity, then
+## move_and_slide()" is trivial. Replaying a rigid-body solver is not: its result depends on
+## the whole contact island and the order bodies were processed, so rewinding one body means
+## rewinding everything it touched. It also keeps the knockback rule readable in one place
+## instead of buried in a solver.
+##
+## Everything here runs in _physics_process at the fixed 60Hz tick set in project.godot, so
+## behaviour does not change with rendered framerate.
 
 ## Top ground speed in metres per second. The arena is 14m across, so 6.5 crosses it in
 ## about 2.2s — fast enough to dodge a skillshot, slow enough that position is a commitment.
 @export var move_speed := 6.5
 
 ## Seconds to reach top speed from a standstill. 0.0 means instant, which is what a
-## competitive brawler wants â€” direction changes must not feel like steering a truck.
+## competitive brawler wants — direction changes must not feel like steering a truck.
 ## Raise it slightly if movement ever feels twitchy; the ramp is here so that is a tuning
 ## change and not a rewrite.
 @export_range(0.0, 0.5, 0.01) var accel_time := 0.0
@@ -25,7 +34,7 @@ extends CharacterBody3D
 @export_range(0.0, 0.5, 0.01) var decel_time := 0.0
 
 ## How much steering authority remains while airborne. Knocked off the edge you should
-## feel committed, not able to fly back â€” but 0.0 removes all recovery skill.
+## feel committed, not able to fly back — but 0.0 removes all recovery skill.
 @export_range(0.0, 1.0, 0.05) var air_control := 0.25
 
 ## Radians per second the visual turns to face travel. Purely cosmetic; it never gates
