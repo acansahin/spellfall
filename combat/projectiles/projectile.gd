@@ -41,8 +41,17 @@ var _material: StandardMaterial3D = null
 
 
 func _ready() -> void:
+	# These OVERRIDE whatever projectile.tscn carries. The scene sets the same values and the
+	# script wins, so a mask edited only in the scene does nothing at all - which cost a run
+	# to find, because the file said 3 and the flying projectile said 2. If these ever move,
+	# move them here.
 	collision_layer = 4   # projectiles
-	collision_mask = 2    # players
+	# 3 = players + world. World is the layer cover stands on, so a Fireball dies against a
+	# rock instead of flying through it. `_apply_hit` then finds the body is not a Player and
+	# does nothing, which is exactly what hitting a rock should do. The arena platform is on
+	# that layer too and is never touched: its top is at y=0 and a projectile flies at chest
+	# height.
+	collision_mask = 3    # players + world
 	monitoring = true
 	# monitorable MUST stay true. Its documented job is "other monitoring areas can detect
 	# this area", which sounds free to switch off for a projectile that nothing else looks
@@ -91,6 +100,7 @@ func launch(ability: Ability, from: Vector3, direction: Vector3, shooter: Node3D
 	visible = true
 
 
+## Anything solid stops it; only a fighter takes a hit from it. See the mask in `_ready`.
 func _on_body_entered(body: Node3D) -> void:
 	if not _active or body == _shooter:
 		return

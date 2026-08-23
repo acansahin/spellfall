@@ -98,6 +98,20 @@ The layout is our own. It follows general mobile-action conventions — movement
 bottom-right, aim by dragging — because those are conventions, but no other game's specific
 arrangement, iconography or styling is reproduced.
 
+## Cover
+
+Two rocks and two trees stand in the arena. A spell dies against them - projectile or cone,
+the same rule - and so does a wizard walking into one.
+
+They are there to make the ring a place rather than a plate. Without them the only thing
+position means is "how far from the edge am I", and every fight is the same fight: two wizards
+in the open trading skillshots. With them there is somewhere to break line of sight, somewhere
+to force an opponent around, and a wall to be shoved into instead of thrown off.
+
+They are placed point-symmetrically, and the lane between the two spawns is left clear. Neither
+is decoration: an arena that favours one spawn is a fight decided before it starts, and an
+opening lane full of rock is a round that starts with both players walking sideways.
+
 ## What a hit feels like
 
 Knockback is the mechanic; this is how the game says so. A hit stops the world for a few

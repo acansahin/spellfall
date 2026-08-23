@@ -20,7 +20,12 @@ window/size/viewport_height=720
 ; "expand" (not "keep") so wider phones show more world instead of black bars.
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
-window/handheld/orientation=1
+; 4 is SCREEN_SENSOR_LANDSCAPE. It was 1 - which is SCREEN_PORTRAIT - for four sessions,
+; with a comment above it saying "Landscape". Every desktop run looked right because this
+; setting only applies to a handheld, so the first phone build was the first time anyone
+; could see it, and it shipped a portrait game. SENSOR rather than a fixed landscape so the
+; phone can be held either way up.
+window/handheld/orientation=4
 
 [input]
 

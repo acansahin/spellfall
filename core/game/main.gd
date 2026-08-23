@@ -24,6 +24,8 @@ extends Node3D
 ##   --button-test     assert a finger on button N casts spell N and nothing else
 ##   --aim-test        assert drag-to-aim: the indicator, the direction, and the latch
 ##   --aim-hold:S,X,Y  hold a drag on button S toward X,Y and never lift, for a screenshot
+##   --cover-test      assert the obstacles block spells, block walking, and are fair
+##                     (every OTHER suite clears the obstacles first - see _clear_cover)
 ##   --feel-test       assert hitstop, shake, sparks, sound and the dash streak all fire
 ##   --feel:off        park the game feel, for a suite that measures distance or duration
 ##   --cast-at:N[,S]   cast spell S (default 0) N seconds in, so a delayed shot catches it
@@ -52,6 +54,7 @@ extends Node3D
 @onready var _hud: Hud = $Hud
 @onready var _rounds: RoundManager = $Rounds
 @onready var _kill_zone: KillZone = $Arena/KillZone
+@onready var _obstacles: Node3D = $Arena/Obstacles
 @onready var _camera_rig: ArenaCamera = $CameraRig
 @onready var _feel: GameFeel = $Feel
 
@@ -177,6 +180,8 @@ func _parse_harness_args() -> void:
 			_run_aim_tests()
 		elif arg == "--feel-test":
 			_run_feel_tests()
+		elif arg == "--cover-test":
+			_run_cover_tests()
 		elif arg.begins_with("--aim-hold:"):
 			# "--aim-hold:0,1,0" aims spell 0 to screen-right. Eleven characters in the
 			# prefix, counted rather than guessed - see ARCHITECTURE.md on --cast-at.
@@ -220,6 +225,26 @@ func _freeze_bot() -> void:
 func _quiet_feel() -> void:
 	_feel.enabled = false
 	print("[harness] game feel parked")
+
+
+## Takes the obstacles out of the arena for a suite that measures.
+##
+## Third in the family, after `_freeze_bot()` and `_quiet_feel()`, and for the same reason
+## each time: every suite written before cover existed assumes an EMPTY arena and picks the
+## spot it measures from by hand. Force Wave's "the push goes away from the caster" test
+## happened to put its target a metre from a tree, so the victim slid along the trunk and the
+## measured push came out 30 degrees off - correct physics, correct test, arena furniture in
+## the way. That is the most expensive kind of failure to read, so the furniture goes.
+##
+## The bodies stay in the tree and simply stop colliding and drawing. `--cover-test` is where
+## they get to matter.
+func _clear_cover() -> void:
+	for child in _obstacles.get_children():
+		var body := child as CollisionObject3D
+		if body != null:
+			body.set_deferred("collision_layer", 0)
+			body.visible = false
+	print("[harness] cover cleared")
 
 
 func _set_bot_skill(level: String) -> void:
@@ -830,6 +855,7 @@ func _on_match_ended(_winner: Player, title: String) -> void:
 func _run_cast_tests() -> void:
 	await _settle()
 	_quiet_feel()
+	_clear_cover()
 	# a moving target would make every flight assertion a coin toss.
 	_freeze_bot()
 	# The countdown freezes fighters, so anything that casts or steers before the
@@ -941,6 +967,7 @@ func _run_cast_tests() -> void:
 func _run_two_thumb_tests() -> void:
 	await _settle()
 	_quiet_feel()
+	_clear_cover()
 	# the wizard must move because the STICK moved it, nothing else.
 	_freeze_bot()
 	# The countdown freezes fighters, so anything that casts or steers before the
@@ -1076,6 +1103,7 @@ func _measure_slide(speed: float, instability: float) -> float:
 func _run_knockback_tests() -> void:
 	await _settle()
 	_quiet_feel()
+	_clear_cover()
 	# a slide with steering in it measures the bot, not the formula.
 	_freeze_bot()
 	# The countdown freezes fighters, so anything that casts or steers before the
@@ -1206,6 +1234,7 @@ func _wait_for_live() -> void:
 func _run_round_tests() -> void:
 	await _settle()
 	_quiet_feel()
+	_clear_cover()
 	# a fighter that walks off on its own would end the round early.
 	_freeze_bot()
 	print("[round-test] countdown=%.1fs interlude=%.1fs wins_needed=%d" % [
@@ -1380,6 +1409,7 @@ func _facing_of(fighter: Player) -> Vector2:
 func _run_bot_tests() -> void:
 	await _settle()
 	_quiet_feel()
+	_clear_cover()
 	# The bot rolls its aim error and its strafe timing. A suite that fails one run in ten is
 	# worse than no suite at all, so the random stream is pinned for the duration.
 	_brain.reseed(20260823)
@@ -1594,6 +1624,7 @@ func _drift_of(fighter: Player, seconds: float) -> Vector2:
 func _run_spell_tests() -> void:
 	await _settle()
 	_quiet_feel()
+	_clear_cover()
 	# The suite casts AT the bot and measures where it ends up, so it must not steer.
 	_freeze_bot()
 	_input.set_override_vector(Vector2.ZERO, true)
@@ -1750,6 +1781,7 @@ func _run_spell_tests() -> void:
 func _run_button_tests() -> void:
 	await _settle()
 	_quiet_feel()
+	_clear_cover()
 	_freeze_bot()
 	_input.set_override_vector(Vector2.ZERO, true)
 	await _wait_for_live()
@@ -1855,6 +1887,7 @@ func _drag_aim(slot: int, screen_dir: Vector2) -> Vector2:
 func _run_aim_tests() -> void:
 	await _settle()
 	_quiet_feel()
+	_clear_cover()
 	# Nothing here is about the opponent, and a bot walking into a Fireball would end a round
 	# in the middle of a measurement.
 	_freeze_bot()
@@ -2160,5 +2193,150 @@ func _run_feel_tests() -> void:
 		"time_scale=%.3f" % Engine.time_scale)
 
 	print("[feel] %s (%d failure(s))" % [
+		"ALL PASS" if _touch_failures == 0 else "FAILURES", _touch_failures])
+	get_tree().quit(1 if _touch_failures > 0 else 0)
+
+
+# ---------------------------------------------------------------------------------------
+# Cover harness
+#
+# Obstacles are the first thing in the arena that is neither a fighter nor the floor, and
+# they make three promises: a spell dies against them, a wizard cannot walk through them, and
+# they are placed so that neither side of a 1v1 gets the better of them. The third is the one
+# that cannot be seen by playing - an arena that quietly favours one spawn is a fairness bug
+# that reads as "the bot is good today".
+# ---------------------------------------------------------------------------------------
+
+## Every obstacle in the arena, as flat positions.
+func _cover_points() -> Array:
+	var out: Array = []
+	for child in _obstacles.get_children():
+		var body := child as Node3D
+		if body != null:
+			out.append(Vector2(body.global_position.x, body.global_position.z))
+	return out
+
+
+## Instability on a fighter, or -1 if it has none.
+func _instability_of(fighter: Player) -> float:
+	var inst := fighter.instability()
+	return inst.current if inst != null else -1.0
+
+
+func _reset_instability() -> void:
+	for fighter in [_player, _bot]:
+		var inst: InstabilityComponent = fighter.instability()
+		if inst != null:
+			inst.reset()
+
+
+## Waits `seconds` on the gameplay clock.
+func _wait(seconds: float) -> void:
+	var waited := 0.0
+	while waited < seconds:
+		await get_tree().physics_frame
+		waited += 1.0 / 60.0
+
+
+func _run_cover_tests() -> void:
+	await _settle()
+	_quiet_feel()
+	_freeze_bot()
+	_input.set_override_vector(Vector2.ZERO, true)
+	await _wait_for_live()
+	var book := _player.abilities()
+	var fireball := book.ability_in(0)
+	var wave := book.ability_in(_slot_with(book, Ability.CastType.CONE))
+	var points := _cover_points()
+	print("[cover-test] %d obstacles at %s" % [points.size(), points])
+
+	_expect("the arena has cover", points.size() >= 2, "%d obstacle(s)" % points.size())
+
+	# --- fair to both spawns ----------------------------------------------------------------
+	#
+	# Point symmetry about the centre: turn the arena 180 degrees and it is the same arena. That
+	# is the only arrangement under which two fighters starting opposite each other are looking
+	# at the same problem.
+	var symmetric := true
+	for point in points:
+		var mirrored := false
+		for other in points:
+			if (other + point).length() < 0.05:
+				mirrored = true
+				break
+		if not mirrored:
+			symmetric = false
+	_expect("the layout is the same from both spawns", symmetric,
+		"every obstacle needs one at its mirror")
+
+	# Nothing may stand in the opening lane, or the first exchange of every round is a wall.
+	var space := get_world_3d().direct_space_state
+	var lane := PhysicsRayQueryParameters3D.create(spawn_point, bot_spawn)
+	lane.collision_mask = ConeCast.WORLD_MASK
+	_expect("the lane between the spawns is open", space.intersect_ray(lane).is_empty(),
+		"%s -> %s" % [spawn_point, bot_spawn])
+
+	# --- a spell dies against a rock ---------------------------------------------------------
+	#
+	# Both fighters on the same line as RockA, with the rock between them. Same shot that lands
+	# in --cast-test, one obstacle in the way.
+	var rock: Vector2 = points[0]
+	var lined_up := Vector3(rock.x, 1.2, rock.y + 1.7)
+	var behind := Vector3(rock.x, 1.2, rock.y - 1.7)
+	await _place_fighters(behind, lined_up)
+	_reset_instability()
+	_pool.fire(fireball, _player.global_position + Vector3(0.0, 0.0, -0.9),
+		Vector3(0.0, 0.0, -1.0), _player)
+	await _wait(1.5)
+	_expect("a projectile dies against cover", is_equal_approx(_instability_of(_bot), 0.0),
+		"bot at %.0f%% instability" % _instability_of(_bot))
+
+	# --- and the same shot lands with nothing in the way --------------------------------------
+	#
+	# The control. Without it, a suite that broke every projectile would pass the assertion
+	# above and call it cover.
+	await _place_fighters(Vector3(0.0, 1.2, -1.7), Vector3(0.0, 1.2, 1.7))
+	_reset_instability()
+	_pool.fire(fireball, _player.global_position + Vector3(0.0, 0.0, -0.9),
+		Vector3(0.0, 0.0, -1.0), _player)
+	await _wait(1.5)
+	_expect("the same shot lands down an open lane", _instability_of(_bot) > 0.0,
+		"bot at %.0f%% instability" % _instability_of(_bot))
+
+	# --- a cone is stopped by cover too --------------------------------------------------------
+	await _place_fighters(behind, lined_up)
+	_reset_instability()
+	_cast_cone(wave, Vector3(0.0, 0.0, -1.0), _player)
+	await _wait(0.3)
+	_expect("a cone does not reach through cover",
+		is_equal_approx(_instability_of(_bot), 0.0),
+		"bot at %.0f%% instability" % _instability_of(_bot))
+
+	await _place_fighters(Vector3(0.0, 1.2, -1.7), Vector3(0.0, 1.2, 1.7))
+	_reset_instability()
+	_cast_cone(wave, Vector3(0.0, 0.0, -1.0), _player)
+	await _wait(0.3)
+	_expect("the same cone catches an exposed target", _instability_of(_bot) > 0.0,
+		"bot at %.0f%% instability" % _instability_of(_bot))
+
+	# --- and you cannot walk through one --------------------------------------------------------
+	#
+	# Started 2.5m out and walked straight at it. Both halves matter: the wizard has to CLOSE
+	# the distance and then stop. Asserting only "did not reach the centre" passes just as
+	# happily when the stick was pushed the wrong way and the wizard walked off the other side,
+	# which is exactly how this assertion first passed while testing nothing.
+	await _place_fighters(bot_spawn, Vector3(rock.x, 1.2, rock.y + 2.5))
+	var started := Vector2(_player.global_position.x - rock.x,
+		_player.global_position.z - rock.y).length()
+	# Screen-forward is -Z and the rock is at -Z from the wizard, so this walks INTO it.
+	_input.set_override_vector(Vector2(0.0, 1.0), true)
+	await _wait(1.5)
+	var gap := Vector2(_player.global_position.x - rock.x,
+		_player.global_position.z - rock.y).length()
+	_input.set_override_vector(Vector2.ZERO, true)
+	_expect("a wizard walks up to a rock and stops", gap < started - 0.5 and gap > 0.9,
+		"%.2fm -> %.2fm from its centre (rock is 0.7 wide, a wizard 0.5)" % [started, gap])
+
+	print("[cover] %s (%d failure(s))" % [
 		"ALL PASS" if _touch_failures == 0 else "FAILURES", _touch_failures])
 	get_tree().quit(1 if _touch_failures > 0 else 0)

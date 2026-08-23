@@ -209,6 +209,39 @@ what remains is playing it and answering the gate honestly.
       visible, and the sparks do not hide either fighter
 - [x] All ten existing suites re-run and green
 
+## Session 10 — First phone test, and what it found ✅
+
+The first build on real hardware, and the first three notes from a player rather than a suite.
+
+- [x] **The game was in PORTRAIT.** `window/handheld/orientation` was `1`, which is
+      `SCREEN_PORTRAIT`, under a comment saying "Landscape". Now `4`
+      (`SCREEN_SENSOR_LANDSCAPE`); verified in the built APK's manifest as `userLandscape`
+- [x] Cover: two rocks and two trees, `rock.tscn` / `tree.tscn` instanced under
+      `Arena/Obstacles`
+- [x] Projectiles stop against cover - the mask lives in `projectile.gd`, not the scene
+- [x] `ConeCast` casts a sight line, so Force Wave is stopped by cover too. One rule
+- [x] Point-symmetric placement, open lane between the spawns, both asserted
+- [x] `_clear_cover()`, and the eight measuring suites call it
+- [x] Harness: `--cover-test` (7 assertions)
+- [x] Fix: `collision_mask` set in `_ready()` silently overrode the `.tscn` edit. The file
+      said 3, the flying projectile said 2, and cover did nothing
+- [x] Fix: the walk-into-a-rock assertion first passed while the wizard walked the OTHER
+      way. It now requires the distance to close as well as to stop
+- [x] All twelve suites green
+
+### Still open from that test
+
+- [ ] **"Alan çok küçük" - the arena may be too small.** Judged in PORTRAIT, where the camera
+      keeps its vertical framing and loses roughly half the horizontal, so only the middle of
+      a 14m arena was on screen. The verdict has to be re-taken in landscape before any
+      geometry moves. If it still feels cramped, growing it means: the platform's mesh and
+      collision radius, the rim, the spawn points, the obstacle ring, and the camera
+      `distance` - and the wizard gets smaller on screen, which the camera comment says was
+      already solved at the smallest size that still reads a facing direction on a phone. It
+      is a measured change, not a number to nudge.
+- [ ] Cover eats an arena this size. Four obstacles take a real bite out of 14m, which makes
+      the size question more urgent rather than less.
+
 ---
 
 ## Carried debt
@@ -228,6 +261,12 @@ Small things deliberately left, so they do not get silently forgotten.
 - [ ] `InstabilityComponent.add()` ignores negative amounts. If a spell should ever
       reduce instability, that is a design decision to make deliberately.
 - [ ] A draw (everyone falls at once) scores nobody. Fine for 1v1; revisit for FFA.
+- [ ] **The bot has no idea cover exists.** It walks into rocks and shoots them, because its
+      aim is a straight line to where you will be. Its own suite clears the obstacles, so it
+      is not measured against them either. Phase 2 material, and the first thing that will
+      make the bot look stupid on a phone.
+- [ ] Blink can put you inside cover. The landing point is clamped to the ARENA and knows
+      nothing about obstacles; physics pushes you out, which works and looks like a bug.
 - [ ] The bot does not dodge. It circles, which dodges by accident. Deliberate — Phase 1 wants
       a sparring partner, not something that wins.
 - [ ] The bot never plays the edge: it does not try to line you up against the rim, which is

@@ -18,6 +18,11 @@ extends RefCounted
 ## Mask value for the "players" physics layer (layer 2), matching KillZone and Projectile.
 const PLAYERS_MASK := 2
 
+## Mask value for the "world" layer (layer 1), which is what cover stands on. The sight line
+## is drawn between two fighters' ORIGINS, which sit at chest height on a 2m capsule - so an
+## obstacle has to be about that tall to be cover, and both the rock and the tree are.
+const WORLD_MASK := 1
+
 ## Nobody is expected to be in a 4m fan on a 14m arena with four fighters, so this is a
 ## ceiling and not a budget.
 const MAX_TARGETS := 8
@@ -60,5 +65,22 @@ static func targets(space: PhysicsDirectSpaceState3D, from: Vector3, aim: Vector
 			found.append(body)
 			continue
 		if absf(flat_aim.angle_to(offset.normalized())) <= half:
-			found.append(body)
+			if _in_sight(space, from, body):
+				found.append(body)
 	return found
+
+
+## True if nothing solid stands between the caster and `body`.
+##
+## Cover has to mean ONE thing. A rock that stops a Fireball and not a Force Wave teaches the
+## player a rule and then breaks it, and "I was behind a rock and it hit me anyway" reads as a
+## bug whatever the physics of an imaginary shockwave might argue.
+##
+## Cast against the WORLD layer only, so a second fighter standing in the way is not cover -
+## a wave catches everyone in the fan, and bodies do not shield each other.
+static func _in_sight(space: PhysicsDirectSpaceState3D, from: Vector3, body: Node3D) -> bool:
+	var ray := PhysicsRayQueryParameters3D.create(from, body.global_position)
+	ray.collision_mask = WORLD_MASK
+	ray.collide_with_bodies = true
+	ray.collide_with_areas = false
+	return space.intersect_ray(ray).is_empty()

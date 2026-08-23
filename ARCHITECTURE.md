@@ -6,9 +6,9 @@ Read `GAME_DESIGN.md` first for what the game is. This file is how it is put tog
 > Everything described as _(planned)_ does not exist yet. What is built: the arena, the
 > wizard, movement, the fixed camera, the touch controls, the ability framework with one
 > spell, instability, knockback, the HUD, elimination, the round loop, the bot opponent,
-> all four spells, drag-to-aim with its ground indicators, and the game-feel pass. Every
-> Phase 1 step is built; whether the result is FUN is the open question, and it is a
-> question for a human.
+> all four spells, drag-to-aim with its ground indicators, the game-feel pass, and cover
+> to hide behind. Every Phase 1 step is built; whether the result is FUN is the open
+> question, and it is a question for a human.
 
 ## Ground rules
 
@@ -40,6 +40,7 @@ res://
     projectiles/   projectile.gd/.tscn + projectile_pool.gd
     knockback/     knockback.gd (the formula) + knockback_rules.gd (its tuning)
   arena/           arena.tscn, arena_camera.gd, kill_zone.gd
+    obstacles/     rock.tscn, tree.tscn - cover, instanced into the arena
   ui/
     hud/           hud.gd/.tscn - instability, round number, score, banner
     mobile_controls/ touch_stick, ability_button (press-drag-lift to aim), mobile_controls
@@ -726,6 +727,35 @@ now so it cannot be discovered later.
 
 Performance gets **profiled, not guessed**, once there is enough on screen to profile.
 
+## Cover
+
+Four obstacles stand in the arena - two rocks and two trees - and they do three things.
+
+**They stop spells.** They sit on the `world` physics layer, and `Projectile`'s mask includes
+it, so a Fireball dies against a rock. The level's `_apply_hit` then finds the body is not a
+`Player` and does nothing, which is exactly what hitting a rock should mean. `ConeCast` casts
+a sight line against the same layer for the same reason: **cover has to mean one thing**, and
+a rock that stops a Fireball but not a Force Wave teaches a rule and then breaks it.
+
+The sight line runs between two fighters' ORIGINS, which sit at chest height on a 2m capsule -
+so an obstacle has to be about that tall to be cover, and both of these are. It is cast against
+`world` only, so a second fighter is never cover: a wave catches everyone in its fan.
+
+**They stop walking**, for free - a fighter's mask already includes `world`.
+
+**They are placed point-symmetrically.** Turn the arena 180 degrees and it is the same arena,
+which is the only arrangement under which two fighters starting opposite each other face the
+same problem. The lane between the two spawns is deliberately clear, so the opening exchange of
+a round is never a wall. `--cover-test` asserts all of it, symmetry included: an arena that
+quietly favours one spawn is a fairness bug that reads as "the bot is good today".
+
+Adding another obstacle is instancing `rock.tscn` or `tree.tscn` under `Arena/Obstacles` and
+giving it a transform - **and its mirror**, or the suite fails.
+
+Every OTHER suite calls `_clear_cover()` first. Third in the family after `_freeze_bot()` and
+`GameFeel.enabled = false`, for the same reason each time: those suites were written against an
+empty arena and pick the spot they measure from by hand.
+
 ## Game feel
 
 `systems/feel/game_feel.gd` is one node holding hitstop, camera shake, sparks, sound and
@@ -815,6 +845,7 @@ argument-gated harness. Everything after a bare `--` reaches `OS.get_cmdline_use
 | `--aim-hold:S,X,Y` | Holds a drag on button S toward X,Y and never lifts, so a shot catches the indicator |
 | `--feel-test` | Asserts hitstop, shake, sparks, sound, the dash streak, and that the feel can be switched off |
 | `--feel:off` | Parks the game feel, for a suite that measures a distance or a duration |
+| `--cover-test` | Asserts cover stops spells and walking, and that the layout is fair to both spawns |
 
 **None of these may be run with `--headless`.** `--shot` needs real rendering, and the input
 tests need a real window: the headless display driver does not route injected
@@ -882,6 +913,17 @@ Each of these cost real time in the first session.
   spells and walks the wizard around with nothing in the harness asking it to. It reads as a
   bug in whatever was just changed. Pass `--touch-ui:off` for any screenshot that is not
   ABOUT the controls; hidden controls claim nothing.
+- **A property assigned in `_ready()` silently overrides the `.tscn`.** `Projectile` sets its
+  own `collision_layer` and `collision_mask` in code, so editing the mask in
+  `projectile.tscn` - where it is also written, and where you would naturally look - changed
+  nothing at all. The file said 3, the flying projectile said 2, and cover did not work. When
+  a value lives in both places, the script wins; move it there or delete one of the two.
+- **`display/window/handheld/orientation` is an enum, and 1 is PORTRAIT.** It sat at 1 for
+  four sessions under a comment reading "Landscape, mobile-first". The setting only applies to
+  a handheld, so every desktop run looked correct and the first phone build was the first time
+  anybody could see it. 4 is `SCREEN_SENSOR_LANDSCAPE`, which Godot writes into the manifest as
+  `userLandscape`. Check the built APK, not the project file: `aapt2 dump xmltree <apk> --file
+  AndroidManifest.xml | grep screenOrientation`.
 - **A timer must not be counted down with the clock it slowed.** Hitstop scales
   `Engine.time_scale`, and `_process`'s delta is scaled with it — so counting the hitstop
   down in delta stretches it by exactly the factor applied, and a 35ms stop lasts 290ms. It

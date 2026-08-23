@@ -1,6 +1,8 @@
-[gd_scene load_steps=10 format=3]
+[gd_scene load_steps=12 format=3]
 
 [ext_resource type="Script" path="res://arena/kill_zone.gd" id="1_killzone"]
+[ext_resource type="PackedScene" path="res://arena/obstacles/rock.tscn" id="2_rock"]
+[ext_resource type="PackedScene" path="res://arena/obstacles/tree.tscn" id="3_tree"]
 
 [sub_resource type="BoxShape3D" id="BoxShape3D_kill"]
 size = Vector3(120, 4, 120)
@@ -68,6 +70,20 @@ surface_material_override/0 = SubResource("Mat_rim")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.01, 0)
 mesh = SubResource("TorusMesh_centre")
 surface_material_override/0 = SubResource("Mat_centre")
+
+[node name="Obstacles" type="Node3D" parent="."]
+
+[node name="RockA" parent="Obstacles" instance=ExtResource("2_rock")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 3.1, 0, 1.5)
+
+[node name="RockB" parent="Obstacles" instance=ExtResource("2_rock")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -3.1, 0, -1.5)
+
+[node name="TreeA" parent="Obstacles" instance=ExtResource("3_tree")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -2.9, 0, 2.2)
+
+[node name="TreeB" parent="Obstacles" instance=ExtResource("3_tree")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.9, 0, -2.2)
 
 [node name="KillZone" type="Area3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -12, 0)
