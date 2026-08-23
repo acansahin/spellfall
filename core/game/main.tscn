@@ -1,0 +1,43 @@
+[gd_scene load_steps=7 format=3]
+
+[ext_resource type="Script" path="res://core/game/main.gd" id="1_main"]
+[ext_resource type="PackedScene" path="res://arena/arena.tscn" id="2_arena"]
+[ext_resource type="PackedScene" path="res://characters/player/player.tscn" id="3_player"]
+[ext_resource type="Script" path="res://core/input/player_input_controller.gd" id="4_input"]
+[ext_resource type="Script" path="res://arena/arena_camera.gd" id="5_camera"]
+
+[sub_resource type="Environment" id="Environment_main"]
+background_mode = 1
+background_color = Color(0.054902, 0.043137, 0.113725, 1)
+ambient_light_source = 2
+ambient_light_color = Color(0.360784, 0.341176, 0.552941, 1)
+ambient_light_energy = 0.65
+tonemap_mode = 2
+
+[node name="Main" type="Node3D"]
+script = ExtResource("1_main")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_main")
+
+[node name="KeyLight" type="DirectionalLight3D" parent="."]
+transform = Transform3D(0.81915206, 0.46984634, -0.32898995, 0, 0.57357645, 0.81915206, 0.57357645, -0.6710101, 0.46984634, 0, 14, 0)
+light_color = Color(1, 0.960784, 0.898039, 1)
+light_energy = 1.1
+shadow_enabled = true
+directional_shadow_max_distance = 45.0
+
+[node name="Arena" parent="." instance=ExtResource("2_arena")]
+
+[node name="Player" parent="." instance=ExtResource("3_player")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.2, 3.5)
+
+[node name="PlayerInputController" type="Node" parent="."]
+script = ExtResource("4_input")
+
+[node name="CameraRig" type="Node3D" parent="."]
+script = ExtResource("5_camera")
+
+[node name="Camera3D" type="Camera3D" parent="CameraRig"]
+transform = Transform3D(1, 0, 0, 0, 0.573576, 0.819152, 0, -0.819152, 0.573576, 0, 18.021, 12.619)
+fov = 45.0

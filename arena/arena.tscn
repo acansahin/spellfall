@@ -1,0 +1,65 @@
+[gd_scene load_steps=8 format=3]
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_floor"]
+top_radius = 7.0
+bottom_radius = 6.3
+height = 2.0
+radial_segments = 48
+rings = 1
+
+[sub_resource type="StandardMaterial3D" id="Mat_floor"]
+albedo_color = Color(0.196078, 0.164706, 0.298039, 1)
+roughness = 0.9
+metallic_specular = 0.15
+
+[sub_resource type="CylinderShape3D" id="CylinderShape3D_floor"]
+height = 2.0
+radius = 7.0
+
+[sub_resource type="TorusMesh" id="TorusMesh_rim"]
+inner_radius = 6.65
+outer_radius = 7.35
+rings = 48
+ring_segments = 8
+
+[sub_resource type="StandardMaterial3D" id="Mat_rim"]
+albedo_color = Color(0.470588, 0.360784, 0.788235, 1)
+emission_enabled = true
+emission = Color(0.490196, 0.882353, 1, 1)
+emission_energy_multiplier = 1.6
+roughness = 0.4
+
+[sub_resource type="TorusMesh" id="TorusMesh_centre"]
+inner_radius = 1.5
+outer_radius = 1.65
+rings = 32
+ring_segments = 6
+
+[sub_resource type="StandardMaterial3D" id="Mat_centre"]
+albedo_color = Color(0.301961, 0.254902, 0.454902, 1)
+roughness = 1.0
+
+[node name="Arena" type="Node3D"]
+
+[node name="Platform" type="StaticBody3D" parent="."]
+collision_layer = 1
+collision_mask = 0
+
+[node name="Mesh" type="MeshInstance3D" parent="Platform"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -1, 0)
+mesh = SubResource("CylinderMesh_floor")
+surface_material_override/0 = SubResource("Mat_floor")
+
+[node name="Collision" type="CollisionShape3D" parent="Platform"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -1, 0)
+shape = SubResource("CylinderShape3D_floor")
+
+[node name="Rim" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.05, 0)
+mesh = SubResource("TorusMesh_rim")
+surface_material_override/0 = SubResource("Mat_rim")
+
+[node name="CentreMark" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.01, 0)
+mesh = SubResource("TorusMesh_centre")
+surface_material_override/0 = SubResource("Mat_centre")
