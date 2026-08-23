@@ -98,6 +98,39 @@ The layout is our own. It follows general mobile-action conventions — movement
 bottom-right, aim by dragging — because those are conventions, but no other game's specific
 arrangement, iconography or styling is reproduced.
 
+## The proportions, and where they came from
+
+The first phone build played cramped: the wizard crossed the whole arena in two seconds and
+Fireball reached everywhere from anywhere, so position meant nothing and a shot was a click.
+
+Rather than guess at better numbers, the ones from the Warcraft III custom map this game takes
+after were measured out of the map file itself. **Proportions and physics only** - no names, no
+spell designs, no art, no code. What matters is the shape of the relationships:
+
+| | The original | Spellfall before | Spellfall now |
+|---|---|---|---|
+| Walk speed | 210 units/s | 6.5 m/s | **4.0 m/s** |
+| Arena radius | 1408 units (shrinks each round) | 7 m | **10 m** |
+| **Seconds to walk across** | **~13.4** | 2.2 | **5.0** |
+| Main projectile | 750 units/s, 1s | 18 m/s, 1.2s | **12 m/s, 0.45s** |
+| Projectile / walk speed | 3.6x | 2.8x | **3.0x** |
+| **Projectile range / arena radius** | **0.53** | 3.1 | **0.54** |
+
+The last row is the one that was wrong. In the original a bolt reaches barely half way to the
+rim, so **threatening someone means walking to them** - and walking is the whole game. Ours
+out-ranged the entire board three times over, which is why standing still worked.
+
+The arena is not the original's 13 seconds across, and deliberately so: that map's camera
+follows the player, and this one shows the whole ring at once because in a knockback game the
+edge is the most important thing on screen. Five seconds is what fits on one screen while
+still leaving the wizard readable on a phone - it costs the wizard about 3% of screen height.
+
+**What this changed that nobody asked for:** knockback now moves you less relative to the ring.
+A clean Force Wave at 0% instability slides you 4.8m, which used to be 69% of the way to the
+rim and is now 48%. The escalation still bites - the same hit at 100% instability throws you
+19m - but early exchanges are survivable and rounds run longer. That is the tension curve
+stretching, not breaking, and it is the first thing to re-measure after a play session.
+
 ## Cover
 
 Two rocks and two trees stand in the arena. A spell dies against them - projectile or cone,

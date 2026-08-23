@@ -924,6 +924,16 @@ Each of these cost real time in the first session.
   anybody could see it. 4 is `SCREEN_SENSOR_LANDSCAPE`, which Godot writes into the manifest as
   `userLandscape`. Check the built APK, not the project file: `aapt2 dump xmltree <apk> --file
   AndroidManifest.xml | grep screenOrientation`.
+- **A suite must derive its distances from the numbers under test, not from the scene.**
+  `--cast-test` and `--knockback-test` fired at whatever gap the SPAWNS happened to put
+  between the fighters, and Fireball happened to out-range it. Retuning the spell and growing
+  the arena broke both, and they reported a broken projectile rather than a stale test. They
+  now place the fighters at a fraction of the spell's own `effective_range()`.
+- **Two numbers that must agree will drift.** The bot preferred to stand at 5.5m and refused
+  to shoot past 4.86m, so after the retune it held a distance from which it would not fire and
+  stood there for a whole round doing nothing. `holding_range()` now derives from
+  `cast_reach()` - and has to subtract the slack too, because the bot stops closing as soon as
+  it is anywhere inside its comfort band.
 - **A timer must not be counted down with the clock it slowed.** Hitstop scales
   `Engine.time_scale`, and `_process`'s delta is scaled with it — so counting the hitstop
   down in delta stretches it by exactly the factor applied, and a 35ms stop lasts 290ms. It

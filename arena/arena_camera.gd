@@ -24,7 +24,11 @@ extends Node3D
 		_reframe()
 
 ## Metres from the look-at point. Larger flattens perspective toward an orthographic look.
-@export_range(10.0, 120.0, 0.5) var distance := 22.0:
+##
+## 3.14 times the arena radius, which is what the 22-at-radius-7 framing worked out to. Moving
+## it with the arena keeps the rim in the same place on screen; the cost is that the wizard
+## shrinks with it, from 11% of screen height to about 8%.
+@export_range(10.0, 120.0, 0.5) var distance := 31.5:
 	set(value):
 		distance = value
 		_reframe()

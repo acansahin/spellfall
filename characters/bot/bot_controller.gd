@@ -65,6 +65,7 @@ const PROFILES: Dictionary = {
 @export_group("Positioning")
 ## Metres it tries to keep between itself and the target. Close enough that a 1.2s Fireball
 ## arrives before the player can walk out of it, far enough that the player sees it coming.
+## Never further out than it can actually hit from - see `_holding_range()`.
 @export var preferred_range := 5.5
 
 ## How far either side of `preferred_range` counts as close enough. Inside this band the bot
@@ -73,7 +74,7 @@ const PROFILES: Dictionary = {
 
 ## Radius of the platform. Handed to the bot by the level, which reads it off the arena's own
 ## collision shape - a number typed in here would go stale the first time the arena resized.
-@export var arena_radius := 7.0
+@export var arena_radius := 10.0
 
 @export_group("Movement texture")
 ## Seconds between reversals of the circling direction, randomised in this range.
@@ -195,9 +196,10 @@ func _steer(delta: float) -> Vector2:
 	# a practice cone.
 	var strafe := Vector2(-towards.y, towards.x) * _strafe_sign
 
-	if gap > preferred_range + range_slack:
+	var want := holding_range()
+	if gap > want + range_slack:
 		return (towards + strafe * STRAFE_BLEND).normalized()
-	if gap < preferred_range - range_slack:
+	if gap < want - range_slack:
 		return (-towards + strafe * STRAFE_BLEND).normalized()
 	return strafe
 
@@ -298,13 +300,46 @@ func _consider_cast(delta: float, slot: int, aim: Vector2) -> void:
 	if _cast_timer > 0.0:
 		return
 	if ability.cast_type == Ability.CastType.PROJECTILE:
-		# Do not throw a spell that expires before it arrives. Fireball outranges the arena,
-		# so this never fires today; it is here so a short-ranged one cannot be wasted later.
-		var reach := ability.projectile_speed * ability.lifetime * 0.9
-		if _flat(body.global_position).distance_to(_flat(_seen_pos)) > reach:
+		# Do not throw a spell that expires before it arrives. Same number `holding_range()`
+		# clamps against, so the bot never stands where it refuses to shoot from.
+		if _flat(body.global_position).distance_to(_flat(_seen_pos)) > cast_reach():
 			return
 	request_ability(slot)
 	_cast_timer = _num("cast_gap")
+
+
+## How far out the bot actually tries to stand: its preference, clamped so that even at the
+## FAR edge of its comfort band it can still land a shot.
+##
+## The preference and the spell's reach were independent numbers, and they drifted the moment
+## the spell was retuned: the preference said 5.5m, the shot reached 4.86m, and the bot
+## dutifully held a distance from which its own guard refused to fire. It stood there for a
+## whole round doing nothing, and nothing in the code looked wrong.
+##
+## Subtracting `range_slack` is the part that took a second try. Clamping to the reach alone
+## is not enough - the bot stops closing as soon as it is anywhere inside the band, which can
+## still be a metre outside the range it can shoot from.
+func holding_range() -> float:
+	var reach := cast_reach()
+	if reach <= 0.0:
+		return preferred_range
+	return maxf(minf(preferred_range, reach - range_slack), 1.0)
+
+
+## How far a shot from this bot is allowed to be taken. The 0.9 keeps it clear of the very
+## end of the projectile's life, where a target that steps back is missed by a whisker.
+##
+## Read by the cast guard AND by the range it holds, so the distance it stands at and the
+## distance it will shoot from cannot disagree.
+func cast_reach() -> float:
+	var book := body.abilities() if body != null else null
+	if book == null:
+		return 0.0
+	var slot := _slot_of(book, Ability.CastType.PROJECTILE)
+	if slot < 0:
+		return 0.0
+	var ability := book.ability_in(slot)
+	return ability.projectile_speed * ability.lifetime * 0.9
 
 
 ## First slot holding a spell of this type, or -1.

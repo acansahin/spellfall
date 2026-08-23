@@ -231,16 +231,46 @@ The first build on real hardware, and the first three notes from a player rather
 
 ### Still open from that test
 
-- [ ] **"Alan çok küçük" - the arena may be too small.** Judged in PORTRAIT, where the camera
-      keeps its vertical framing and loses roughly half the horizontal, so only the middle of
-      a 14m arena was on screen. The verdict has to be re-taken in landscape before any
-      geometry moves. If it still feels cramped, growing it means: the platform's mesh and
-      collision radius, the rim, the spawn points, the obstacle ring, and the camera
-      `distance` - and the wizard gets smaller on screen, which the camera comment says was
-      already solved at the smallest size that still reads a facing direction on a phone. It
-      is a measured change, not a number to nudge.
-- [ ] Cover eats an arena this size. Four obstacles take a real bite out of 14m, which makes
-      the size question more urgent rather than less.
+- [x] ~~**"Alan çok küçük" - the arena may be too small.**~~ Re-judged in landscape: still
+      too small. Answered in Session 11 by measuring the original rather than nudging - the
+      arena was six times too small in seconds-of-walking, and Fireball out-ranged it three
+      times over.
+- [x] ~~Cover eats an arena this size.~~ It does not eat a 20m one; the four obstacles moved
+      out with the rim and now read as furniture rather than as a maze.
+
+## Session 11 — The proportions, measured against the original
+
+- [x] Read the reference map's own numbers out of the map file (protected archive; the file
+      key is derivable from the name, which is ordinary MPQ reading). **Proportions and
+      physics only** - no names, no spell designs, no code
+- [x] Arena 7 -> 10m radius, area doubled; rim, centre mark, spawns and cover all moved with it
+- [x] Camera distance 22 -> 31.5, which is the same 3.14x-the-radius framing
+- [x] Walk speed 6.5 -> 4.0 m/s: the arena now takes 5 seconds to cross instead of 2.2
+- [x] Fireball 18 m/s / 1.2s -> 12 m/s / 0.45s: range 21.6m -> 5.4m, so it reaches half way
+      to the rim instead of three times across the board
+- [x] Fix: the bot preferred a range it could no longer shoot from and stood still for whole
+      rounds. `holding_range()` now derives from `cast_reach()`, slack included
+- [x] Fix: `--cast-test` and `--knockback-test` fired across the spawn gap and assumed the
+      spell out-ranged it; both now place fighters at a fraction of the spell's own reach
+- [x] Fix: `--aim-test` asserted the lane is always trimmed at the rim - true only while the
+      spell out-ranged the arena. It now checks both cases
+- [x] Fix: `--bot-test` asserted the arena radius equals a literal 7.0; it reads the
+      platform's own shape now
+- [x] All twelve suites green
+
+### Still open
+
+- [ ] **Knockback is now weaker relative to the ring.** A clean Force Wave at 0% instability
+      moves you 48% of the way to the rim where it used to move you 69%. Rounds will run
+      longer. Re-measure after a play session before touching it - the escalation at high
+      instability is untouched and still lethal.
+- [ ] Blink (5m) and Force Wave (4m reach) were left at their absolute sizes, so both are
+      relatively smaller on the bigger board. Deliberate: only the three numbers that were
+      asked for moved.
+- [ ] The wizard is about 8% of screen height, down from 11%, which the camera's own comment
+      called the smallest that still reads a facing direction on a phone. Judge it on the
+      phone. The dial is `ArenaCamera.distance`, and there is room to come in ~10% before the
+      rim leaves the screen.
 
 ---
 

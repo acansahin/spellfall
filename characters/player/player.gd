@@ -25,9 +25,13 @@ extends CharacterBody3D
 ## Everything here runs in _physics_process at the fixed 60Hz tick set in project.godot, so
 ## behaviour does not change with rendered framerate.
 
-## Top ground speed in metres per second. The arena is 14m across, so 6.5 crosses it in
-## about 2.2s — fast enough to dodge a skillshot, slow enough that position is a commitment.
-@export var move_speed := 6.5
+## Top ground speed in metres per second.
+##
+## 4.0 crosses the 20m arena in five seconds. It was 6.5 on a 14m arena, which crossed it in
+## 2.2 - and that number, measured against the original this game takes after, is where the
+## whole "it feels cramped and twitchy" problem came from. Warlock's wizard walks its arena
+## in about thirteen seconds; two is a plate, not a place. See GAME_DESIGN.md.
+@export var move_speed := 4.0
 
 ## Seconds to reach top speed from a standstill. 0.0 means instant, which is what a
 ## competitive brawler wants — direction changes must not feel like steering a truck.

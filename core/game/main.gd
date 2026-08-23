@@ -34,12 +34,14 @@ extends Node3D
 ## route injected InputEventScreenTouch/Key to _input(), so every assertion silently
 ## reads zero and the run reports failures that say nothing about the code.
 
-## Where the player is put on start and after falling off.
-@export var spawn_point := Vector3(0.0, 1.2, 3.5)
+## Where the player is put on start and after falling off. Half the arena radius out, so the
+## opening gap is 10m - outside Fireball's 6.3m reach, which is what makes the first move of a
+## round a decision rather than a race to click.
+@export var spawn_point := Vector3(0.0, 1.2, 5.0)
 
 ## Where the bot stands. Directly opposite the player, so neither side opens the round
 ## nearer the edge than the other.
-@export var bot_spawn := Vector3(0.0, 1.2, -3.5)
+@export var bot_spawn := Vector3(0.0, 1.2, -5.0)
 
 ## How a hit is turned into speed. A Resource so the central mechanic is tuned by editing
 ## data, never by editing logic - see combat/knockback/knockback_rules.gd.
@@ -120,8 +122,8 @@ func _arena_radius() -> float:
 		var cylinder := shape.shape as CylinderShape3D
 		if cylinder != null:
 			return cylinder.radius
-	push_warning("arena radius not found; the bot is falling back to 7.0")
-	return 7.0
+	push_warning("arena radius not found; the bot is falling back to 10.0")
+	return 10.0
 
 
 func _parse_harness_args() -> void:
@@ -877,6 +879,16 @@ func _run_cast_tests() -> void:
 		_pool.active_count() == 0 and built_at_start > 0,
 		"built=%d active=%d" % [built_at_start, _pool.active_count()])
 
+	# --- stand inside the spell's own reach ----------------------------------------------
+	#
+	# Not at whatever distance the spawns happen to be. The fighters used to start 7m apart
+	# while Fireball flew 21.6m, so every flight assertion below worked by accident; when the
+	# arena grew to a 10m opening gap and the spell was cut to 6.3m, the shot expired in
+	# mid-air and the suite reported a broken projectile. Half the reach is unambiguous and
+	# still a real flight, and it re-derives itself if the numbers move again.
+	var reach := fireball.effective_range() * 0.5
+	await _place_fighters(Vector3(0.0, 1.2, -reach * 0.5), Vector3(0.0, 1.2, reach * 0.5))
+
 	# --- a cast produces exactly one projectile ------------------------------------------
 	var fired: bool = book.try_cast(0, Vector3(0, 0, -1))
 	# One physics tick, NOT _settle(). _settle() straddles render frames, and on a machine
@@ -1200,6 +1212,12 @@ func _run_knockback_tests() -> void:
 	_player.respawn_at(spawn_point)
 	for i in 20:
 		await get_tree().physics_frame
+	# Inside the spell's own reach, for the reason written on --cast-test's placement: the
+	# fighters' spawn gap and Fireball's range are independent numbers, and a suite that
+	# relies on them lining up reports a broken projectile when they stop.
+	var shot_reach: float = _player.abilities().ability_in(0).effective_range() * 0.5
+	await _place_fighters(Vector3(0.0, 1.2, -shot_reach * 0.5),
+		Vector3(0.0, 1.2, shot_reach * 0.5))
 	var before_pos := _bot.global_position
 	_player.abilities().try_cast(0, Vector3(0, 0, -1))
 	var hit_seen := false
@@ -1433,10 +1451,14 @@ func _run_bot_tests() -> void:
 	_expect("the bot drives the fighter it was handed",
 		_brain.body == _bot and _brain.target == _player,
 		"body=%s target=%s" % [_brain.body, _brain.target])
+	# Read the platform's own shape here rather than repeating a number. Asserting against a
+	# literal 7.0 stopped meaning anything the moment the arena grew - and worse, it went on
+	# passing right up until the export default happened to match it.
+	var shape := get_node_or_null(^"Arena/Platform/Collision") as CollisionShape3D
+	var measured: float = (shape.shape as CylinderShape3D).radius if shape != null else -1.0
 	_expect("the arena radius is read off the arena, not typed in",
-		get_node_or_null(^"Arena/Platform/Collision") != null
-			and is_equal_approx(_brain.arena_radius, 7.0),
-		"radius=%.2fm" % _brain.arena_radius)
+		shape != null and is_equal_approx(_brain.arena_radius, measured),
+		"bot has %.2fm, the platform is %.2fm" % [_brain.arena_radius, measured])
 
 	# --- and no device can reach it -------------------------------------------------------
 	# A key that a device-polling controller would obey. The bot inherits exactly such a
@@ -1457,7 +1479,8 @@ func _run_bot_tests() -> void:
 	_expect("too close: it backs off", _brain.command.move_dir.dot(Vector2(-1.0, 0.0)) > 0.3,
 		"gap %.1fm -> %s" % [_gap(), _brain.command.move_dir])
 
-	var half := _brain.preferred_range * 0.5
+	# The distance it HOLDS, not the one it prefers - the spell's reach clamps the first.
+	var half := _brain.holding_range() * 0.5
 	await _place_fighters(Vector3(-half, 1.2, 0.0), Vector3(half, 1.2, 0.0))
 	_expect("at its preferred range it circles instead of charging",
 		absf(_brain.command.move_dir.dot(Vector2(1.0, 0.0))) < 0.25,
@@ -1514,7 +1537,9 @@ func _run_bot_tests() -> void:
 
 	# --- and it actually fights ---------------------------------------------------------------
 	var post := Vector3(0.0, 1.2, 0.0)
-	await _place_fighters(Vector3(0.0, 1.2, -_brain.preferred_range), post)
+	# At the distance the bot actually holds, not the raw preference. Those two stopped being
+	# the same number when the spell's reach started clamping it.
+	await _place_fighters(Vector3(0.0, 1.2, -_brain.holding_range()), post)
 	# Arrays, not counters. A GDScript lambda captures a local by VALUE, so an int would be
 	# incremented inside the closure and stay zero outside it - see ARCHITECTURE.md.
 	var casts: Array = []
@@ -1925,14 +1950,36 @@ func _run_aim_tests() -> void:
 	_expect("a projectile draws a lane", indicator.shape() == AimIndicator.Shape.LANE,
 		"shape=%d" % indicator.shape())
 
-	# The lane is trimmed at the rim, so the far end of it should be ON the rim - measured
-	# here from the position and the aim, not by asking the code that drew it.
-	var aim_now := _preview_direction(book)
-	var tip := _player.global_position + aim_now * indicator.reach()
-	_expect("the lane stops at the arena rim",
-		indicator.reach() < fireball.effective_range() and absf(_radius_of(tip) - _arena_edge) < 0.05,
+	# A lane that FITS shows the whole spell. Fireball reaches 5.4m on a 20m arena, so from
+	# a spawn there is nothing to trim - and asserting a trim here is what broke the moment
+	# the spell stopped out-ranging the board.
+	_expect("a lane that fits shows the spell's whole reach",
+		is_equal_approx(indicator.reach(), fireball.effective_range()),
+		"reach %.2fm of %.2fm" % [indicator.reach(), fireball.effective_range()])
+
+	# --- and a lane that would overrun IS trimmed, at the rim -----------------------------
+	#
+	# Standing one metre inside the rim and aiming out. Measured from the position and the
+	# aim rather than by asking the code that drew it: the far end has to land ON the rim.
+	_emit_touch(0, centre, false)
+	await _settle()
+	while not book.is_ready(0):
+		await get_tree().physics_frame
+	await _place_fighters(Vector3(0.0, 1.2, -3.0), Vector3(_arena_edge - 1.0, 1.2, 0.0))
+	var rim_at := await _drag_aim(0, Vector2(1.0, 0.0))
+	var tip := _player.global_position + _preview_direction(book) * indicator.reach()
+	_expect("a lane that would overrun stops at the rim",
+		indicator.reach() < fireball.effective_range()
+			and absf(_radius_of(tip) - _arena_edge) < 0.05,
 		"reach %.2fm of %.2fm, tip at r=%.2f (edge %.2f)" % [
 			indicator.reach(), fireball.effective_range(), _radius_of(tip), _arena_edge])
+	_emit_touch(0, rim_at, false)
+	await _settle()
+	while not book.is_ready(0):
+		await get_tree().physics_frame
+	await _place_fighters(Vector3(0.0, 1.2, -3.0), Vector3(0.0, 1.2, 0.0))
+	_emit_touch(0, centre, true)
+	await _settle()
 
 	# --- a small roll is a tap, not an aim ------------------------------------------------
 	_emit_drag(0, centre + Vector2(10.0, 0.0))
@@ -2016,12 +2063,13 @@ func _run_aim_tests() -> void:
 
 	# --- a dash previews where it will REALLY land ----------------------------------------
 	#
-	# Standing 3m out and aiming outward, a 5m Blink would leave the arena, so the preview
-	# has to be shorter than the spell. Then the lift proves the promise: the wizard travels
-	# exactly as far as the line said it would.
+	# Standing close enough to the rim that a Blink would leave the arena, so the preview has
+	# to come out shorter than the spell. Positioned against the ARENA rather than at a fixed
+	# 3m, so growing the board cannot quietly turn this into a test of nothing.
 	var dash_slot := _slot_with(book, Ability.CastType.DASH)
 	var dash := book.ability_in(dash_slot)
-	await _place_fighters(Vector3(0.0, 1.2, -3.5), Vector3(3.0, 1.2, 0.0))
+	var out_at := _arena_edge - BLINK_EDGE_MARGIN - dash.dash_distance * 0.4
+	await _place_fighters(Vector3(0.0, 1.2, -3.5), Vector3(out_at, 1.2, 0.0))
 	var dash_at := await _drag_aim(dash_slot, Vector2(1.0, 0.0))
 	_expect("a dash draws a line to a landing spot",
 		indicator.shape() == AimIndicator.Shape.DASH, "shape=%d" % indicator.shape())
