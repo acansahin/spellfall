@@ -1,0 +1,19 @@
+# Godot 4 project files
+.godot/
+/android/
+/build/
+/export/
+*.tmp
+
+# Exported binaries
+*.apk
+*.aab
+*.exe
+*.pck
+*.zip
+
+# Editor / OS noise
+.import/
+export_presets.cfg
+.DS_Store
+Thumbs.db
