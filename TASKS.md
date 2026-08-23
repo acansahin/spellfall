@@ -216,7 +216,8 @@ what remains is playing it and answering the gate honestly.
 Small things deliberately left, so they do not get silently forgotten.
 
 - [ ] No `README.md` yet — add one when the repo is worth explaining to someone else.
-- [ ] **Android export is untested — export templates are not installed.** See below.
+- [x] ~~Android export is untested — export templates are not installed.~~ Unblocked and a
+      signed debug APK built, 2026-08-23. See below.
 - [ ] `export_presets.cfg` is in `.gitignore`, so the Android preset written during Session 2
       lives only on this machine. Reconsider committing it once a build actually succeeds —
       CI would need it, and it holds no secrets (the keystore path is an editor setting).
@@ -280,28 +281,32 @@ Small things deliberately left, so they do not get silently forgotten.
 
 ## Android export status
 
-Blocked, and **not** by anything in this project. Attempting a real export
-(`--export-debug "Android"`) reports exactly:
+**Working.** A signed arm64 debug APK builds locally in about a minute:
 
 ```
-No export template found at the expected path:
-  .../export_templates/4.7.stable/android_debug.apk
-No export template found at the expected path:
-  .../export_templates/4.7.stable/android_release.apk
-A valid Java SDK path is required in Editor Settings.
+"C:\Program Files\Godot\Godot.exe.exe" --headless --path . --export-debug "Android" "build/spellfall-debug.apk"
 ```
 
-What is already present on this machine:
+First build produced 28.6 MB, signed `CN=Android Debug`, `arm64-v8a` only, game data under
+`assets/`. `build/` and `*.apk` are gitignored, so nothing lands in the repo.
 
-| Piece | State |
+Three things had to be set up once, on this machine, and none of them were in the project:
+
+| Piece | What was done |
 |---|---|
-| Android SDK | present — `build-tools/36.0.0`, `platforms/android-36.1`, `platform-tools` |
-| JDK | present — Temurin OpenJDK 21.0.12 on `PATH` |
-| Godot's `android_sdk_path` | already set in editor settings |
-| **Godot export templates for 4.7** | **absent — the whole `export_templates/` folder is empty** |
-| **`export/android/java_sdk_path`** | **empty in editor settings** |
-| Debug keystore | editor settings point at `.../Godot/keystores/debug.keystore`, which does not exist |
+| Godot 4.7 export templates | `export_templates/` was empty. Downloaded `Godot_v4.7-stable_export_templates.tpz` (1.28 GB) from the godotengine/godot 4.7-stable release and unpacked it into `%APPDATA%/Godot/export_templates/4.7.stable/` |
+| `export/android/java_sdk_path` | Was empty in editor settings. Set to the Temurin 21 install already on the machine |
+| Debug keystore | The path in editor settings pointed at a file that did not exist. Generated with `keytool` at `%APPDATA%/Godot/keystores/debug.keystore`, alias `androiddebugkey`, pass `android` |
 
-To unblock, in the Godot editor: **Editor → Manage Export Templates → Download and Install**
-(~1 GB), then **Editor → Editor Settings → Export → Android** and set the Java SDK path to the
-Temurin 21 install. Not done here because it is a large download that was not asked for.
+Android SDK (build-tools 36.0.0, platform-tools) and JDK 21 were already present.
+
+**No gradle build is involved.** The preset has `gradle_build/use_gradle_build=false`, so the
+export uses the prebuilt template APK - which is why the Android build template and a working
+gradle setup are not needed at all.
+
+**`export_presets.cfg` is still in `.gitignore`**, so this preset lives only on this machine.
+Now that a build has actually succeeded, committing it is worth reconsidering: it holds no
+secrets (the keystore path is an editor setting, not a preset field) and CI would need it.
+
+To put a build on a phone: `adb install -r build/spellfall-debug.apk` with the device
+connected and USB debugging on, or copy the APK across and open it.
