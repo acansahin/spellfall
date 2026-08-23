@@ -17,6 +17,12 @@ extends Node3D
 ##   --twothumb-test   hold the stick and the cast button at once, on separate fingers
 ##   --knockback-test  assert the instability curve and the distance a hit carries
 ##   --round-test      assert a full round cycle: countdown, elimination, score, reset
+##   --bot-test        assert the bot: range, aim, facing, edge safety, difficulty, fairness
+##   --bot:off         park the bot, for a screenshot or a suite measuring something else
+##   --bot-skill:S     play against calm|steady|sharp instead of the scene's setting
+##   --spells-test     assert Force Wave, Blink and Arcane Shield do what they claim
+##   --button-test     assert a finger on button N casts spell N and nothing else
+##   --cast-at:N[,S]   cast spell S (default 0) N seconds in, so a delayed shot catches it
 ## Screenshots need real rendering, so DO NOT pass --headless with --shot.
 ## The two input tests ALSO need a real window: the headless display driver does not
 ## route injected InputEventScreenTouch/Key to _input(), so every assertion silently
@@ -25,8 +31,9 @@ extends Node3D
 ## Where the player is put on start and after falling off.
 @export var spawn_point := Vector3(0.0, 1.2, 3.5)
 
-## Where the training dummy stands.
-@export var dummy_spawn := Vector3(0.0, 1.0, -3.0)
+## Where the bot stands. Directly opposite the player, so neither side opens the round
+## nearer the edge than the other.
+@export var bot_spawn := Vector3(0.0, 1.2, -3.5)
 
 ## How a hit is turned into speed. A Resource so the central mechanic is tuned by editing
 ## data, never by editing logic - see combat/knockback/knockback_rules.gd.
@@ -36,18 +43,35 @@ extends Node3D
 @onready var _input: PlayerInputController = $PlayerInputController
 @onready var _mobile: MobileControls = $MobileControls
 @onready var _pool: ProjectilePool = $ProjectilePool
-@onready var _dummy: Player = $TrainingDummy
+@onready var _bot: Player = $BotWizard
+@onready var _brain: BotController = $BotController
 @onready var _hud: Hud = $Hud
 @onready var _rounds: RoundManager = $Rounds
 @onready var _kill_zone: KillZone = $Arena/KillZone
 
 var _trace := false
 
+## The platform's radius, measured once in _ready. Blink clamps against it and the bot is
+## handed it; nothing else in the level needs to know the arena has a size.
+var _arena_edge := 7.0
+
+## How far inside the rim a Blink is allowed to land. Enough that you arrive ON the platform
+## rather than on its lip, where the next breath of knockback removes you anyway.
+const BLINK_EDGE_MARGIN := 0.6
+
 
 func _ready() -> void:
 	# The character is handed its input source rather than reaching out for one, so a bot
 	# or a network replay can be substituted without the character noticing.
 	_player.input_controller = _input
+	# ...and here is that substitution made good. The bot's fighter takes a BotController
+	# where the human's takes a PlayerInputController, and player.gd holds not one line that
+	# knows which of the two it got.
+	_bot.input_controller = _brain
+	_brain.body = _bot
+	_brain.target = _player
+	_arena_edge = _arena_radius()
+	_brain.arena_radius = _arena_edge
 	# The stick is a dumb widget that reports where a thumb is; this single line is what
 	# gives its output a meaning. Wiring it here rather than inside either node keeps the
 	# stick reusable and keeps PlayerInputController unaware that a UI exists - the same
@@ -57,7 +81,7 @@ func _ready() -> void:
 	# The HUD reads instability and nothing else. It is handed its sources here rather than
 	# hunting for them, so a second fighter is one more line and not a rewrite.
 	_hud.add_readout("YOU", _player.instability())
-	_hud.add_readout("DUMMY", _dummy.instability())
+	_hud.add_readout("BOT", _bot.instability())
 	_wire_rounds()
 	_parse_harness_args()
 	_rounds.start_match()
@@ -68,13 +92,33 @@ func _process(_delta: float) -> void:
 		_rounds.begin_round()
 
 
+## The platform's radius, read off the arena's own collision shape rather than typed in a
+## second time. The bot needs to know where the edge is, and a copied number would go stale
+## the first time the arena is resized - silently, and only for the bot.
+func _arena_radius() -> float:
+	var shape := get_node_or_null(^"Arena/Platform/Collision") as CollisionShape3D
+	if shape != null:
+		var cylinder := shape.shape as CylinderShape3D
+		if cylinder != null:
+			return cylinder.radius
+	push_warning("arena radius not found; the bot is falling back to 7.0")
+	return 7.0
+
+
 func _parse_harness_args() -> void:
-	# Visibility first: --touch-test needs the stick already shown and laid out.
+	# Settings first: --touch-test needs the stick already shown and laid out, and a suite
+	# that reads a bot number must read the one the run asked for.
 	for arg in OS.get_cmdline_user_args():
 		if arg == "--touch-ui:on":
 			_mobile.visibility_mode = MobileControls.Visibility.ALWAYS
 		elif arg == "--touch-ui:off":
 			_mobile.visibility_mode = MobileControls.Visibility.HIDDEN
+		elif arg == "--bot:off":
+			_freeze_bot()
+			print("[harness] bot parked")
+		elif arg.begins_with("--bot-skill:"):
+			# Twelve characters. Counted, not guessed - see ARCHITECTURE.md on --cast-at.
+			_set_bot_skill(arg.substr(12))
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--move="):
 			var parts := arg.substr(7).split(",")
@@ -105,14 +149,52 @@ func _parse_harness_args() -> void:
 			_run_knockback_tests()
 		elif arg == "--round-test":
 			_run_round_tests()
+		elif arg == "--bot-test":
+			_run_bot_tests()
+		elif arg == "--spells-test":
+			_run_spell_tests()
+		elif arg == "--button-test":
+			_run_button_tests()
 		elif arg == "--layout-probe":
 			_probe_layout()
 		elif arg.begins_with("--cast-at:"):
-			_cast_at(float(arg.substr(10)))
+			# "--cast-at:1.5", or "--cast-at:1.5,1" for a slot other than the first. Ten
+			# characters in the prefix; substr(9) yields ":1.5", which float() reads as 0.0
+			# without complaining. That cost a session once - see ARCHITECTURE.md.
+			var when := arg.substr(10).split(",")
+			var slot := 0
+			if when.size() > 1:
+				slot = int(when[1])
+			_cast_at(float(when[0]), slot)
 		elif arg.begins_with("--stick-hold="):
 			var hp := arg.substr(13).split(",")
 			if hp.size() == 2:
 				_hold_stick(Vector2(float(hp[0]), float(hp[1])))
+
+
+## Parks the bot without unwiring it.
+##
+## Every suite written before the bot existed assumed the second fighter stood still: the
+## cast suite fires down the -Z line and expects a hit, the knockback suite measures a slide
+## with no steering in it, the round suite expects a body to stay where it was put. An
+## opponent that dodges breaks all three for entirely correct reasons, which is the most
+## expensive kind of test failure. They park it; --bot-test is where it gets to play.
+func _freeze_bot() -> void:
+	_brain.enabled = false
+
+
+func _set_bot_skill(level: String) -> void:
+	match level.to_lower():
+		"calm":
+			_brain.skill = BotController.Skill.CALM
+		"steady":
+			_brain.skill = BotController.Skill.STEADY
+		"sharp":
+			_brain.skill = BotController.Skill.SHARP
+		_:
+			push_warning("unknown bot skill '%s'; leaving it alone" % level)
+			return
+	print("[harness] bot skill = %s" % level.to_upper())
 
 
 func _run_trace() -> void:
@@ -405,33 +487,106 @@ func _probe_layout() -> void:
 # ---------------------------------------------------------------------------------------
 
 func _wire_combat() -> void:
-	var book := _player.abilities()
-	if book == null:
-		push_warning("player has no AbilityComponent; casting disabled")
-		return
-	book.cast_requested.connect(_on_cast_requested)
+	# Every fighter's spellbook arrives at the same handler, so the bot's Fireball IS the
+	# player's Fireball: same pool, same flight, same hit resolution, same knockback. A
+	# separate path for the opponent would be a second set of rules to keep in step.
+	var fighters: Array[Player] = [_player, _bot]
+	for fighter in fighters:
+		var spellbook := fighter.abilities()
+		if spellbook == null:
+			push_warning("%s has no AbilityComponent; it will never cast" % fighter.name)
+			continue
+		spellbook.cast_requested.connect(_on_cast_requested)
 	_pool.projectile_hit.connect(_on_projectile_hit)
-	# The button reports a press; the controller latches it; the character consumes it on
-	# the next tick. Touch therefore takes exactly the same route as the Space key, which
-	# is what stops the two drifting apart.
-	_mobile.cast_button.pressed_slot.connect(_input.request_ability)
-	# Read-only, for drawing the cooldown wedge and the spell's colour.
-	_mobile.cast_button.source = book
+	# A button reports a press; the controller latches it; the character consumes it on the
+	# next tick. Touch therefore takes the same route as the number keys, which is what stops
+	# the two drifting apart - and it is why four buttons needed no new plumbing at all.
+	for button in _mobile.buttons:
+		button.pressed_slot.connect(_input.request_ability)
+		# Read-only, for drawing the cooldown wedge and the spell's colour. The buttons belong
+		# to the human, so they watch the human's spellbook.
+		button.source = _player.abilities()
 
 
 func _on_cast_requested(ability: Ability, origin: Vector3, direction: Vector3, caster: Node3D) -> void:
 	match ability.cast_type:
 		Ability.CastType.PROJECTILE:
 			_pool.fire(ability, origin, direction, caster)
+		Ability.CastType.CONE:
+			_cast_cone(ability, direction, caster)
+		Ability.CastType.DASH:
+			_cast_dash(ability, direction, caster)
+		Ability.CastType.BUFF:
+			_cast_buff(ability, caster)
 		_:
-			# Cone, dash and buff are authored in the Ability but have no runtime yet. Warn
-			# loudly rather than failing silently, so a half-built spell is obvious.
-			push_warning("cast type %d not implemented yet (%s)" % [ability.cast_type, ability.id])
+			# Nothing reaches here today. Kept so that a cast type added to the enum and
+			# forgotten here is loud rather than silent - which is how the other three spent
+			# a session doing nothing at all.
+			push_warning("cast type %d has no runtime (%s)" % [ability.cast_type, ability.id])
 
 
-## What a hit MEANS. The projectile reports contact and stops there; this is the one place
-## instability is raised and the one place knockback is handed out.
+## The projectile pool reports contact and stops there. Every hit in the game, from any
+## source, goes through `_apply_hit` below.
 func _on_projectile_hit(body: Node3D, direction: Vector3, ability: Ability) -> void:
+	_apply_hit(body, direction, ability)
+
+
+## Force Wave. Everything standing in the fan is hit on this frame, and thrown AWAY FROM THE
+## CASTER rather than along the aim.
+##
+## That difference is the spell. A wave shoves what it touches outward, so catching someone at
+## the shoulder of the cone throws them sideways off the rim - which is why it is the finisher
+## and why it is worth walking into range for.
+func _cast_cone(ability: Ability, direction: Vector3, caster: Node3D) -> void:
+	var fighter := caster as Player
+	if fighter != null:
+		var flash := fighter.spell_flash()
+		if flash != null:
+			# The drawing takes its shape from the same two numbers the hit test uses, so the
+			# fan on screen cannot disagree with the fan that hits.
+			flash.play(ability.area, ability.cone_angle, ability.colour, direction)
+	var space := get_world_3d().direct_space_state
+	for body in ConeCast.targets(space, caster.global_position, direction, ability, caster):
+		var push := body.global_position - caster.global_position
+		push.y = 0.0
+		if push.length_squared() < 0.0001:
+			push = direction
+		_apply_hit(body, push.normalized(), ability)
+
+
+## Blink. The landing point is clamped INSIDE the arena here, in the level, because the level
+## is the only thing that knows where the edge is - and a spell that could drop you in the
+## void is a spell nobody would ever press.
+func _cast_dash(ability: Ability, direction: Vector3, caster: Node3D) -> void:
+	var fighter := caster as Player
+	if fighter == null:
+		return
+	var landing := fighter.global_position + direction.normalized() * ability.dash_distance
+	var flat := Vector2(landing.x, landing.z)
+	var limit := maxf(_arena_edge - BLINK_EDGE_MARGIN, 0.5)
+	if flat.length() > limit:
+		flat = flat.normalized() * limit
+	fighter.blink_to(Vector3(flat.x, fighter.global_position.y, flat.y))
+
+
+## Arcane Shield. Reduction rather than blocking - see GAME_DESIGN.md for why blocking is the
+## better long-term version and still not the one that ships.
+func _cast_buff(ability: Ability, caster: Node3D) -> void:
+	var fighter := caster as Player
+	if fighter == null:
+		return
+	fighter.apply_shield(ability.duration, ability.knockback_resist)
+	print("[buff] %s -> %s | %.0f%% of a hit gets through, for %.1fs" % [
+		ability.id, fighter.name, ability.knockback_resist * 100.0, ability.duration])
+
+
+## What a hit MEANS, for every source of one. A projectile arriving and a cone catching
+## someone both end up here, so instability is raised in exactly one place and knockback is
+## handed out in exactly one place.
+##
+## `direction` is the way the victim gets thrown: a projectile's travel direction, or the line
+## out from the caster for a cone.
+func _apply_hit(body: Node3D, direction: Vector3, ability: Ability) -> void:
 	var fighter := body as Player
 	if fighter == null:
 		return
@@ -447,8 +602,9 @@ func _on_projectile_hit(body: Node3D, direction: Vector3, ability: Ability) -> v
 
 	var impulse := Knockback.velocity(ability.knockback, direction, level, knockback_rules)
 	fighter.apply_knockback(impulse)
-	print("[hit] %s -> %s | instability %.0f%% | knockback %.1f m/s" % [
-		ability.id, body.name, level, Vector2(impulse.x, impulse.z).length()])
+	var shielded := " (shielded)" if fighter.is_shielded() else ""
+	print("[hit] %s -> %s | instability %.0f%% | knockback %.1f m/s%s" % [
+		ability.id, body.name, level, Vector2(impulse.x, impulse.z).length(), shielded])
 
 
 # ---------------------------------------------------------------------------------------
@@ -461,7 +617,7 @@ func _on_projectile_hit(body: Node3D, direction: Vector3, ability: Ability) -> v
 
 func _wire_rounds() -> void:
 	_rounds.add_fighter(_player, spawn_point, "YOU")
-	_rounds.add_fighter(_dummy, dummy_spawn, "DUMMY")
+	_rounds.add_fighter(_bot, bot_spawn, "BOT")
 	_kill_zone.fighter_fell.connect(_rounds.report_fall)
 
 	_rounds.round_started.connect(_on_round_started)
@@ -510,6 +666,8 @@ func _on_match_ended(_winner: Player, title: String) -> void:
 
 func _run_cast_tests() -> void:
 	await _settle()
+	# a moving target would make every flight assertion a coin toss.
+	_freeze_bot()
 	# The countdown freezes fighters, so anything that casts or steers before the
 	# round is live is measuring a fighter that was told to stand still.
 	await _wait_for_live()
@@ -531,7 +689,13 @@ func _run_cast_tests() -> void:
 
 	# --- a cast produces exactly one projectile ------------------------------------------
 	var fired: bool = book.try_cast(0, Vector3(0, 0, -1))
-	await _settle()
+	# One physics tick, NOT _settle(). _settle() straddles render frames, and on a machine
+	# whose renderer is slower than its 60Hz physics a dozen ticks can turn over inside it -
+	# by which time the spell has crossed the arena and the cooldown has visibly drained. The
+	# suite then reports failures that are about the frame rate and not about the code (it
+	# reported four of them here). Everything asserted below is gameplay state, so it waits
+	# on the gameplay clock.
+	await get_tree().physics_frame
 	_expect("try_cast succeeded", fired, "returned %s" % fired)
 	_expect("one projectile in flight", _pool.active_count() == 1,
 		"active=%d" % _pool.active_count())
@@ -560,14 +724,14 @@ func _run_cast_tests() -> void:
 	_expect("projectile travels along the aim (-Z)", moved > 0.1,
 		"moved %.3fm in 3 ticks" % moved)
 
-	# --- it hits the dummy, and the pool takes it back -----------------------------------
+	# --- it hits the bot, and the pool takes it back -----------------------------------
 	var hit_body: Array = []
 	_pool.projectile_hit.connect(func(b, _d, _a): hit_body.append(b), CONNECT_ONE_SHOT)
 	var waited := 0.0
 	while _pool.active_count() > 0 and waited < 2.0:
 		await get_tree().physics_frame
 		waited += 1.0 / 60.0
-	_expect("projectile reached the training dummy", hit_body.size() == 1,
+	_expect("projectile reached the opponent", hit_body.size() == 1,
 		"hits=%d after %.2fs" % [hit_body.size(), waited])
 	_expect("pool reclaimed it", _pool.active_count() == 0,
 		"active=%d" % _pool.active_count())
@@ -612,20 +776,34 @@ func _run_cast_tests() -> void:
 ## the game is unplayable on a phone no matter how good everything else is.
 func _run_two_thumb_tests() -> void:
 	await _settle()
+	# the wizard must move because the STICK moved it, nothing else.
+	_freeze_bot()
 	# The countdown freezes fighters, so anything that casts or steers before the
 	# round is live is measuring a fighter that was told to stand still.
 	await _wait_for_live()
 	var stick := _mobile.joystick
-	var button := _mobile.cast_button
+	var button := _mobile.buttons[0]
 	var book := _player.abilities()
 	var stick_centre := stick.get_global_rect().get_center()
 	var button_centre := button.get_global_rect().get_center()
 	print("[twothumb] stick=%s button=%s (gap %.0f units)" % [
 		stick_centre, button_centre, stick_centre.distance_to(button_centre)])
 
-	_expect("stick and button do not overlap",
-		not stick.get_global_rect().grow(44.0).intersects(button.get_global_rect().grow(16.0)),
-		"stick=%s button=%s" % [stick.get_global_rect(), button.get_global_rect()])
+	for i in _mobile.buttons.size():
+		var other: AbilityButton = _mobile.buttons[i]
+		_expect("stick and button %d do not overlap" % i,
+			not stick.get_global_rect().grow(44.0).intersects(other.get_global_rect().grow(16.0)),
+			"stick=%s button=%s" % [stick.get_global_rect(), other.get_global_rect()])
+	# And no two spells share a finger. A cluster tight enough to thumb is a cluster tight
+	# enough to mis-tap, and a mis-tapped Blink at the rim is a lost round.
+	for i in _mobile.buttons.size():
+		for j in range(i + 1, _mobile.buttons.size()):
+			var a: AbilityButton = _mobile.buttons[i]
+			var b: AbilityButton = _mobile.buttons[j]
+			var gap: float = a.get_global_rect().get_center().distance_to(b.get_global_rect().get_center())
+			var need: float = a.radius + a.activation_padding + b.radius + b.activation_padding
+			_expect("buttons %d and %d cannot share a finger" % [i, j], gap >= need,
+				"centres %.0f apart, need %.0f" % [gap, need])
 
 	# --- left thumb takes the stick -------------------------------------------------------
 	_emit_touch(0, stick_centre, true)
@@ -694,10 +872,11 @@ func _run_two_thumb_tests() -> void:
 	get_tree().quit(1 if _touch_failures > 0 else 0)
 
 
-## Casts the primary spell N seconds in, so a delayed --shot can catch a spell mid-flight.
-func _cast_at(seconds: float) -> void:
+## Casts a spell N seconds in, so a delayed --shot can catch it. It goes through the same
+## latch a thumb does, so the screenshot shows what a player would have seen.
+func _cast_at(seconds: float, slot: int) -> void:
 	await get_tree().create_timer(seconds).timeout
-	_input.request_ability(0)
+	_input.request_ability(slot)
 
 
 # ---------------------------------------------------------------------------------------
@@ -709,31 +888,33 @@ func _cast_at(seconds: float) -> void:
 # form - v squared over 2f - which is exactly why the drag is linear.
 # ---------------------------------------------------------------------------------------
 
-## Hits the dummy with a known speed and returns how far it slid on the ground plane.
+## Hits the bot with a known speed and returns how far it slid on the ground plane.
 func _measure_slide(speed: float, instability: float) -> float:
-	_dummy.respawn_at(dummy_spawn)
+	_bot.respawn_at(bot_spawn)
 	for i in 20:
 		await get_tree().physics_frame
-	var start := _dummy.global_position
+	var start := _bot.global_position
 	var impulse := Knockback.velocity(speed, Vector3(0, 0, -1), instability, knockback_rules)
-	_dummy.apply_knockback(impulse)
+	_bot.apply_knockback(impulse)
 	var guard := 0
-	while _dummy.knockback_velocity().length() > 0.001 and guard < 600:
+	while _bot.knockback_velocity().length() > 0.001 and guard < 600:
 		await get_tree().physics_frame
 		guard += 1
-	var moved := _dummy.global_position - start
+	var moved := _bot.global_position - start
 	return Vector2(moved.x, moved.z).length()
 
 
 func _run_knockback_tests() -> void:
 	await _settle()
+	# a slide with steering in it measures the bot, not the formula.
+	_freeze_bot()
 	# The countdown freezes fighters, so anything that casts or steers before the
 	# round is live is measuring a fighter that was told to stand still.
 	await _wait_for_live()
 	var rules := knockback_rules
-	print("[knockback] rules: base=%.1f per100=%.1f max=%.1f lift=%.1f | dummy friction=%.1f" % [
+	print("[knockback] rules: base=%.1f per100=%.1f max=%.1f lift=%.1f | bot friction=%.1f" % [
 		rules.base_multiplier, rules.per_100_instability, rules.max_multiplier, rules.lift,
-		_dummy.knockback_friction])
+		_bot.knockback_friction])
 
 	# --- the curve is pure arithmetic, check it directly ---------------------------------
 	_expect("multiplier at 0% is 1.0",
@@ -758,7 +939,7 @@ func _run_knockback_tests() -> void:
 
 	# --- measured slide matches the closed form ------------------------------------------
 	var base_speed := 6.0
-	var predicted := Knockback.slide_distance(base_speed, _dummy.knockback_friction)
+	var predicted := Knockback.slide_distance(base_speed, _bot.knockback_friction)
 	var measured := await _measure_slide(base_speed, 0.0)
 	_expect("slide at 0% matches v^2/2f",
 		absf(measured - predicted) / predicted < 0.15,
@@ -778,62 +959,62 @@ func _run_knockback_tests() -> void:
 		"%.2fm vs %.2fm = %.2fx" % [at50, measured, ratio])
 
 	# --- and eventually it throws you off ------------------------------------------------
-	_dummy.respawn_at(dummy_spawn)
+	_bot.respawn_at(bot_spawn)
 	for i in 20:
 		await get_tree().physics_frame
 	var hard := Knockback.velocity(base_speed, Vector3(0, 0, -1), 200.0, knockback_rules)
-	_dummy.apply_knockback(hard)
+	_bot.apply_knockback(hard)
 	var left_arena := false
 	for i in 240:
 		await get_tree().physics_frame
-		var p := _dummy.global_position
+		var p := _bot.global_position
 		if Vector2(p.x, p.z).length() > 7.2 or p.y < 0.0:
 			left_arena = true
 			break
 	_expect("a hit at 200% throws the target off the arena", left_arena,
-		"ended at %s" % _dummy.global_position)
-	_dummy.respawn_at(dummy_spawn)
+		"ended at %s" % _bot.global_position)
+	_bot.respawn_at(bot_spawn)
 	for i in 20:
 		await get_tree().physics_frame
 
 	# --- instability accumulates, and a respawn clears it ---------------------------------
-	var inst := _dummy.instability()
-	_expect("dummy starts stable", is_equal_approx(inst.current, 0.0), "%.1f%%" % inst.current)
+	var inst := _bot.instability()
+	_expect("the target starts stable", is_equal_approx(inst.current, 0.0), "%.1f%%" % inst.current)
 	inst.add(12.0)
 	inst.add(12.0)
 	_expect("instability accumulates", is_equal_approx(inst.current, 24.0),
 		"%.1f%%" % inst.current)
-	_dummy.respawn_at(dummy_spawn)
+	_bot.respawn_at(bot_spawn)
 	_expect("respawn resets instability", is_equal_approx(inst.current, 0.0),
 		"%.1f%%" % inst.current)
 
 	# --- hitstun exists and expires ------------------------------------------------------
-	_dummy.apply_knockback(Knockback.velocity(base_speed, Vector3(0, 0, -1), 0.0, rules))
-	_expect("a hit causes hitstun", _dummy.is_in_hitstun(), "in hitstun=%s" % _dummy.is_in_hitstun())
+	_bot.apply_knockback(Knockback.velocity(base_speed, Vector3(0, 0, -1), 0.0, rules))
+	_expect("a hit causes hitstun", _bot.is_in_hitstun(), "in hitstun=%s" % _bot.is_in_hitstun())
 	var waited := 0
-	while _dummy.is_in_hitstun() and waited < 300:
+	while _bot.is_in_hitstun() and waited < 300:
 		await get_tree().physics_frame
 		waited += 1
-	_expect("hitstun expires", not _dummy.is_in_hitstun(), "after %d ticks" % waited)
+	_expect("hitstun expires", not _bot.is_in_hitstun(), "after %d ticks" % waited)
 
 	# --- end to end: a real Fireball raises instability and moves the target --------------
-	_dummy.respawn_at(dummy_spawn)
+	_bot.respawn_at(bot_spawn)
 	_player.respawn_at(spawn_point)
 	for i in 20:
 		await get_tree().physics_frame
-	var before_pos := _dummy.global_position
+	var before_pos := _bot.global_position
 	_player.abilities().try_cast(0, Vector3(0, 0, -1))
 	var hit_seen := false
 	for i in 120:
 		await get_tree().physics_frame
-		if _dummy.instability().current > 0.0:
+		if _bot.instability().current > 0.0:
 			hit_seen = true
 			break
 	_expect("a cast Fireball raises the target's instability", hit_seen,
-		"instability=%.1f%%" % _dummy.instability().current)
+		"instability=%.1f%%" % _bot.instability().current)
 	for i in 60:
 		await get_tree().physics_frame
-	var shifted := (_dummy.global_position - before_pos)
+	var shifted := (_bot.global_position - before_pos)
 	_expect("and pushes it away from the caster", shifted.z < -0.3,
 		"moved %.2fm along z" % shifted.z)
 
@@ -854,6 +1035,8 @@ func _wait_for_live() -> void:
 
 func _run_round_tests() -> void:
 	await _settle()
+	# a fighter that walks off on its own would end the round early.
+	_freeze_bot()
 	print("[round-test] countdown=%.1fs interlude=%.1fs wins_needed=%d" % [
 		_rounds.countdown_seconds, _rounds.interlude_seconds, _rounds.wins_needed])
 
@@ -861,10 +1044,10 @@ func _run_round_tests() -> void:
 	_expect("match opens in countdown", _rounds.state == RoundManager.State.COUNTDOWN,
 		"state=%d" % _rounds.state)
 	_expect("fighters are frozen during the countdown",
-		not _player.accepts_input and not _dummy.accepts_input,
-		"player=%s dummy=%s" % [_player.accepts_input, _dummy.accepts_input])
+		not _player.accepts_input and not _bot.accepts_input,
+		"player=%s bot=%s" % [_player.accepts_input, _bot.accepts_input])
 	_expect("round 1", _rounds.round_number == 1, "round=%d" % _rounds.round_number)
-	_expect("score starts level", _rounds.wins_for("YOU") == 0 and _rounds.wins_for("DUMMY") == 0,
+	_expect("score starts level", _rounds.wins_for("YOU") == 0 and _rounds.wins_for("BOT") == 0,
 		"%s" % str(_rounds.scores()))
 
 	# --- steering really is ignored while frozen ------------------------------------------
@@ -879,8 +1062,8 @@ func _run_round_tests() -> void:
 	# --- it goes live ---------------------------------------------------------------------
 	await _wait_for_live()
 	_expect("round goes live after the countdown", _rounds.is_live(), "state=%d" % _rounds.state)
-	_expect("input is returned on go", _player.accepts_input and _dummy.accepts_input,
-		"player=%s dummy=%s" % [_player.accepts_input, _dummy.accepts_input])
+	_expect("input is returned on go", _player.accepts_input and _bot.accepts_input,
+		"player=%s bot=%s" % [_player.accepts_input, _bot.accepts_input])
 
 	var live_at := _player.global_position
 	for i in 15:
@@ -890,22 +1073,22 @@ func _run_round_tests() -> void:
 	_expect("and the fighter can move again", moved > 0.5, "moved %.2fm" % moved)
 	_input.set_override_vector(Vector2.ZERO, false)
 
-	# --- knock the dummy off and check the whole cascade -----------------------------------
+	# --- knock the bot off and check the whole cascade -----------------------------------
 	_expect("two fighters standing", _rounds.alive_count() == 2,
 		"alive=%d" % _rounds.alive_count())
-	_dummy.apply_knockback(Vector3(0, 4, -40))
+	_bot.apply_knockback(Vector3(0, 4, -40))
 	var guard := 0
 	while _rounds.alive_count() > 1 and guard < 600:
 		await get_tree().physics_frame
 		guard += 1
-	_expect("the faller is eliminated", _dummy.is_eliminated(),
-		"eliminated=%s pos=%s" % [_dummy.is_eliminated(), _dummy.global_position])
-	_expect("an eliminated fighter is hidden", not _dummy.visible, "visible=%s" % _dummy.visible)
+	_expect("the faller is eliminated", _bot.is_eliminated(),
+		"eliminated=%s pos=%s" % [_bot.is_eliminated(), _bot.global_position])
+	_expect("an eliminated fighter is hidden", not _bot.visible, "visible=%s" % _bot.visible)
 	_expect("round ends when one is left", _rounds.state == RoundManager.State.OVER,
 		"state=%d" % _rounds.state)
 	_expect("the survivor scores", _rounds.wins_for("YOU") == 1,
 		"scores=%s" % str(_rounds.scores()))
-	_expect("the faller does not", _rounds.wins_for("DUMMY") == 0,
+	_expect("the faller does not", _rounds.wins_for("BOT") == 0,
 		"scores=%s" % str(_rounds.scores()))
 
 	# --- and it all resets -----------------------------------------------------------------
@@ -915,16 +1098,16 @@ func _run_round_tests() -> void:
 		await get_tree().process_frame
 		guard2 += 1
 	_expect("a new round begins", _rounds.round_number == 2, "round=%d" % _rounds.round_number)
-	_expect("the eliminated fighter is back", not _dummy.is_eliminated() and _dummy.visible,
-		"eliminated=%s visible=%s" % [_dummy.is_eliminated(), _dummy.visible])
+	_expect("the eliminated fighter is back", not _bot.is_eliminated() and _bot.visible,
+		"eliminated=%s visible=%s" % [_bot.is_eliminated(), _bot.visible])
 	_expect("both are standing again", _rounds.alive_count() == 2,
 		"alive=%d" % _rounds.alive_count())
 	_expect("instability is cleared on reset",
 		is_equal_approx(_player.instability().current, 0.0),
 		"player=%.1f%%" % _player.instability().current)
 	_expect("fighters are back at their spawns",
-		_dummy.global_position.distance_to(dummy_spawn) < 0.5,
-		"dummy at %s, spawn %s" % [_dummy.global_position, dummy_spawn])
+		_bot.global_position.distance_to(bot_spawn) < 0.5,
+		"bot at %s, spawn %s" % [_bot.global_position, bot_spawn])
 	_expect("the score carries across rounds", _rounds.wins_for("YOU") == 1,
 		"scores=%s" % str(_rounds.scores()))
 	_expect("the new round starts frozen again",
@@ -932,7 +1115,7 @@ func _run_round_tests() -> void:
 
 	# --- a fall outside a live round is ignored --------------------------------------------
 	var before := _rounds.alive_count()
-	_rounds.report_fall(_dummy)
+	_rounds.report_fall(_bot)
 	_expect("a fall during the countdown is ignored", _rounds.alive_count() == before,
 		"alive %d -> %d" % [before, _rounds.alive_count()])
 
@@ -952,7 +1135,7 @@ func _run_round_tests() -> void:
 	# match is won, so a score-based condition would never see the target reached.
 	while matched.is_empty() and safety < 40:
 		await _wait_for_live()
-		_rounds.report_fall(_dummy)
+		_rounds.report_fall(_bot)
 		var g := 0
 		while _rounds.state != RoundManager.State.COUNTDOWN and g < 1200:
 			await get_tree().process_frame
@@ -962,5 +1145,482 @@ func _run_round_tests() -> void:
 		"wins=%d needed=%d" % [_rounds.wins_for("YOU"), _rounds.wins_needed])
 
 	print("[round-test] %s (%d failure(s))" % [
+		"ALL PASS" if _touch_failures == 0 else "FAILURES", _touch_failures])
+	get_tree().quit(1 if _touch_failures > 0 else 0)
+
+
+# ---------------------------------------------------------------------------------------
+# Bot harness
+#
+# The bot is the first thing in this project that PLAYS the game, so it is judged the way a
+# player would be: does it hold its distance, does it point at what it is shooting at, does
+# it stay on the arena, does difficulty change anything, and does it cheat. Almost none of
+# this reads the bot's internals - the assertions read the same InputCommand the fighter
+# reads and the same positions a screenshot would show, so a bot rewritten from scratch
+# would still have to pass them.
+# ---------------------------------------------------------------------------------------
+
+## Puts both fighters where a test wants them and holds them there while the bot notices.
+##
+## Pinned every tick, not placed once. The bot's reaction time is a real delay, so a reading
+## taken on the frame after a teleport is its memory of the PREVIOUS arrangement - which
+## looks exactly like a broken bot and is not one. Holding them still also means the answer
+## is about the arrangement that was asked for, and not about wherever the two of them had
+## walked to by the time the reading was taken.
+func _place_fighters(bot_at: Vector3, player_at: Vector3) -> void:
+	await _wait_for_live()
+	var settled := 0.0
+	while settled < 0.75:
+		_bot.respawn_at(bot_at)
+		_player.respawn_at(player_at)
+		await get_tree().physics_frame
+		settled += 1.0 / 60.0
+
+
+## Distance from the centre of the arena, on the ground plane.
+func _radius_of(point: Vector3) -> float:
+	return Vector2(point.x, point.z).length()
+
+
+## Metres between the two fighters, on the ground plane.
+func _gap() -> float:
+	return Vector2(_bot.global_position.x - _player.global_position.x,
+		_bot.global_position.z - _player.global_position.z).length()
+
+
+## Unit vector from the bot to the player: what a perfect aim would be.
+func _true_aim() -> Vector2:
+	var offset := Vector2(_player.global_position.x - _bot.global_position.x,
+		_player.global_position.z - _bot.global_position.z)
+	if offset.length_squared() < 0.0001:
+		return Vector2.ZERO
+	return offset.normalized()
+
+
+## Which way a fighter's wizard is actually pointing. Same convention as player.gd's facing:
+## yaw 0 looks down -Z, so a yaw of `a` looks along (-sin a, -cos a).
+func _facing_of(fighter: Player) -> Vector2:
+	var visual := fighter.get_node_or_null(^"Visual") as Node3D
+	if visual == null:
+		return Vector2.ZERO
+	return Vector2(-sin(visual.rotation.y), -cos(visual.rotation.y))
+
+
+func _run_bot_tests() -> void:
+	await _settle()
+	# The bot rolls its aim error and its strafe timing. A suite that fails one run in ten is
+	# worse than no suite at all, so the random stream is pinned for the duration.
+	_brain.reseed(20260823)
+	# The human stands still throughout: a zero override beats both the keyboard and the
+	# stick, so nothing that happens to be held can wander the player into a measurement.
+	_input.set_override_vector(Vector2.ZERO, true)
+	await _wait_for_live()
+	var budget: float = float(BotController.PROFILES[_brain.skill]["aim_error"]) + 8.0
+	print("[bot-test] skill=%d reaction=%.2fs aim_error=%.1fdeg safe=%.2fm of %.2fm" % [
+		_brain.skill,
+		float(BotController.PROFILES[_brain.skill]["reaction"]),
+		float(BotController.PROFILES[_brain.skill]["aim_error"]),
+		_brain.safe_radius(), _brain.arena_radius])
+
+	# --- one seam, two drivers -----------------------------------------------------------
+	_expect("both fighters are driven through the same seam",
+		_player.input_controller is PlayerInputController
+			and _bot.input_controller is PlayerInputController
+			and _player.input_controller != _bot.input_controller,
+		"player=%s bot=%s" % [_player.input_controller, _bot.input_controller])
+	_expect("the bot drives the fighter it was handed",
+		_brain.body == _bot and _brain.target == _player,
+		"body=%s target=%s" % [_brain.body, _brain.target])
+	_expect("the arena radius is read off the arena, not typed in",
+		get_node_or_null(^"Arena/Platform/Collision") != null
+			and is_equal_approx(_brain.arena_radius, 7.0),
+		"radius=%.2fm" % _brain.arena_radius)
+
+	# --- and no device can reach it -------------------------------------------------------
+	# A key that a device-polling controller would obey. The bot inherits exactly such a
+	# controller and overrides its _process to nothing; this is that override, asserted. With
+	# move_left held down, the bot must still walk towards a target that is to its RIGHT.
+	Input.action_press("move_left")
+	await _place_fighters(Vector3(-4.0, 1.2, 0.0), Vector3(4.5, 1.2, 0.0))
+	var keyed: Vector2 = _brain.command.move_dir
+	Input.action_release("move_left")
+	_expect("a held key cannot steer the bot", keyed.dot(Vector2(1.0, 0.0)) > 0.3,
+		"move_left held, bot asked for %s" % keyed)
+
+	# --- keeping its distance -------------------------------------------------------------
+	_expect("too far away: it closes in", keyed.dot(Vector2(1.0, 0.0)) > 0.3,
+		"gap %.1fm -> %s" % [_gap(), keyed])
+
+	await _place_fighters(Vector3(0.0, 1.2, 0.0), Vector3(1.6, 1.2, 0.0))
+	_expect("too close: it backs off", _brain.command.move_dir.dot(Vector2(-1.0, 0.0)) > 0.3,
+		"gap %.1fm -> %s" % [_gap(), _brain.command.move_dir])
+
+	var half := _brain.preferred_range * 0.5
+	await _place_fighters(Vector3(-half, 1.2, 0.0), Vector3(half, 1.2, 0.0))
+	_expect("at its preferred range it circles instead of charging",
+		absf(_brain.command.move_dir.dot(Vector2(1.0, 0.0))) < 0.25,
+		"gap %.1fm -> %s" % [_gap(), _brain.command.move_dir])
+
+	# --- aiming at what it is shooting at ---------------------------------------------------
+	var aim: Vector2 = _brain.command.aim_dir
+	var wanted := _true_aim()
+	_expect("it always has an aim", _brain.command.has_aim and aim.length() > 0.99,
+		"has_aim=%s aim=%s" % [_brain.command.has_aim, aim])
+	var aim_off := rad_to_deg(absf(aim.angle_to(wanted)))
+	_expect("the aim lands inside the skill's error budget", aim_off <= budget,
+		"%.1f degrees off, budget %.1f" % [aim_off, budget])
+	# move_dir and aim_dir have been separate fields since Session 3 with nothing to prove
+	# it. This is the first thing in the project that fills them differently.
+	_expect("it aims where it is not walking",
+		absf(aim.dot(_brain.command.move_dir)) < 0.5,
+		"aim=%s move=%s" % [aim, _brain.command.move_dir])
+	var face_off := rad_to_deg(absf(_facing_of(_bot).angle_to(wanted)))
+	_expect("and the wizard is turned to face it", face_off <= budget,
+		"%.1f degrees off, budget %.1f" % [face_off, budget])
+
+	# --- it will not walk off ---------------------------------------------------------------
+	# Standing past its own safe line, with the target luring it further out. From here the
+	# one rule it may never break is asking to move outward.
+	await _place_fighters(Vector3(_brain.safe_radius() + 0.5, 1.2, 0.0), Vector3(9.0, 1.2, 0.0))
+	var outward := Vector2(1.0, 0.0)
+	_expect("past the safe line it never asks to go further out",
+		_brain.command.move_dir.dot(outward) <= 0.001,
+		"at %.2fm (safe %.2fm) -> %s" % [
+			_radius_of(_bot.global_position), _brain.safe_radius(), _brain.command.move_dir])
+	_expect("it heads back towards the centre",
+		_brain.command.move_dir.dot(-outward) > 0.3, "move=%s" % _brain.command.move_dir)
+
+	# Now let it run, with the lure still sitting off the rim. Being thrown off the arena is
+	# the game; walking off it is a bug.
+	var lure := Vector3(8.5, 1.2, 0.0)
+	var worst := 0.0
+	var elapsed := 0.0
+	while elapsed < 6.0:
+		_player.respawn_at(lure)
+		await get_tree().physics_frame
+		elapsed += 1.0 / 60.0
+		# The first stretch is the walk back in from the placement above, which is the bot
+		# obeying the rule rather than breaking it.
+		if elapsed > 1.2:
+			worst = maxf(worst, _radius_of(_bot.global_position))
+	_expect("chasing a target off the arena, it stays on the arena",
+		worst <= _brain.safe_radius() + 0.35,
+		"reached %.2fm, safe line %.2fm, rim %.2fm" % [
+			worst, _brain.safe_radius(), _brain.arena_radius])
+	_expect("and is still standing", not _bot.is_eliminated(),
+		"eliminated=%s at %s" % [_bot.is_eliminated(), _bot.global_position])
+
+	# --- and it actually fights ---------------------------------------------------------------
+	var post := Vector3(0.0, 1.2, 0.0)
+	await _place_fighters(Vector3(0.0, 1.2, -_brain.preferred_range), post)
+	# Arrays, not counters. A GDScript lambda captures a local by VALUE, so an int would be
+	# incremented inside the closure and stay zero outside it - see ARCHITECTURE.md.
+	var casts: Array = []
+	var landed: Array = []
+	var on_cast := func(_slot: int, _ability: Ability) -> void:
+		casts.append(1)
+	var on_hit := func(body: Node3D, _direction: Vector3, _ability: Ability) -> void:
+		if body == _player:
+			landed.append(1)
+	_bot.abilities().cast_performed.connect(on_cast)
+	_pool.projectile_hit.connect(on_hit)
+	var fighting := 0.0
+	while fighting < 5.0:
+		_player.respawn_at(post)
+		await get_tree().physics_frame
+		fighting += 1.0 / 60.0
+	_bot.abilities().cast_performed.disconnect(on_cast)
+	_pool.projectile_hit.disconnect(on_hit)
+	_expect("it uses its spell unprompted", casts.size() >= 2, "%d casts in 5s" % casts.size())
+	_expect("and lands them on a stationary target", landed.size() >= 1,
+		"%d of %d casts hit" % [landed.size(), casts.size()])
+
+	# --- difficulty is real, and it is not a stat bonus ----------------------------------------
+	var calm: Dictionary = BotController.PROFILES[BotController.Skill.CALM]
+	var sharp: Dictionary = BotController.PROFILES[BotController.Skill.SHARP]
+	_expect("a sharper bot reacts sooner", float(sharp["reaction"]) < float(calm["reaction"]),
+		"sharp %.2fs vs calm %.2fs" % [float(sharp["reaction"]), float(calm["reaction"])])
+	_expect("a sharper bot aims truer", float(sharp["aim_error"]) < float(calm["aim_error"]),
+		"sharp %.1fdeg vs calm %.1fdeg" % [float(sharp["aim_error"]), float(calm["aim_error"])])
+	_expect("a sharper bot shoots more often", float(sharp["cast_gap"]) < float(calm["cast_gap"]),
+		"sharp %.2fs vs calm %.2fs" % [float(sharp["cast_gap"]), float(calm["cast_gap"])])
+	_expect("a sharper bot respects the edge more",
+		float(sharp["edge_margin"]) > float(calm["edge_margin"]),
+		"sharp %.2fm vs calm %.2fm" % [float(sharp["edge_margin"]), float(calm["edge_margin"])])
+
+	var was := _brain.skill
+	_brain.skill = BotController.Skill.CALM
+	var calm_line := _brain.safe_radius()
+	_brain.skill = BotController.Skill.SHARP
+	var sharp_line := _brain.safe_radius()
+	_brain.skill = was
+	_expect("changing difficulty takes effect at once", sharp_line < calm_line,
+		"safe radius: calm %.2fm, sharp %.2fm" % [calm_line, sharp_line])
+
+	# The assertion the whole difficulty design exists for. A bot that cheated on speed, on
+	# how far a hit throws it, or on which spell it carries would be teaching the player
+	# about a game nobody else is playing.
+	_expect("the bot fights with the player's numbers",
+		is_equal_approx(_bot.move_speed, _player.move_speed)
+			and is_equal_approx(_bot.knockback_friction, _player.knockback_friction)
+			and is_equal_approx(_bot.hitstun_per_speed, _player.hitstun_per_speed),
+		"speed %.1f/%.1f friction %.1f/%.1f" % [
+			_bot.move_speed, _player.move_speed,
+			_bot.knockback_friction, _player.knockback_friction])
+	_expect("and with the player's spell",
+		_bot.abilities().ability_in(0) == _player.abilities().ability_in(0),
+		"%s vs %s" % [_bot.abilities().ability_in(0).id, _player.abilities().ability_in(0).id])
+
+	# --- a countdown freezes it, with nothing queued up behind the freeze -----------------------
+	_rounds.begin_round()
+	await _settle()
+	var parked := _bot.global_position
+	for i in 20:
+		await get_tree().physics_frame
+	var drift := Vector2(_bot.global_position.x - parked.x,
+		_bot.global_position.z - parked.z).length()
+	_expect("a frozen bot does not steer", drift < 0.05, "drifted %.3fm" % drift)
+	_expect("and holds no cast behind the countdown", _brain.command.ability_pressed == -1,
+		"latched slot %d" % _brain.command.ability_pressed)
+	_input.set_override_vector(Vector2.ZERO, false)
+
+	print("[bot-test] %s (%d failure(s))" % [
+		"ALL PASS" if _touch_failures == 0 else "FAILURES", _touch_failures])
+	get_tree().quit(1 if _touch_failures > 0 else 0)
+
+
+# ---------------------------------------------------------------------------------------
+# Spell harness
+#
+# Three of the four spells do not throw a projectile, so nothing about them can be watched
+# flying across the arena. Force Wave hits on the frame it is cast, Blink moves the caster
+# between one tick and the next, and Arcane Shield is a number that changes what a LATER hit
+# does. Each of those is easy to write and easy to get silently wrong, which is exactly the
+# shape of thing that needs measuring rather than playing.
+# ---------------------------------------------------------------------------------------
+
+## First slot holding a spell of the given type, or -1. The suite finds spells the way the
+## bot does, by what they ARE, so re-ordering the spellbook cannot quietly re-point a test.
+func _slot_with(book: AbilityComponent, cast_type: Ability.CastType) -> int:
+	for slot in book.slot_count():
+		var ability := book.ability_in(slot)
+		if ability != null and ability.cast_type == cast_type:
+			return slot
+	return -1
+
+
+## Flat displacement of the bot over `seconds`, starting now.
+func _drift_of(fighter: Player, seconds: float) -> Vector2:
+	var from := fighter.global_position
+	var waited := 0.0
+	while waited < seconds:
+		await get_tree().physics_frame
+		waited += 1.0 / 60.0
+	return Vector2(fighter.global_position.x - from.x, fighter.global_position.z - from.z)
+
+
+func _run_spell_tests() -> void:
+	await _settle()
+	# The suite casts AT the bot and measures where it ends up, so it must not steer.
+	_freeze_bot()
+	_input.set_override_vector(Vector2.ZERO, true)
+	await _wait_for_live()
+
+	var book := _player.abilities()
+	var target := _bot.instability()
+	var fireball := _slot_with(book, Ability.CastType.PROJECTILE)
+	var cone := _slot_with(book, Ability.CastType.CONE)
+	var dash := _slot_with(book, Ability.CastType.DASH)
+	var buff := _slot_with(book, Ability.CastType.BUFF)
+	print("[spells] slots: projectile=%d cone=%d dash=%d buff=%d of %d" % [
+		fireball, cone, dash, buff, book.slot_count()])
+
+	# --- the loadout ---------------------------------------------------------------------
+	_expect("the wizard carries four spells", book.slot_count() == 4,
+		"%d slots" % book.slot_count())
+	_expect("one of each cast type, and all four found",
+		fireball >= 0 and cone >= 0 and dash >= 0 and buff >= 0,
+		"projectile=%d cone=%d dash=%d buff=%d" % [fireball, cone, dash, buff])
+	_expect("the keyboard can reach every slot",
+		InputMap.has_action("cast_1") and InputMap.has_action("cast_2")
+			and InputMap.has_action("cast_3") and InputMap.has_action("cast_4"),
+		"cast_1..4 in the input map")
+
+	var wave := book.ability_in(cone)
+	var jump := book.ability_in(dash)
+	var shield := book.ability_in(buff)
+
+	# --- Force Wave: it hits what is in the fan --------------------------------------------
+	# The bot is put two and a half metres along +X, and the wave is aimed the same way.
+	await _place_fighters(Vector3(2.5, 1.2, 0.0), Vector3(0.0, 1.2, 0.0))
+	var before: float = target.current
+	var cone_fired: bool = book.try_cast(cone, Vector3(1, 0, 0))
+	_expect("Force Wave was ready", cone_fired, "try_cast returned %s" % cone_fired)
+	await get_tree().physics_frame
+	_expect("a target inside the fan is hit",
+		is_equal_approx(target.current - before, wave.instability),
+		"instability %.0f%% -> %.0f%%, spell adds %.0f" % [before, target.current, wave.instability])
+	var pushed := await _drift_of(_bot, 0.35)
+	_expect("and is thrown away from the caster", pushed.x > 1.0 and absf(pushed.y) < 0.6,
+		"moved %s" % pushed)
+	_expect("Force Wave hits harder than Fireball", wave.knockback > book.ability_in(fireball).knockback,
+		"%.1f vs %.1f" % [wave.knockback, book.ability_in(fireball).knockback])
+
+	# --- ...and misses what is not ----------------------------------------------------------
+	# Out of range: the same aim, half again as far as the fan is long.
+	await _place_fighters(Vector3(wave.area * 1.5, 1.2, 0.0), Vector3(0.0, 1.2, 0.0))
+	book.reset()
+	before = target.current
+	book.try_cast(cone, Vector3(1, 0, 0))
+	await get_tree().physics_frame
+	_expect("a target beyond the fan's reach is missed",
+		is_equal_approx(target.current, before),
+		"at %.1fm, reach %.1fm, instability %.0f%%" % [wave.area * 1.5, wave.area, target.current])
+
+	# Out of angle: well inside the reach, but off to the side of where the wave was aimed.
+	await _place_fighters(Vector3(0.0, 1.2, -2.5), Vector3(0.0, 1.2, 0.0))
+	book.reset()
+	before = target.current
+	book.try_cast(cone, Vector3(1, 0, 0))
+	await get_tree().physics_frame
+	_expect("a target beside the fan is missed", is_equal_approx(target.current, before),
+		"90 degrees off a %.0f degree half-angle, instability %.0f%%" % [wave.cone_angle, target.current])
+
+	# The push follows the line out from the caster, not the line the wave was aimed along.
+	# That is the whole reason Force Wave is a finisher: standing at the shoulder of the fan
+	# throws you sideways, which near a rim is off it.
+	await _place_fighters(Vector3(2.0, 1.2, -1.6), Vector3(0.0, 1.2, 0.0))
+	book.reset()
+	book.try_cast(cone, Vector3(1, 0, 0))
+	await get_tree().physics_frame
+	var shoved := await _drift_of(_bot, 0.35)
+	_expect("the push is away from the caster, not along the aim",
+		shoved.y < -0.4 and shoved.x > 0.4,
+		"target sat up and left of the aim; it moved %s" % shoved)
+
+	# --- Blink: it moves you, exactly as far as it says --------------------------------------
+	await _place_fighters(Vector3(0.0, 1.2, -5.0), Vector3(0.0, 1.2, 0.0))
+	var from := _player.global_position
+	var dash_fired: bool = book.try_cast(dash, Vector3(1, 0, 0))
+	_expect("Blink was ready", dash_fired, "try_cast returned %s" % dash_fired)
+	await get_tree().physics_frame
+	var jumped := Vector2(_player.global_position.x - from.x, _player.global_position.z - from.z)
+	_expect("Blink moves the caster its full distance",
+		absf(jumped.x - jump.dash_distance) < 0.2 and absf(jumped.y) < 0.2,
+		"moved %s, spell says %.1fm" % [jumped, jump.dash_distance])
+	_expect("and put itself on cooldown", not book.is_ready(dash),
+		"remaining %.2fs" % book.cooldown_remaining(dash))
+
+	# --- ...and never into the void -----------------------------------------------------------
+	var rim := _arena_radius() - 0.4
+	await _place_fighters(Vector3(0.0, 1.2, -5.0), Vector3(rim, 1.2, 0.0))
+	book.reset()
+	book.try_cast(dash, Vector3(1, 0, 0))
+	await get_tree().physics_frame
+	var landed := _radius_of(_player.global_position)
+	_expect("Blink aimed off the arena lands on the arena", landed <= _arena_radius() - 0.5,
+		"from %.2fm outward, landed at %.2fm, rim %.2fm" % [rim, landed, _arena_radius()])
+
+	# --- ...and cancels the slide, but not the stun --------------------------------------------
+	await _place_fighters(Vector3(0.0, 1.2, -5.0), Vector3(0.0, 1.2, 0.0))
+	book.reset()
+	_player.apply_knockback(Knockback.velocity(8.0, Vector3(1, 0, 0), 0.0, knockback_rules))
+	_expect("hit, and sliding", _player.knockback_velocity().length() > 1.0,
+		"%.1f m/s" % _player.knockback_velocity().length())
+	book.try_cast(dash, Vector3(-1, 0, 0))
+	await get_tree().physics_frame
+	_expect("Blink cancels the slide", _player.knockback_velocity().length() < 0.01,
+		"%.3f m/s" % _player.knockback_velocity().length())
+	_expect("but not the hitstun, so it is not a free reset", _player.is_in_hitstun(),
+		"in hitstun=%s" % _player.is_in_hitstun())
+
+	# --- Arcane Shield: it goes up, and it comes down --------------------------------------------
+	await _place_fighters(Vector3(0.0, 1.2, -5.0), Vector3(0.0, 1.2, 0.0))
+	var buff_fired: bool = book.try_cast(buff, Vector3.ZERO)
+	_expect("Shield was ready", buff_fired, "try_cast returned %s" % buff_fired)
+	await get_tree().physics_frame
+	_expect("the shield is up", _player.is_shielded(), "is_shielded=%s" % _player.is_shielded())
+	var elapsed := 0.0
+	while _player.is_shielded() and elapsed < shield.duration * 3.0:
+		await get_tree().physics_frame
+		elapsed += 1.0 / 60.0
+	_expect("and it expires on time", absf(elapsed - shield.duration) < 0.12,
+		"lasted %.2fs, spell says %.2fs" % [elapsed, shield.duration])
+
+	# --- ...and a shielded hit carries less ---------------------------------------------------------
+	# The same hit, twice, on the same body: once bare, once behind the shield. Measured as
+	# distance travelled, because that is the thing a player actually experiences.
+	var blow := Knockback.velocity(8.0, Vector3(1, 0, 0), 0.0, knockback_rules)
+	await _place_fighters(Vector3(0.0, 1.2, -5.0), Vector3(0.0, 1.2, 0.0))
+	_player.apply_knockback(blow)
+	var bare := await _drift_of(_player, 0.7)
+	await _place_fighters(Vector3(0.0, 1.2, -5.0), Vector3(0.0, 1.2, 0.0))
+	book.reset()
+	book.try_cast(buff, Vector3.ZERO)
+	await get_tree().physics_frame
+	_player.apply_knockback(blow)
+	var guarded := await _drift_of(_player, 0.7)
+	_expect("a shielded hit carries a fraction as far",
+		guarded.length() < bare.length() * 0.5 and bare.length() > 0.5,
+		"%.2fm bare, %.2fm shielded (spell lets %.0f%% through)" % [
+			bare.length(), guarded.length(), shield.knockback_resist * 100.0])
+
+	print("[spells] %s (%d failure(s))" % [
+		"ALL PASS" if _touch_failures == 0 else "FAILURES", _touch_failures])
+	get_tree().quit(1 if _touch_failures > 0 else 0)
+
+
+## The four buttons, end to end: a finger on button N casts spell N and nothing else.
+##
+## Separate from the suite above because it needs injected touch and therefore a real window,
+## while everything above is arithmetic and physics that would run anywhere.
+func _run_button_tests() -> void:
+	await _settle()
+	_freeze_bot()
+	_input.set_override_vector(Vector2.ZERO, true)
+	await _wait_for_live()
+	var book := _player.abilities()
+	_expect("there is a button per spell", _mobile.buttons.size() == book.slot_count(),
+		"%d buttons, %d spells" % [_mobile.buttons.size(), book.slot_count()])
+
+	for i in _mobile.buttons.size():
+		var button: AbilityButton = _mobile.buttons[i]
+		_expect("button %d drives slot %d" % [i, i], button.slot == i, "slot=%d" % button.slot)
+		_expect("button %d can read its spell" % i, button.source == book,
+			"source=%s" % button.source)
+
+	for i in _mobile.buttons.size():
+		var button: AbilityButton = _mobile.buttons[i]
+		while not book.is_ready(i):
+			await get_tree().physics_frame
+		var centre := button.get_global_rect().get_center()
+		_emit_touch(0, centre, true)
+		await _settle()
+		_emit_touch(0, centre, false)
+		await _settle()
+		_expect("tapping button %d casts %s" % [i, book.ability_in(i).id],
+			not book.is_ready(i), "remaining %.2fs" % book.cooldown_remaining(i))
+
+	# A finger between two buttons must not cast either. The hit areas are discs, so the
+	# corner where two bounding boxes would have overlapped belongs to nobody.
+	var a: AbilityButton = _mobile.buttons[0]
+	var b: AbilityButton = _mobile.buttons[1]
+	# The midpoint of the FREE interval, not the midpoint of the line: the primary button is
+	# larger, so halfway between two centres is still inside the big one.
+	var ca := a.get_global_rect().get_center()
+	var cb := b.get_global_rect().get_center()
+	var span := ca.distance_to(cb)
+	var near := a.radius + a.activation_padding
+	var far := span - (b.radius + b.activation_padding)
+	var between := ca.lerp(cb, ((near + far) * 0.5) / maxf(span, 0.001))
+	_emit_touch(1, between, true)
+	await _settle()
+	_expect("a tap in the gap between two buttons claims nothing",
+		a.touch_index() == -1 and b.touch_index() == -1,
+		"gap at %s claimed by %d/%d" % [between, a.touch_index(), b.touch_index()])
+	_emit_touch(1, between, false)
+	await _settle()
+
+	print("[buttons] %s (%d failure(s))" % [
 		"ALL PASS" if _touch_failures == 0 else "FAILURES", _touch_failures])
 	get_tree().quit(1 if _touch_failures > 0 else 0)

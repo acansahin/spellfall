@@ -9,5 +9,18 @@ script = ExtResource("1_root")
 
 [node name="TouchStick" parent="." instance=ExtResource("2_stick")]
 
-[node name="CastButton" parent="." instance=ExtResource("3_button")]
+[node name="Cast0" parent="." instance=ExtResource("3_button")]
 slot = 0
+radius = 72.0
+
+[node name="Cast1" parent="." instance=ExtResource("3_button")]
+slot = 1
+radius = 52.0
+
+[node name="Cast2" parent="." instance=ExtResource("3_button")]
+slot = 2
+radius = 52.0
+
+[node name="Cast3" parent="." instance=ExtResource("3_button")]
+slot = 3
+radius = 52.0

@@ -92,7 +92,7 @@ func _input(event: InputEvent) -> void:
 
 func _handle_touch(event: InputEventScreenTouch) -> void:
 	if event.pressed:
-		if _touch_index == -1 and _activation_rect().has_point(event.position):
+		if _touch_index == -1 and _claims(event.position):
 			_touch_index = event.index
 			pressed_slot.emit(slot)
 			queue_redraw()
@@ -103,6 +103,20 @@ func _handle_touch(event: InputEventScreenTouch) -> void:
 		get_viewport().set_input_as_handled()
 
 
+## True if `point` lands on this button.
+##
+## A DISC, not the bounding box. The button is drawn as a circle, so a square hit area claims
+## the corners of a square nobody can see - and with four buttons in a cluster those invisible
+## corners overlap, which turns "tap Blink" into "cast whichever button sits earlier in the
+## scene tree". Matching the hit area to the drawing is what lets the cluster be tight enough
+## to reach with one thumb.
+func _claims(point: Vector2) -> bool:
+	return get_global_rect().get_center().distance_to(point) <= radius + activation_padding
+
+
+## The square that contains the hit area. Used by the layout assertions, which only need to
+## know that one finger cannot reach two controls, and for which a conservative box is the
+## right shape to compare.
 func _activation_rect() -> Rect2:
 	return get_global_rect().grow(activation_padding)
 

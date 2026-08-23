@@ -5,8 +5,8 @@ Read `GAME_DESIGN.md` first for what the game is. This file is how it is put tog
 
 > Everything described as _(planned)_ does not exist yet. What is built: the arena, the
 > wizard, movement, the fixed camera, the touch controls, the ability framework with one
-> spell, instability, knockback, the HUD, elimination and the round loop. The bot, the
-> other three spells and drag-to-aim are not built.
+> spell, instability, knockback, the HUD, elimination, the round loop, the bot opponent and
+> all four spells. Drag-to-aim and the game-feel pass are not built.
 
 ## Ground rules
 
@@ -30,12 +30,11 @@ res://
     input/         InputCommand, PlayerInputController
     utilities/
   characters/
-    player/        player.tscn + player.gd
-    dummy/         training_dummy.tscn - a driverless fighter, prototype only
-    bot/           (planned) AI opponent
+    player/        player.tscn + player.gd - one script for every fighter
+    bot/           bot_controller.gd + bot_wizard.tscn - the opponent
     components/    instability_component.gd; haptics later
   combat/
-    abilities/     ability.gd (Resource) + ability_component.gd (runtime)
+    abilities/     ability.gd (Resource) + ability_component.gd (runtime) + cone_cast.gd
     projectiles/   projectile.gd/.tscn + projectile_pool.gd
     knockback/     knockback.gd (the formula) + knockback_rules.gd (its tuning)
   arena/           arena.tscn, arena_camera.gd, kill_zone.gd
@@ -47,7 +46,8 @@ res://
     spawn/         (planned)
   data/            abilities/fireball.tres, knockback_rules.tres
   network/         (planned) Phase C onward
-  audio/  vfx/  tests/  assets/
+  vfx/             spell_flash.gd - the fan Force Wave draws
+  audio/  tests/  assets/
 ```
 
 Empty folders carry a `.gitkeep` so the structure survives a clone.
@@ -63,14 +63,16 @@ This is the most important seam in the project, and it exists already.
         \                       v                                 /
          ----------->  PlayerInputController  <--------------------
                                 |
-                                v
-                          InputCommand          <- plain data, world space
+                                |               BotController
+                                |               (extends it, no device polling)
+                                v                       |
+                          InputCommand  <---------------+   <- plain data, world space
                                 |
                                 v
                          Player (CharacterBody3D)
                                 |
                                 v
-                          Abilities (planned)
+                          AbilityComponent
 ```
 
 - **`InputCommand`** (`core/input/input_command.gd`) is plain data: a world-space `move_dir`
@@ -78,7 +80,9 @@ This is the most important seam in the project, and it exists already.
 - **`PlayerInputController`** (`core/input/player_input_controller.gd`) is the *only* script
   in the project that knows a keyboard or a touchscreen exists. It reads whichever source is
   active and fills one `InputCommand` per frame.
-- **`Player`** reads `InputCommand`. It cannot tell how the player produced it.
+- **`Player`** reads `InputCommand`. It cannot tell how the command was produced - by a
+  thumb, by a key, or by the bot. See "The bot" below for why that is load-bearing rather
+  than decorative.
 
 Two consequences worth stating plainly:
 
@@ -441,6 +445,62 @@ indexing `_cooldowns` crashed once, because the bounds that were tested were not
 that were used; `abilities` now resizes the cooldown array through its setter, so a spellbook
 assigned at runtime cannot desync the two.
 
+### The four spells
+
+All four are `.tres` files in `data/abilities/`. None of them has a script. What differs
+between them is numbers and which **cast type** they select, and each cast type has exactly
+one runtime, in `main.gd`, at the seam where a cast request becomes something in the world.
+
+| Spell | Cast type | Runtime | The rule that makes it that spell |
+|---|---|---|---|
+| Fireball | `PROJECTILE` | `ProjectilePool.fire` | travels, hits the first body, expires |
+| Force Wave | `CONE` | `_cast_cone` → `ConeCast.targets` | thrown **away from the caster**, not along the aim |
+| Blink | `DASH` | `_cast_dash` | landing point **clamped inside the arena** |
+| Arcane Shield | `BUFF` | `_cast_buff` → `Player.apply_shield` | a multiplier on incoming knockback, not a block |
+
+Three details are load-bearing:
+
+- **Force Wave pushes outward, not forward.** A wave shoves what it touches, so someone caught
+  at the shoulder of the fan is thrown sideways — which near a rim is off it. That is the
+  whole reason it is the finisher, and `--spells-test` asserts the direction rather than
+  trusting it.
+- **Blink is clamped by the LEVEL, not by the spell.** `main.gd` is the only thing that knows
+  where the edge is, and it already reads the radius off the platform's collision shape. A
+  spell that could drop you in the void is a spell nobody would ever press.
+- **The shield is applied in `Player.apply_knockback`, not in `Knockback.velocity`.** The
+  formula answers "how hard was that hit"; the shield answers "how much of it landed on *me*",
+  and only the recipient knows that. Hitstun then falls out of the reduced speed for free.
+
+**One door for every hit.** `_apply_hit()` raises instability and hands out knockback, and both
+a projectile arriving and a cone catching someone go through it. A second path would be a
+second place the escalation rule lived.
+
+`ConeCast` runs a physics query rather than walking a list of known fighters, for the same
+reason `KillZone` is an `Area3D`: it finds anything on the players layer, including a fighter
+nobody has written code for yet. Its query objects are `static` and reused, because building a
+`SphereShape3D` per cast allocates mid-fight.
+
+`SpellFlash` (`vfx/`) draws the fan, taking its reach and angle **from the same two fields the
+hit test reads**, so the shape on screen cannot drift from the shape that hits. It is a child
+of each fighter, which is why nothing pools it: there is one per wizard, it is already where
+the caster is, and a fighter's body never rotates — only its `Visual` does — so a local yaw is
+a world yaw.
+
+### Four buttons, and why the hit area is a disc
+
+The right thumb has a cluster: the primary keeps the corner the single button used to hold, and
+three smaller ones fan up and left along the arc a thumb sweeps. Angles and radius are exported;
+`mobile_controls.gd` reads the buttons out of the scene and sorts them by `slot`, so adding a
+fifth spell is a node and an angle.
+
+`AbilityButton` tests a **disc**, not its bounding box. A round button with a square hit area
+claims the corners of a square nobody can see, and in a cluster those invisible corners overlap
+— which turns "tap Blink" into "cast whichever button happens to sit earlier in the scene
+tree", with nothing on screen looking wrong. Matching the hit area to the drawing is what lets
+the cluster be tight enough to reach without moving your hand. `--twothumb-test` asserts no two
+buttons can share a finger, and `--button-test` asserts a tap in the gap between two of them
+casts nothing at all.
+
 ### Projectile pooling
 
 `ProjectilePool` prewarms eight projectiles and reuses them. Spawning and freeing nodes
@@ -459,12 +519,94 @@ rather than asking how it was produced. That is the whole reason it is a separat
 
 ### Casting is latched, not sampled
 
-`ability_pressed` is held by `PlayerInputController` until someone calls `consume_ability()`.
+Four slots, four actions (`cast_1` to `cast_4`, with Space still on the first), polled in one
+loop rather than as four special cases. `ability_pressed` is held by `PlayerInputController`
+until someone calls `consume_ability()`.
 Input is read in `_process` (render rate) and acted on in `_physics_process` (fixed 60Hz), so
 a press read as "just happened" can be missed entirely when two render frames land between
 ticks, or acted on twice when two ticks land between frames. Latching makes a tap exactly one
-cast. The touch button and the Space key both go through `request_ability()`, which is what
-stops the two drifting apart.
+cast. Every touch button and every cast key goes through `request_ability()`, which is what
+stops the two drifting apart - and it is why going from one spell to four needed no new
+plumbing at all.
+
+## The bot
+
+`characters/bot/bot_controller.gd` **extends `PlayerInputController`** and fills the same
+`InputCommand` a thumb fills. The fighter it drives cannot tell the difference: same
+`move_dir`, same `aim_dir`, same latched cast, consumed on the same tick.
+
+```
+   keyboard / TouchStick                    BotController
+            |                                     |  extends it, and overrides _process
+            v                                     |  to nothing, so no key and no finger
+   PlayerInputController                          |  can ever reach it
+            |                                     |
+            +------------>  InputCommand  <-------+
+                                  |
+                            Player (a fighter)
+```
+
+That is not tidiness. A bot that called `try_cast()` and wrote `velocity` directly could do
+things no player can, and every bug found while fighting it would live in a code path the real
+game never runs. Everything it does is a *request* that `Player` and `AbilityComponent` are
+free to refuse, exactly as they refuse the human's.
+
+**It thinks in `_physics_process`**, not in `_process` like the human's controller. Its
+reaction time is a gameplay number: it must not sharpen on a 144Hz desktop and dull on a
+30fps phone.
+
+### What it does
+
+| Job | Rule |
+|---|---|
+| Hold a range | closes outside `preferred_range + range_slack`, backs off inside `preferred_range - range_slack`, circles in between |
+| Aim | at where the target is *going* — led by the projectile's flight time |
+| Shoot | once the spell is ready and it has dawdled for `cast_gap` |
+| Choose a spell | get back on the arena (Blink), shove off whoever is in its face (Force Wave), brace if it is nearly gone (Shield), otherwise Fireball |
+| Stay on the arena | never *asks* to move outward past `arena_radius - edge_margin`, and the further past that line it is, the more of its steering goes to getting back |
+
+Being thrown off is the game; walking off is a bug. Knockback still removes it exactly as it
+removes the player.
+
+It finds its spells **by cast type, not by slot index**, so a wizard with a different loadout -
+or with only two spells - is playable by the same bot with nothing changed here. Blink is the
+one cast it does not aim at you: it is the escape, so it is aimed at the middle of the arena,
+and because facing follows aim the wizard visibly runs for safety rather than moonwalking.
+
+The arena radius is **read off the platform's own `CylinderShape3D`** by `main.gd` and handed
+over, like every other dependency here. A number typed into the bot would go stale the first
+time the arena was resized — silently, and only for the bot.
+
+### Difficulty is four numbers, and not one of them is a stat bonus
+
+`BotController.PROFILES` is one table with three rows. A `SHARP` bot moves at the same speed,
+casts the same Fireball and takes the same knockback as a `CALM` one and as the player. It is
+better because it **notices sooner** (`reaction`), **aims truer** (`aim_error`), **shoots more
+often** (`cast_gap`), **leads its target** (`lead`) and **keeps further from the rim**
+(`edge_margin`). A bot that cheated on speed or on damage would be teaching the player about a
+game nobody else is playing; `--bot-test` asserts that it does not.
+
+`reaction` is a real handicap and not a cosmetic delay: every decision is computed from a
+*remembered* target position refreshed on that clock, so a slow bot genuinely mis-tracks a
+moving player. The aim error is re-rolled on the same clock, because an error re-rolled every
+frame twitches the wizard's head and averages out to a perfect shot over the flight of a
+projectile — noisy rather than wrong.
+
+### Aim now wins over travel for facing
+
+`Player` used to turn to face wherever it was moving. It now faces its `aim_dir` when it has
+one, and falls back to travel when it does not. Nothing changed for the human, whose aim still
+mirrors their movement — but a bot that circles left while shooting at you has to *look* like
+it is shooting at you, or the strafe reads as a retreat and the spell that follows reads as a
+cheat. Drag-to-aim inherits the behaviour for free when it lands.
+
+### The training dummy is gone
+
+`characters/dummy/` held a driverless fighter that existed so a spell had something to hit. The
+bot is that, and it plays back. The four suites written against a target that stands still
+(`--cast-test`, `--twothumb-test`, `--knockback-test`, `--round-test`) now park it with
+`_freeze_bot()` instead of dodging the question: an opponent that moves would break all four
+for entirely correct reasons, which is the most expensive kind of test failure.
 
 ## Networking _(planned, Phase C+)_
 
@@ -535,9 +677,14 @@ argument-gated harness. Everything after a bare `--` reaches `OS.get_cmdline_use
 | `--stick-hold=X,Y` | Holds the stick deflected so a screenshot shows a live thumb |
 | `--cast-test` | Asserts the cast round-trip: cooldown, pooling, flight, impact |
 | `--twothumb-test` | Holds the stick and the cast button at once, on separate fingers |
-| `--cast-at:N` | Casts the primary spell N seconds in, so a delayed shot catches it |
+| `--cast-at:N[,S]` | Casts spell S (default 0) N seconds in, so a delayed shot catches it |
 | `--knockback-test` | Asserts the instability curve and the distance a hit carries |
 | `--round-test` | Asserts a full round cycle: countdown, elimination, score, reset |
+| `--bot-test` | Asserts the bot: range, aim, facing, edge safety, difficulty, and that it does not cheat |
+| `--bot:off` | Parks the bot, for a screenshot or a suite that measures something else |
+| `--bot-skill:S` | `calm`, `steady` or `sharp`, to play a different difficulty |
+| `--spells-test` | Asserts Force Wave, Blink and Arcane Shield do what they claim |
+| `--button-test` | Asserts a finger on button N casts spell N and nothing else |
 
 **None of these may be run with `--headless`.** `--shot` needs real rendering, and the input
 tests need a real window: the headless display driver does not route injected
@@ -592,6 +739,13 @@ Each of these cost real time in the first session.
   every suite that casts or steers had to `await _wait_for_live()` first; without it they
   measure a fighter that was correctly told to stand still, which looks exactly like a broken
   control.
+- **A test that measures gameplay must wait on the gameplay clock.** `_settle()` straddles
+  render frames on purpose, because injected input is read in `_process`. On a machine whose
+  renderer is slower than its 60Hz physics, a dozen physics ticks can turn over inside one
+  `_settle()` - and `--cast-test` then reported four failures that were all about the frame
+  rate: the spell had crossed the arena and the cooldown had visibly drained before anything
+  was read. Measured here at fraction 0.70 where the assertion wanted 0.85, reproducing on the
+  commit before the bot existed. Wait on `physics_frame` for anything that is gameplay state.
 - **A wrong facing formula passes every numeric test.** Godot yaw 0 faces -Z, and yaw `a`
   faces `(-sin a, 0, -cos a)`; solving that for a travel direction needs `atan2(-x, -z)`.
   Dropping both signs aims the wizard exactly backwards, and position/velocity traces look

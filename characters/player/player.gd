@@ -3,10 +3,10 @@ extends CharacterBody3D
 
 ## A fighter. Usually the wizard the player steers.
 ##
-## Not necessarily the human's character: an `input_controller` of null simply means
-## nobody is driving, which is exactly what the training dummy is, and a bot will be this
-## same script driven by a bot controller. The class is still called Player because
-## renaming it would churn every scene for no behavioural gain; read it as "fighter".
+## Not necessarily the human's character: the bot is this same script with a BotController
+## in `input_controller` instead of a PlayerInputController, and a null controller simply
+## means nobody is driving. The class is still called Player because renaming it would churn
+## every scene for no behavioural gain; read it as "fighter".
 ##
 ## Movement is integrated by hand on a CharacterBody3D rather than handed to a RigidBody3D.
 ##
@@ -42,7 +42,7 @@ extends CharacterBody3D
 ## feel committed, not able to fly back — but 0.0 removes all recovery skill.
 @export_range(0.0, 1.0, 0.05) var air_control := 0.25
 
-## Radians per second the visual turns to face travel. Purely cosmetic; it never gates
+## Radians per second the visual turns to face its aim. Purely cosmetic; it never gates
 ## movement, so turning can never eat an input.
 @export var turn_speed := 14.0
 
@@ -96,9 +96,19 @@ var _knockback := Vector3.ZERO
 ## Seconds left of reduced control after being hit.
 var _hitstun := 0.0
 
+## What fraction of an incoming knockback gets through. 1.0 is unprotected; Arcane Shield
+## drops it for a moment. Held on the fighter and not in the knockback formula because the
+## formula answers "how hard was that hit" and this answers "how much of it landed on ME".
+var _shield_factor := 1.0
+var _shield_timer := 0.0
+
 var _eliminated := false
 
 @onready var _visual: Node3D = $Visual
+
+## Optional, like the spellbook. A fighter without these simply shows nothing.
+@onready var _shield_visual: Node3D = get_node_or_null(^"Visual/Shield") as Node3D
+@onready var _flash: SpellFlash = get_node_or_null(^"SpellFlash") as SpellFlash
 
 ## Optional: a wizard without a spellbook simply never casts, which is what a training
 ## dummy or a not-yet-armed character wants.
@@ -114,6 +124,10 @@ func _physics_process(delta: float) -> void:
 
 	if _hitstun > 0.0:
 		_hitstun = maxf(0.0, _hitstun - delta)
+	if _shield_timer > 0.0:
+		_shield_timer = maxf(0.0, _shield_timer - delta)
+		if _shield_timer == 0.0:
+			_drop_shield()
 
 	_apply_horizontal(wish, delta)
 	# The single place the two accumulators meet. Assigned, never accumulated, so nothing
@@ -124,7 +138,7 @@ func _physics_process(delta: float) -> void:
 	_apply_gravity(delta)
 	move_and_slide()
 	_decay_knockback(delta)
-	_face_travel(delta)
+	_face(delta)
 	_service_casting()
 
 
@@ -160,15 +174,33 @@ func _apply_gravity(delta: float) -> void:
 		velocity.y -= _gravity * delta
 
 
-func _face_travel(delta: float) -> void:
-	var flat := Vector2(velocity.x, velocity.z)
-	if flat.length_squared() < 0.01:
+func _face(delta: float) -> void:
+	var flat := _facing_intent()
+	if flat == Vector2.ZERO:
 		return
 	# Godot yaw 0 faces -Z, and a yaw of `a` faces (-sin a, 0, -cos a). Solving that for the
 	# travel direction is where BOTH minus signs come from - dropping them aims the wizard
 	# backwards, which a screenshot caught and the position trace never would have.
 	var wanted := atan2(-flat.x, -flat.y)
 	_visual.rotation.y = rotate_toward(_visual.rotation.y, wanted, turn_speed * delta)
+
+
+## Which way the wizard should be looking: where it is AIMING if it is aiming, otherwise
+## where it is travelling.
+##
+## Aim wins because facing is how one fighter tells another what is about to happen. A bot
+## that circles left while shooting at you must LOOK like it is shooting at you, or its
+## strafe reads as a retreat and the spell that follows reads as a cheat. While aim mirrors
+## movement - which is all it does for a thumb today - this changes nothing for the human;
+## when drag-to-aim lands, their wizard starts reading the same way for free.
+func _facing_intent() -> Vector2:
+	if input_controller != null and accepts_input and input_controller.command.has_aim:
+		var aim: Vector2 = input_controller.command.aim_dir
+		if aim.length_squared() > 0.0001:
+			return aim
+	var travel := Vector2(velocity.x, velocity.z)
+	# Below this the body is drifting, not travelling, and facing would jitter.
+	return travel if travel.length_squared() >= 0.01 else Vector2.ZERO
 
 
 ## Puts the character back at a spawn point with no residual momentum. The round system
@@ -178,6 +210,7 @@ func respawn_at(point: Vector3) -> void:
 	_input_velocity = Vector3.ZERO
 	_knockback = Vector3.ZERO
 	_hitstun = 0.0
+	_drop_shield()
 	global_position = point
 	var inst := instability()
 	if inst != null:
@@ -214,10 +247,62 @@ func abilities() -> AbilityComponent:
 ## into a launch neither of them earned; the harder one wins, which keeps "what does this hit
 ## do" answerable without knowing the history of the last few frames.
 func apply_knockback(impulse: Vector3) -> void:
-	var flat := Vector3(impulse.x, 0.0, impulse.z)
+	# The shield is applied HERE and not inside Knockback.velocity() because it belongs to
+	# whoever is being hit, not to the hit. Hitstun then falls out of the reduced speed for
+	# free, which is the behaviour you want: a hit you shrugged off should not pin you either.
+	var arriving := impulse * _shield_factor
+	var flat := Vector3(arriving.x, 0.0, arriving.z)
 	if flat.length() >= Vector3(_knockback.x, 0.0, _knockback.z).length():
-		_knockback = impulse
+		_knockback = arriving
 	_hitstun = maxf(_hitstun, flat.length() * hitstun_per_speed)
+
+
+## Raises a shield: `factor` of an incoming knockback gets through, for `seconds`.
+##
+## Recasting REPLACES rather than stacks, keeping the stronger of the two - the same rule
+## knockback itself uses, and for the same reason. Two shields multiplying into near
+## invulnerability is not a mechanic anybody designed.
+func apply_shield(seconds: float, factor: float) -> void:
+	if _shield_timer > 0.0:
+		_shield_factor = minf(_shield_factor, factor)
+	else:
+		_shield_factor = factor
+	_shield_timer = maxf(_shield_timer, seconds)
+	if _shield_visual != null:
+		_shield_visual.visible = true
+
+
+func _drop_shield() -> void:
+	_shield_timer = 0.0
+	_shield_factor = 1.0
+	if _shield_visual != null:
+		_shield_visual.visible = false
+
+
+## True while a shield is up. For the HUD, for tests, and for a bot deciding whether the hit
+## it is about to land is worth spending.
+func is_shielded() -> bool:
+	return _shield_timer > 0.0
+
+
+## Moves the fighter instantly, for a DASH cast. The level decides WHERE - it is the only
+## thing that knows where the arena ends.
+##
+## Knockback is cleared and hitstun deliberately is NOT. That is the shape of the escape: a
+## Blink cancels the slide you are in, so it can genuinely save you at an edge, but you land
+## with the same reduced control the hit gave you, so it is not a free reset. If it plays too
+## strong, the cooldown is the first dial to turn.
+func blink_to(point: Vector3) -> void:
+	global_position = point
+	velocity = Vector3.ZERO
+	_input_velocity = Vector3.ZERO
+	_knockback = Vector3.ZERO
+
+
+## The fighter's instant-spell flash, or null. The level plays it, because the fighter has no
+## business knowing which spells exist.
+func spell_flash() -> SpellFlash:
+	return _flash
 
 
 func _decay_knockback(delta: float) -> void:

@@ -18,11 +18,12 @@ extends Resource
 enum CastType {
 	## Travels from the caster in a straight line until it hits something or expires.
 	PROJECTILE,
-	## Instant, fan-shaped, centred on the aim direction. (not implemented yet)
+	## Instant, fan-shaped, centred on the aim direction. Everything inside the fan is hit on
+	## the frame it is cast, and thrown away from the caster rather than along the aim.
 	CONE,
-	## Moves the caster. (not implemented yet)
+	## Moves the caster along the aim, and never off the arena.
 	DASH,
-	## Applies a timed effect to the caster. (not implemented yet)
+	## Applies a timed effect to the caster.
 	BUFF,
 }
 
@@ -62,7 +63,24 @@ enum CastType {
 @export var spawn_offset: float = 0.8
 
 @export_group("Area")
-## Radius of the effect on impact. 0 means a single-target hit. (splash not implemented yet)
+## How far the effect reaches, in metres. For a CONE this is the length of the fan. For a
+## PROJECTILE it would be the splash radius on impact, and 0 means a single-target hit
+## (splash is not implemented yet).
 @export var area: float = 0.0
-## Cone half-angle in degrees, for CONE casts. (not implemented yet)
+## Cone HALF-angle in degrees, so 55 is a 110-degree fan. Read by CONE casts only.
 @export var cone_angle: float = 45.0
+
+@export_group("Dash")
+## Metres the caster is moved by a DASH cast. The landing point is clamped to the arena by
+## the level, which is the only thing that knows where the edge is - a spell that could put
+## you in the void would be a spell nobody ever casts.
+@export var dash_distance: float = 5.0
+
+@export_group("Buff")
+## Seconds a BUFF cast lasts.
+@export var duration: float = 1.0
+## What incoming knockback is multiplied by while the buff is up. 1.0 changes nothing, 0.35
+## takes just over a third of the hit. Reduction rather than blocking: it is one number
+## folded into the existing formula, where blocking needs projectile ownership and hit
+## cancellation and a visual language of its own. See GAME_DESIGN.md.
+@export var knockback_resist: float = 1.0

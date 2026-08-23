@@ -1,9 +1,9 @@
 # Spellfall — Game Design
 
-> Status: **Phase 1 prototype.** Movement, touch controls, Fireball, instability,
-> knockback, elimination and the round loop are built. Everything marked _(planned)_ is design
-> intent, not built code. Keep that distinction honest — this file has one job, which is to
-> stop us from misremembering what already exists.
+> Status: **Phase 1 prototype.** Movement, touch controls, all four spells, instability,
+> knockback, elimination, the round loop and a bot opponent are built. Everything marked
+> _(planned)_ is design intent, not built code. Keep that distinction honest — this file has
+> one job, which is to stop us from misremembering what already exists.
 
 ## The pitch
 
@@ -86,8 +86,10 @@ fast. Tuning lives in `data/knockback_rules.tres`.
 Landscape only. Designed for thumbs, tested with a keyboard.
 
 - **Left thumb — movement.** Virtual joystick with a deadzone and configurable sensitivity.
-- **Right thumb — four spells.** Tap to cast at a default target, or **press, drag to aim,
-  release to fire**. An on-screen indicator shows the direction, cone or range while aiming.
+- **Right thumb — four spells.** A cluster of four buttons: the primary in the corner, three
+  smaller ones fanned along the arc a thumb sweeps. Tap to cast where you are heading — built.
+  **Press, drag to aim, release to fire**, with an indicator showing direction, cone or range,
+  is _(planned)_ and is the next step after this one.
 - **Desktop (development only).** WASD or arrow keys to move. Mouse aiming arrives with the
   first ability.
 
@@ -95,16 +97,17 @@ The layout is our own. It follows general mobile-action conventions — movement
 bottom-right, aim by dragging — because those are conventions, but no other game's specific
 arrangement, iconography or styling is reproduced.
 
-## The four starting spells _(planned)_
+## The four starting spells
 
-Numbers below are placeholders to be tuned in playtesting.
+All four are **built**. Numbers below are placeholders to be tuned in playtesting, and they
+live in `data/abilities/*.tres` — one file each, no scripts.
 
 | Spell | Type | Instability | Knockback | Role |
 |---|---|---|---|---|
-| **Fireball** | Aimed projectile, disappears on hit | Moderate | Strong | Your main damage. Rewards prediction. |
-| **Force Wave** | Short-range cone, fires instantly | Low | Very strong | The finisher. Weak in the open, lethal near an edge. |
-| **Blink** | Short dash/teleport | — | — | Dodge and reposition. Cannot land outside the arena. |
-| **Arcane Shield** | Brief defensive buff | — | — | Sharply reduces incoming knockback for a moment. |
+| **Fireball** | Aimed projectile, disappears on hit | 12 | 6 | Your main damage. Rewards prediction. 0.9s cooldown. |
+| **Force Wave** | 110° cone, 4m, fires instantly | 5 | 11 | The finisher. Weak in the open, lethal near an edge. Throws away from YOU, not along the aim. 3.5s. |
+| **Blink** | 5m teleport | — | — | Dodge and reposition. Clamped inside the arena, cancels the slide you are in, keeps the hitstun. 5s. |
+| **Arcane Shield** | 1.2s defensive buff | — | — | 35% of a hit gets through. Measured: a hit that carries 2.35m carries 0.30m through it. 8s. |
 
 The intended tension: Fireball builds instability from range, Force Wave converts it into a
 kill but forces you to close in, Blink is both your escape and your approach, and Shield is a

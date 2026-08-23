@@ -1,4 +1,4 @@
-[gd_scene load_steps=14 format=3]
+[gd_scene load_steps=15 format=3]
 
 [ext_resource type="Script" path="res://core/game/main.gd" id="1_main"]
 [ext_resource type="PackedScene" path="res://arena/arena.tscn" id="2_arena"]
@@ -8,10 +8,11 @@
 [ext_resource type="PackedScene" path="res://ui/mobile_controls/mobile_controls.tscn" id="6_mobile"]
 [ext_resource type="Script" path="res://combat/projectiles/projectile_pool.gd" id="7_pool"]
 [ext_resource type="PackedScene" path="res://combat/projectiles/projectile.tscn" id="8_projectile"]
-[ext_resource type="PackedScene" path="res://characters/dummy/training_dummy.tscn" id="9_dummy"]
+[ext_resource type="PackedScene" path="res://characters/bot/bot_wizard.tscn" id="9_bot"]
 [ext_resource type="Resource" path="res://data/knockback_rules.tres" id="10_rules"]
 [ext_resource type="PackedScene" path="res://ui/hud/hud.tscn" id="11_hud"]
 [ext_resource type="Script" path="res://systems/round/round_manager.gd" id="12_rounds"]
+[ext_resource type="Script" path="res://characters/bot/bot_controller.gd" id="13_brain"]
 
 [sub_resource type="Environment" id="Environment_main"]
 background_mode = 1
@@ -47,8 +48,11 @@ script = ExtResource("4_input")
 script = ExtResource("7_pool")
 projectile_scene = ExtResource("8_projectile")
 
-[node name="TrainingDummy" parent="." instance=ExtResource("9_dummy")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, -3)
+[node name="BotController" type="Node" parent="."]
+script = ExtResource("13_brain")
+
+[node name="BotWizard" parent="." instance=ExtResource("9_bot")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.2, -3.5)
 
 [node name="Rounds" type="Node" parent="."]
 script = ExtResource("12_rounds")

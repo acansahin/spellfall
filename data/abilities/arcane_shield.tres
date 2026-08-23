@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="Ability" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://combat/abilities/ability.gd" id="1_ability"]
+
+[resource]
+script = ExtResource("1_ability")
+id = &"arcane_shield"
+display_name = "Arcane Shield"
+colour = Color(0.6, 1, 0.847059, 1)
+cast_type = 3
+cooldown = 8.0
+charges = 1
+instability = 0.0
+knockback = 0.0
+projectile_speed = 0.0
+projectile_radius = 0.0
+lifetime = 0.0
+spawn_offset = 0.0
+area = 0.0
+cone_angle = 45.0
+dash_distance = 0.0
+duration = 1.2
+knockback_resist = 0.35

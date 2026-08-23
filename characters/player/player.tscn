@@ -1,10 +1,14 @@
-[gd_scene load_steps=11 format=3]
+[gd_scene load_steps=17 format=3]
 
 [ext_resource type="Script" path="res://characters/player/player.gd" id="1_player"]
 [ext_resource type="Script" path="res://combat/abilities/ability_component.gd" id="2_abilities"]
 [ext_resource type="Resource" path="res://data/abilities/fireball.tres" id="3_fireball"]
 [ext_resource type="Script" path="res://combat/abilities/ability.gd" id="4_ability"]
 [ext_resource type="Script" path="res://characters/components/instability_component.gd" id="5_instability"]
+[ext_resource type="Resource" path="res://data/abilities/force_wave.tres" id="6_force_wave"]
+[ext_resource type="Resource" path="res://data/abilities/blink.tres" id="7_blink"]
+[ext_resource type="Resource" path="res://data/abilities/arcane_shield.tres" id="8_shield"]
+[ext_resource type="Script" path="res://vfx/spell_flash.gd" id="9_flash"]
 
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_body"]
 radius = 0.5
@@ -22,6 +26,20 @@ roughness = 0.55
 
 [sub_resource type="BoxMesh" id="BoxMesh_facing"]
 size = Vector3(0.3, 0.3, 1.1)
+
+[sub_resource type="SphereMesh" id="SphereMesh_shield"]
+radius = 0.95
+height = 1.9
+radial_segments = 16
+rings = 8
+
+[sub_resource type="StandardMaterial3D" id="Mat_shield"]
+transparency = 1
+albedo_color = Color(0.6, 1, 0.847059, 0.219608)
+emission_enabled = true
+emission = Color(0.4, 1, 0.8, 1)
+emission_energy_multiplier = 0.8
+roughness = 0.2
 
 [sub_resource type="StandardMaterial3D" id="Mat_facing"]
 albedo_color = Color(1, 0.847059, 0.407843, 1)
@@ -49,9 +67,18 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.3, -0.75)
 mesh = SubResource("BoxMesh_facing")
 surface_material_override/0 = SubResource("Mat_facing")
 
+[node name="Shield" type="MeshInstance3D" parent="Visual"]
+visible = false
+mesh = SubResource("SphereMesh_shield")
+surface_material_override/0 = SubResource("Mat_shield")
+
+[node name="SpellFlash" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.94, 0)
+script = ExtResource("9_flash")
+
 [node name="Abilities" type="Node" parent="."]
 script = ExtResource("2_abilities")
-abilities = Array[ExtResource("4_ability")]([ExtResource("3_fireball")])
+abilities = Array[ExtResource("4_ability")]([ExtResource("3_fireball"), ExtResource("6_force_wave"), ExtResource("7_blink"), ExtResource("8_shield")])
 
 [node name="Instability" type="Node" parent="."]
 script = ExtResource("5_instability")

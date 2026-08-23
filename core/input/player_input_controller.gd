@@ -46,11 +46,18 @@ func _process(_delta: float) -> void:
 	command_updated.emit(command)
 
 
-## Desktop casting. The touch buttons call `request_ability()` directly, so this is only
-## the keyboard's way into the same latch.
+## Desktop casting. The touch buttons call `request_ability()` directly, so this is only the
+## keyboard's way into the same latch.
+##
+## A plain Array and not a PackedStringArray: `const X := PackedStringArray([...])` is a
+## constructor call rather than a constant expression and does not compile.
+const SLOT_KEYS: Array = ["cast_1", "cast_2", "cast_3", "cast_4"]
+
+
 func _poll_ability_keys() -> void:
-	if Input.is_action_just_pressed("cast_primary"):
-		request_ability(0)
+	for slot in SLOT_KEYS.size():
+		if Input.is_action_just_pressed(String(SLOT_KEYS[slot])):
+			request_ability(slot)
 
 
 ## Called by the virtual joystick once it exists. `vector` is in screen space with

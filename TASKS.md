@@ -90,14 +90,65 @@ Small, actionable items. Tick things off as they land. Phase gates live in `ROAD
 - [x] Gate the other suites on `_wait_for_live()` now that a countdown freezes fighters
 - [x] Fix: GDScript lambda captured a bool by value, so a test flag never became true
 
-## Session 6 — Bot
+## Session 6 — Bot ✅
 
-- [ ] Bot drives the same `InputCommand` path the player does
-- [ ] Keep distance, face the player, aim, cast on a delay
-- [ ] Do not walk off the edge
-- [ ] Exported difficulty
+- [x] Bot drives the same `InputCommand` path the player does
+- [x] Keep distance, face the player, aim, cast on a delay
+- [x] Do not walk off the edge
+- [x] Exported difficulty
+- [x] `BotController` extends `PlayerInputController` and overrides `_process` to nothing, so
+      no key and no finger can reach it
+- [x] Thinks in `_physics_process`, so its reaction time is a gameplay number rather than a
+      function of the frame rate
+- [x] Reaction time implemented as a *remembered* target position, refreshed on a clock —
+      a slow bot genuinely mis-tracks a moving player
+- [x] Aim error re-rolled on that same clock, not per frame (per frame averages out to a
+      perfect shot over a projectile's flight)
+- [x] Leads the target by the projectile's flight time, scaled by difficulty
+- [x] Arena radius read off the platform's own `CylinderShape3D` and handed over by the level
+- [x] `bot_wizard.tscn` inherits `player.tscn` and only recolours it — the opponent is a
+      re-skin of the fighter, not a fork of it
+- [x] Facing now follows `aim_dir` and falls back to travel, so a strafing bot looks like it
+      is shooting at you. Nothing changes for the human until drag-to-aim lands
+- [x] Training dummy deleted; the four suites that needed a motionless target park the bot
+      with `_freeze_bot()` instead
+- [x] Harness: `--bot-test` (26 assertions), `--bot:off`, `--bot-skill:calm|steady|sharp`
+- [x] Fix: `--cast-test` was measuring the frame rate, not the cast. `_settle()` spans render
+      frames, and on a slow renderer a dozen physics ticks pass inside it. Reproduced on the
+      commit before this session, so it was not caused by the bot
 
-## Session 7 — Game feel
+## Session 7 — The other three spells ✅
+
+ROADMAP step 7. The ability framework was built for this in Session 3; the test of it was
+whether three spells that share nothing with Fireball could be added without touching it.
+
+- [x] `Ability` gains `dash_distance`, `duration` and `knockback_resist`; `area` and
+      `cone_angle` are finally read rather than merely authored
+- [x] Force Wave — `.tres` only, no script. `CONE` cast type, `ConeCast` finds who is in the
+      fan with a physics query, and the push goes **away from the caster** rather than along
+      the aim, which is what makes catching someone at the shoulder of the fan lethal
+- [x] Blink — `DASH` cast type. The landing point is clamped inside the arena by the LEVEL,
+      which is the only thing that knows where the edge is
+- [x] Blink cancels the slide you are in but keeps the hitstun, so it is an escape and not a
+      free reset. If it plays too strong, turn the cooldown first
+- [x] Arcane Shield — `BUFF` cast type, applied in `Player.apply_knockback` rather than in the
+      knockback formula: the formula says how hard the hit was, the shield says how much of it
+      landed on *me*
+- [x] `_apply_hit()` — one door for every hit in the game, projectile or cone
+- [x] `SpellFlash` draws the fan from the same two numbers the hit test reads, so what is on
+      screen cannot drift from what actually hits
+- [x] A shield bubble on the fighter, so "I am protected" is visible and not just a number
+- [x] Four buttons: primary in the corner, three fanned along a thumb arc, angles exported,
+      read out of the scene and sorted by slot
+- [x] `AbilityButton` claims a **disc** instead of its bounding box — a cluster of round
+      buttons with square hit areas mis-fires in the invisible corners, and nothing about the
+      screen looks wrong when it does
+- [x] `cast_1`..`cast_4` on Space and the number row, polled in one loop
+- [x] The bot picks a spell by CAST TYPE, not by slot index: escape, shove, brace, or Fireball
+- [x] Harness: `--spells-test` (21 assertions), `--button-test` (14), `--cast-at:N,S`
+- [x] Photographed the fan and the shield bubble rather than trusting the numbers
+
+## Session 8 — Game feel
 
 - [ ] Hit particles, impact audio, brief hit pause
 - [ ] Small camera shake on heavy knockback
@@ -122,17 +173,33 @@ Small things deliberately left, so they do not get silently forgotten.
       tuning surface nobody has asked for yet.
 - [ ] `InstabilityComponent.add()` ignores negative amounts. If a spell should ever
       reduce instability, that is a design decision to make deliberately.
-- [ ] `TrainingDummy` is a prototype target, not a design feature. The bot replaces it.
 - [ ] A draw (everyone falls at once) scores nobody. Fine for 1v1; revisit for FFA.
+- [ ] The bot does not dodge. It circles, which dodges by accident. Deliberate — Phase 1 wants
+      a sparring partner, not something that wins.
+- [ ] The bot never plays the edge: it does not try to line you up against the rim, which is
+      the most interesting thing an opponent in this game could do. Phase 2 material.
+- [ ] Difficulty is reachable from the inspector and `--bot-skill:` only. No in-game selector
+      until there is a menu to put one in.
+- [ ] Six suites now depend on `_freeze_bot()`. A seventh that forgets it will fail in a way
+      that looks like a code bug.
+- [ ] The Force Wave fan is drawn as a flat mesh at ground height, so a wave cast near the rim
+      hangs over the void. Correct, and it looks odd. Feel pass.
+- [ ] Blink has no visual at all — the wizard simply appears elsewhere. It reads, but a trail
+      or an afterimage is the obvious thing the feel pass should add.
+- [ ] Arcane Shield reduces knockback; it does not block projectiles or stop instability. That
+      is the shipping decision recorded in GAME_DESIGN.md, not an oversight.
+- [ ] The bot spends Shield on a plain instability threshold. It has no idea whether a hit is
+      actually coming, which is the difference between a read and a habit.
+- [ ] Nothing shows the player where a spell will land before they cast it. That is step 8.
 - [ ] No round timer. A stalemate where nobody attacks currently lasts forever.
 - [ ] The winner banner conjugates "YOU" as a special case in `main.gd`. Fine while the
       level owns both titles; revisit if titles ever come from elsewhere.
 - [ ] `Player` now means "a fighter" — the dummy uses the same script with no input
       controller, and the bot will too. Renaming the class was judged more churn than
       it is worth; revisit if it starts confusing people.
-- [ ] `Ability.charges`, `area`, `cone_angle` are authored but not read yet — they belong
-      to Blink, splash and Force Wave, which arrive in Session 7.
-- [ ] Cast types CONE, DASH and BUFF warn loudly and do nothing. Only PROJECTILE runs.
+- [ ] `Ability.charges` is authored but never read. It belongs to a spell that banks more
+      than one cast, and no spell does.
+- [ ] `Ability.area` is read as the CONE's reach. Splash on a projectile still is not built.
 - [ ] Character shadow is faint at the current light angle. Cosmetic; revisit in the feel pass.
 - [ ] `PlayerInputController` samples input in `_process` (render rate) while the character
       consumes it in `_physics_process` (fixed 60Hz). Harmless now, but a predicting client
