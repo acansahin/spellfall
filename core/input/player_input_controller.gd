@@ -14,8 +14,9 @@ extends Node
 ## Emitted after the command is refreshed for this frame.
 signal command_updated(command: InputCommand)
 
-## Ignore joystick noise below this. Applies to touch only; keyboard input is already
-## discrete. Exported so it can be tuned per device without touching code.
+## Ignore stick noise below this fraction of full deflection. Applies to touch only;
+## keyboard input is already discrete. Exported so it can be tuned per device without
+## touching code. See `_shape_stick` for how it is applied - it rescales, it does not clip.
 @export_range(0.0, 0.5, 0.01) var touch_deadzone := 0.15
 
 ## Scales how far the joystick must travel to reach full speed.
@@ -56,16 +57,34 @@ func _read_raw() -> Vector2:
 	if _override_active:
 		return _override_vector.limit_length(1.0)
 	if _touch_active:
-		var v := _touch_vector * touch_sensitivity
-		if v.length() < touch_deadzone:
-			return Vector2.ZERO
-		return v.limit_length(1.0)
+		return _shape_stick(_touch_vector)
 	# Keyboard fallback for desktop testing. y is +1 for "forward/up the screen" so it
 	# matches the joystick convention above and needs no special case downstream.
 	return Vector2(
 		Input.get_axis("move_left", "move_right"),
 		Input.get_axis("move_back", "move_forward")
 	).limit_length(1.0)
+
+
+## Turns a raw stick reading into a movement request, applying the deadzone and sensitivity.
+##
+## The deadzone RESCALES rather than clipping. A plain cutoff - "below the threshold return
+## zero, otherwise return the raw value" - means the slowest speed a player can ask for is
+## the deadzone itself, so the wizard snaps from stationary to 15% speed the moment the
+## thumb clears the dead spot. Remapping the live range back onto 0..1 removes that step,
+## which is the difference between a stick that feels analogue and one that feels like a
+## d-pad with extra travel.
+##
+## Magnitude is handled as a single circular value, never per-axis. A per-axis clamp would
+## let a diagonal reach a length of 1.414 and make the wizard measurably faster on the
+## diagonals - the classic bug this game cannot afford, since positioning is the whole
+## skill expression.
+func _shape_stick(raw: Vector2) -> Vector2:
+	var magnitude := raw.length()
+	if magnitude <= touch_deadzone:
+		return Vector2.ZERO
+	var live := (magnitude - touch_deadzone) / (1.0 - touch_deadzone)
+	return (raw / magnitude) * minf(live * touch_sensitivity, 1.0)
 
 
 ## Rotates a screen-space stick vector onto the world ground plane using the active

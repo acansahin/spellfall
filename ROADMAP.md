@@ -3,7 +3,7 @@
 Phases are gated, not scheduled. **A phase does not start until the one before it is
 genuinely done**, and Phase 1 is judged by whether the game is fun, not by a checklist.
 
-Current position: **Phase 1, step 1 of 9 complete.**
+Current position: **Phase 1, steps 1-2 of 11 complete.**
 
 ---
 
@@ -15,8 +15,8 @@ progression, no shop, no cosmetics. If that rule gets bent, the project is off t
 | # | Step | State |
 |---|---|---|
 | 1 | Project skeleton, arena, player, desktop movement, fixed camera | **done** |
-| 2 | Mobile controls: virtual joystick, scalable across screen sizes | next |
-| 3 | Ability framework (Resource-driven) + Fireball | |
+| 2 | Mobile controls: touch stick, multi-touch safe, scalable across screen sizes | **done** |
+| 3 | Ability framework (Resource-driven) + Fireball | next |
 | 4 | Instability component + HUD readout | |
 | 5 | Knockback system, wired to instability | |
 | 6 | Fall detection and elimination | |

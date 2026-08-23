@@ -25,16 +25,25 @@ Small, actionable items. Tick things off as they land. Phase gates live in `ROAD
 
 ---
 
-## Session 2 — Mobile controls (next)
+## Session 2 — Mobile controls ✅
 
-- [ ] `VirtualJoystick` scene under `ui/mobile_controls/`
-  - [ ] Draws a base and a thumb; thumb clamps to the base radius
-  - [ ] Deadzone and sensitivity as exported values
-  - [ ] Scales correctly on different screen sizes and aspect ratios
-  - [ ] Calls `PlayerInputController.set_touch_vector()` and contains **no** gameplay logic
-- [ ] Confirm keyboard still works with the joystick present (both feed one `InputCommand`)
-- [ ] Test at 1280x720, a tall 20:9 phone shape, and a tablet 4:3 shape
-- [ ] Decide fixed-position vs floating joystick, and write down why
+- [x] `TouchStick` scene under `ui/mobile_controls/`
+  - [x] Draws a base and a thumb; thumb clamps circularly to the base radius
+  - [x] Deadzone and sensitivity as exported values (on the controller, not the UI)
+  - [x] Scales correctly on different screen sizes and aspect ratios
+  - [x] Feeds `PlayerInputController.set_touch_vector()` and contains **no** gameplay logic
+- [x] `MobileControls` CanvasLayer owning placement, safe-area margins and visibility
+- [x] Multi-touch: stick claims exactly one finger by index, ignores all others
+- [x] Hidden stick claims nothing (`is_visible_in_tree()` guard)
+- [x] Confirm keyboard still works with the stick present (both feed one `InputCommand`)
+- [x] Touch takes priority over a held key; keyboard resumes when the finger lifts
+- [x] Rescaling deadzone instead of the old hard cutoff
+- [x] `emulate_touch_from_mouse` so a mouse drives the stick in a desktop dev build
+- [x] Test at 16:9, 19.5:9, 20:9 and a 4:3 tablet — measured, not assumed
+- [x] Decide fixed-position vs floating stick, and write down why
+- [x] Correct ARCHITECTURE.md's cross-platform determinism claim
+- [x] Harness: `--touch-test`, `--key-test`, `--layout-probe`, `--stick-hold`, `--touch-ui`
+- [x] Renamed off `VirtualJoystick` — Godot 4.7 ships a native class with that name
 
 ## Session 3 — Ability framework and Fireball
 
@@ -85,7 +94,43 @@ Small things deliberately left, so they do not get silently forgotten.
 
 - [ ] `main.gd` respawns on `y < fall_limit` as a stopgap. Real elimination replaces it (Session 5).
 - [ ] No `README.md` yet — add one when the repo is worth explaining to someone else.
-- [ ] No Android export preset yet. `import_etc2_astc` is already set, so it should be uneventful.
+- [ ] **Android export is untested — export templates are not installed.** See below.
+- [ ] `export_presets.cfg` is in `.gitignore`, so the Android preset written during Session 2
+      lives only on this machine. Reconsider committing it once a build actually succeeds —
+      CI would need it, and it holds no secrets (the keystore path is an editor setting).
 - [ ] No CI. Worth adding once there is something worth building automatically.
 - [ ] `characters/components/`, `core/utilities/`, `data/`, `network/` are empty placeholders.
 - [ ] Character shadow is faint at the current light angle. Cosmetic; revisit in the feel pass.
+- [ ] `PlayerInputController` samples input in `_process` (render rate) while the character
+      consumes it in `_physics_process` (fixed 60Hz). Harmless now, but a predicting client
+      will want one command sampled per tick. Revisit when networking starts, not before.
+- [ ] The stick's activation area must never grow to overlap the future ability buttons on
+      the right. It is currently base + 44 units, bottom-left only.
+
+## Android export status
+
+Blocked, and **not** by anything in this project. Attempting a real export
+(`--export-debug "Android"`) reports exactly:
+
+```
+No export template found at the expected path:
+  .../export_templates/4.7.stable/android_debug.apk
+No export template found at the expected path:
+  .../export_templates/4.7.stable/android_release.apk
+A valid Java SDK path is required in Editor Settings.
+```
+
+What is already present on this machine:
+
+| Piece | State |
+|---|---|
+| Android SDK | present — `build-tools/36.0.0`, `platforms/android-36.1`, `platform-tools` |
+| JDK | present — Temurin OpenJDK 21.0.12 on `PATH` |
+| Godot's `android_sdk_path` | already set in editor settings |
+| **Godot export templates for 4.7** | **absent — the whole `export_templates/` folder is empty** |
+| **`export/android/java_sdk_path`** | **empty in editor settings** |
+| Debug keystore | editor settings point at `.../Godot/keystores/debug.keystore`, which does not exist |
+
+To unblock, in the Godot editor: **Editor → Manage Export Templates → Download and Install**
+(~1 GB), then **Editor → Editor Settings → Export → Android** and set the Java SDK path to the
+Temurin 21 install. Not done here because it is a large download that was not asked for.

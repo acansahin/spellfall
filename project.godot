@@ -54,6 +54,14 @@ debug_respawn={
 ]
 }
 
+[input_devices]
+
+; Lets a mouse drive the touch controls in a desktop dev build, so the joystick can be
+; inspected and tested without touch hardware. Inert on Android and iOS - there is no mouse
+; to emulate from - so it cannot change real mobile behaviour. MobileControls.Visibility.AUTO
+; also keys off this, which is why the stick shows at all on a desktop run.
+pointing/emulate_touch_from_mouse=true
+
 [layer_names]
 
 3d_physics/layer_1="world"

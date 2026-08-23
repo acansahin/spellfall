@@ -3,7 +3,8 @@
 Engine: **Godot 4.7**, GDScript, **Forward Mobile** renderer.
 Read `GAME_DESIGN.md` first for what the game is. This file is how it is put together.
 
-> Everything described as _(planned)_ does not exist yet. Only the movement prototype is built.
+> Everything described as _(planned)_ does not exist yet. What is built: the arena, the
+> wizard, movement, the fixed camera, and the touch controls. Nothing combat-related.
 
 ## Ground rules
 
@@ -37,7 +38,7 @@ res://
   arena/           arena.tscn, arena_camera.gd
   ui/
     hud/           (planned) instability readout, round score
-    mobile_controls/ (planned) joystick, spell buttons, aim indicators
+    mobile_controls/ touch_stick + mobile_controls; spell buttons and aim later
   systems/
     round/         (planned) RoundManager
     spawn/         (planned)
@@ -53,7 +54,8 @@ Empty folders carry a `.gitkeep` so the structure survives a clone.
 This is the most important seam in the project, and it exists already.
 
 ```
-   keyboard              virtual joystick (planned)        network replay (planned)
+   keyboard                  TouchStick                 network replay (planned)
+   (Input actions)      (ui/mobile_controls)
        \                        |                                  /
         \                       v                                 /
          ----------->  PlayerInputController  <--------------------
@@ -77,11 +79,110 @@ This is the most important seam in the project, and it exists already.
 
 Two consequences worth stating plainly:
 
-- The virtual joystick, when built, is a **UI scene that calls `set_touch_vector()`**. It
-  contains no gameplay logic. That is the rule the design brief asked for, enforced by shape
-  rather than by discipline.
+- The touch stick is a **UI scene with no gameplay logic**. It does not know what a Player is.
+  It reports where a thumb is and `main.gd` decides that this means movement.
 - `set_override_vector()` lets an automated run steer the character with no input events at
   all. That is what makes the prototype testable without a human holding a key.
+
+### The touch stick
+
+`ui/mobile_controls/` holds two scenes:
+
+| Scene | Job |
+|---|---|
+| `touch_stick.tscn` | One thumbstick. Draws a base and a thumb, tracks **one** finger, emits `vector_changed(vector, active)`. Knows nothing else. |
+| `mobile_controls.tscn` | A `CanvasLayer` that holds the stick, decides *where* it sits (margins, safe area) and *whether* it is shown. Future ability buttons become children here. |
+
+The wiring is one line, in `main.gd`:
+
+```gdscript
+_mobile.joystick.vector_changed.connect(_input.set_touch_vector)
+```
+
+That is the whole `TouchStick -> PlayerInputController` link. The stick is connected *to* the
+controller rather than holding a reference *to* it, which is the "signals decouple upward"
+rule — and it means a second stick (aiming, later) is a new connection, not a new code path.
+
+**Why it is not called `VirtualJoystick`:** Godot 4.7 ships a **native `VirtualJoystick`
+Control**, so that `class_name` is taken. The native one is also a poor fit here: it drives
+**InputMap actions** (`action_left`, `action_right`, …) and exposes no way to read its vector.
+Routing touch through actions would make it indistinguishable from the keyboard, leave
+`set_touch_vector()` and `touch_deadzone` unused, and put the deadzone in a UI node — i.e. it
+is built for an action-based architecture, and this project is command-based. Worth revisiting
+if the command pipeline is ever abandoned; until then the collision is just a naming problem.
+
+#### Touch ownership
+
+This is the part that matters for a two-thumb game, and it is why the stick handles raw
+`InputEventScreenTouch` in `_input()` rather than using `_gui_input`: Godot's GUI routing is
+built around a single pointer, and a second finger would be swallowed by it.
+
+The rule is one line of state — `_touch_index` — and it means:
+
+- A press is claimed **only** if the stick is idle *and* the finger landed in its activation
+  area. Everything else is left completely alone, never inspected further and never consumed.
+- Drags and releases are matched **by index**. Another finger dragging or lifting anywhere on
+  screen cannot move or free the stick.
+- Consumed events are marked handled; unclaimed ones are not. Ability buttons on the right
+  will therefore receive their touches untouched, with no coordination between them.
+
+A hidden stick claims nothing: `Node._input()` keeps firing on invisible nodes (unlike
+`Control._gui_input`), so there is an explicit `is_visible_in_tree()` guard. Without it a
+desktop build would silently eat mouse-emulated touches with nothing drawn to explain why.
+
+The stick is **fixed-position**. A floating/dynamic stick that springs to wherever the thumb
+lands is a one-line change — `_centre` is already a variable rather than `size * 0.5`, and the
+claim branch in `_handle_touch()` would set it to the touch point. Nothing downstream would
+move. It is not done now because a fixed stick is the thing that needs proving first.
+
+#### Deadzone
+
+The deadzone lives in `PlayerInputController._shape_stick()`, **not** in the stick. The stick
+reports honestly where the thumb is; the gameplay layer decides how much of that to ignore.
+Putting it in the UI would make the drawn thumb and the gameplay value disagree.
+
+It **rescales rather than clips**. A plain cutoff — "below the threshold return zero,
+otherwise return the raw value" — means the slowest speed a player can ask for is the deadzone
+itself, so the wizard snaps from stationary to 15% speed the instant the thumb clears the dead
+spot. Remapping the live range back onto 0..1 removes that step. The harness asserts it: just
+outside the deadzone the output is ~0.02, where a clipping deadzone would give ~0.15.
+
+Magnitude is always clamped **circularly**, never per-axis, so a diagonal is never faster than
+a cardinal. This holds for the keyboard too, and both are asserted.
+
+#### Placement and screen shapes
+
+Stretch is `canvas_items` / `expand`, so the canvas is always 720 units tall and grows *wider*
+on taller-aspect phones. The stick is anchored to the **bottom-left corner** and offset in
+canvas units, which puts it at the same physical spot on the glass on every device — a 16:9
+and a 20:9 phone differ in how much void is visible at the sides, not in where your thumb
+rests. Margins are therefore plain canvas units and **not** a fraction of viewport width,
+which would drift the stick inward as the screen got wider.
+
+Measured, not assumed — `--layout-probe` at four shapes:
+
+| Window | Viewport | Aspect | Left gap | Bottom gap |
+|---|---|---|---|---|
+| 1280x720 | 1280x720 | 1.78 (16:9) | 96.0 | 76.0 |
+| 1560x720 | 1560x720 | 2.17 (19.5:9) | 96.0 | 76.0 |
+| 1600x720 | 1600x720 | 2.22 (20:9) | 96.0 | 76.0 |
+| 960x720 | 1280x960 | 1.33 (4:3) | 96.0 | 76.0 |
+
+Safe-area insets (notch, home indicator) are read from
+`DisplayServer.get_display_safe_area()` and added to those margins, but **only on mobile** —
+on desktop that call reports the whole monitor while the window is smaller, so the arithmetic
+would be meaningless. That guard is the entire extent of device-specific handling, on purpose.
+
+#### Desktop
+
+`input_devices/pointing/emulate_touch_from_mouse=true` is set in `project.godot` so a mouse
+drives the stick in a desktop dev build. There is no mouse on Android or iOS, so this cannot
+affect real mobile behaviour. `MobileControls.Visibility.AUTO` shows the controls when a
+touchscreen is present **or** when that emulation is on, which is why they appear on a desktop
+run; a shipped desktop build would turn the emulation off and the controls would vanish.
+
+Keyboard and touch feed the same `InputCommand`. A finger on the stick takes priority over a
+held key, and the keyboard resumes the moment the finger lifts — both asserted by `--key-test`.
 
 ### Screen space vs world space
 
@@ -95,15 +196,32 @@ Doing it there means rotating or tilting the camera later cannot silently invert
 `Player` is a `CharacterBody3D` with hand-integrated velocity. This is deliberate and it is
 the decision most likely to be second-guessed later, so:
 
-Knockback is the centrepiece mechanic, and it must be **reproducible** - the same hit from the
-same angle at the same instability has to send you the same distance, every time, on a server
-that never rendered a frame. Rigid-body solvers are tuned to make contacts look plausible, not
-to be deterministic; they resolve differently depending on how many bodies are touching and in
-what order. That is fine for debris and wrong for the thing the whole game is judged on.
+**What this is NOT claiming.** Godot's physics is floating-point, and neither
+`CharacterBody3D`, `move_and_slide()` nor the underlying solver is guaranteed to produce
+bit-for-bit identical results across different CPUs, operating systems, GPU drivers or engine
+builds. Nothing in this architecture may ever depend on two machines simulating the same
+inputs and landing on the same float. Lockstep determinism is explicitly **not** the plan —
+see the networking section below for what is.
 
-So: physics runs at a **fixed 60Hz tick** (`physics/common/physics_ticks_per_second=60`), all
-gameplay integration happens in `_physics_process`, and nothing gameplay-relevant reads the
-rendered framerate. A future authoritative server runs the same tick.
+**What it IS claiming.** Hand-integrated movement is *simple, inspectable and cheap to
+re-simulate*. Knockback is the centrepiece mechanic, and the thing it needs is that one
+authoritative simulation can be rewound and replayed — which is exactly what client-side
+prediction and reconciliation do, many times a second. Replaying a handful of ticks of
+`velocity += …; move_and_slide()` is trivial. Replaying a rigid-body solver is not: its result
+depends on the whole contact graph, the island it was solved in, and the order bodies were
+processed, so rewinding one body means rewinding everything it touched. That is fine for
+debris and wrong for the thing the whole game is judged on.
+
+It also means the knockback formula is *readable*. When a hit sends someone the wrong
+distance, the answer is in one function, not distributed across a solver's internals.
+
+So: gameplay runs at a **fixed 60Hz tick**
+(`physics/common/physics_ticks_per_second=60`), all gameplay integration happens in
+`_physics_process`, and nothing gameplay-relevant reads the rendered framerate. A fixed tick
+is still wanted — it makes behaviour consistent between a 30fps phone and a 120fps one, keeps
+tuning values meaningful, and lets the server and a predicting client run *the same code at
+the same rate*, which keeps their results close. Close, not identical: the reconciliation step
+exists precisely because they will drift.
 
 Movement tuning lives in exports on `player.gd`:
 
@@ -174,11 +292,32 @@ Server-authoritative when it arrives. The server owns positions, cast validation
 hits, instability, knockback, elimination and round results. The client is never trusted with
 a competitive outcome.
 
+The intended model, in order:
+
+```
+client input  ->  local prediction (where it helps)  ->  authoritative server simulation
+                                                                     |
+              client reconciliation / interpolation  <-  server snapshots
+```
+
+The client sends *input*, not results. It may predict its own movement immediately so the
+stick feels instant, but the server's simulation is the truth; when a snapshot disagrees, the
+client corrects to it and replays any inputs the server had not yet processed. Other players
+are interpolated between snapshots rather than predicted.
+
+**This design assumes divergence and corrects it.** It does not assume the client and server
+compute identical floats, because with Godot's physics across mixed hardware they will not.
+Anything that would require lockstep determinism — running the whole match in parallel on
+every client and trusting the results to agree — is off the table.
+
 Nothing networked is being built now. What is being built now that makes it possible later:
 
-- Fixed-tick, deterministic movement integration.
-- Input funnelled through one replaceable `InputCommand` producer.
-- Knockback as one pure formula rather than scattered per-spell code.
+- A **fixed 60Hz gameplay tick**, so prediction and the server advance in the same units.
+- Movement that is cheap to **re-simulate**, which is what reconciliation replays.
+- Input funnelled through one replaceable `InputCommand` producer — the seam a network
+  input stream will substitute into, exactly like the joystick and the keyboard do today.
+- Knockback as one pure formula rather than scattered per-spell code, so client and server
+  run the same rule.
 - No gameplay state living in UI scripts.
 
 That is the whole down-payment. Anything more would be speculative.
@@ -209,9 +348,21 @@ argument-gated harness. Everything after a bare `--` reaches `OS.get_cmdline_use
 | `--move=X,Y` | Steers the player with a constant stick vector, no input events |
 | `--trace` | Prints position and velocity once a second |
 | `--shot` / `--shot:N` | Saves a drawn frame to `user://shot.png` / `shot_N.png` |
+| `--touch-ui:on\|off` | Forces the mobile controls visible or hidden, whatever the device |
+| `--touch-test` | Injects a scripted multi-touch sequence and asserts 18 properties |
+| `--key-test` | Injects key presses and asserts the keyboard path still drives movement |
+| `--layout-probe` | Prints where the stick actually landed, for anchor checks |
+| `--stick-hold=X,Y` | Holds the stick deflected so a screenshot shows a live thumb |
 
-`--shot` needs real rendering, so **do not pass `--headless` with it.** This is not optional
-tooling: the facing-direction bug below was invisible to `--trace` and obvious in one frame.
+**None of these may be run with `--headless`.** `--shot` needs real rendering, and the input
+tests need a real window: the headless display driver does not route injected
+`InputEventScreenTouch`/`InputEventKey` to `_input()`, and it ignores `--resolution` too — so
+every assertion silently reads zero and the run reports failures that say nothing about the
+code. That was observed, not assumed: the same `--touch-test` reports 11 failures headless and
+18 passes windowed.
+
+This is not optional tooling. The facing-direction bug below was invisible to `--trace` and
+obvious in one frame, and touch ownership cannot be checked by hand at all.
 
 ## Traps already hit
 
@@ -225,6 +376,14 @@ Each of these cost real time in the first session.
   Assembling a literal from `basis[0][0], basis[0][1], ...` stores the **transpose**, which for
   a rotation is its inverse. The key light ended up shining upward and the arena went flat.
   Use `var_to_str(node.transform)` - it emits exactly what the parser reads back.
+- **Godot 4.7 ships a native `VirtualJoystick` Control**, so that `class_name` is taken and
+  a script claiming it fails to load with "hides a native class" — which surfaces as a
+  *parse error in whatever file referenced it*, not in the file at fault. Ours is
+  `TouchStick`. Check `ClassDB.class_exists()` before claiming a generic `class_name`.
+- **Injected input needs a real window.** `Input.parse_input_event()` with touch or key
+  events does nothing useful under `--headless`, and `--resolution` is ignored there as well
+  (the viewport came back 1280x1280). An input test that "fails" headless is telling you
+  about the display driver, not the code.
 - **A wrong facing formula passes every numeric test.** Godot yaw 0 faces -Z, and yaw `a`
   faces `(-sin a, 0, -cos a)`; solving that for a travel direction needs `atan2(-x, -z)`.
   Dropping both signs aims the wizard exactly backwards, and position/velocity traces look

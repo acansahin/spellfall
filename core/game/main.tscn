@@ -1,10 +1,11 @@
-[gd_scene load_steps=7 format=3]
+[gd_scene load_steps=8 format=3]
 
 [ext_resource type="Script" path="res://core/game/main.gd" id="1_main"]
 [ext_resource type="PackedScene" path="res://arena/arena.tscn" id="2_arena"]
 [ext_resource type="PackedScene" path="res://characters/player/player.tscn" id="3_player"]
 [ext_resource type="Script" path="res://core/input/player_input_controller.gd" id="4_input"]
 [ext_resource type="Script" path="res://arena/arena_camera.gd" id="5_camera"]
+[ext_resource type="PackedScene" path="res://ui/mobile_controls/mobile_controls.tscn" id="6_mobile"]
 
 [sub_resource type="Environment" id="Environment_main"]
 background_mode = 1
@@ -34,6 +35,8 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.2, 3.5)
 
 [node name="PlayerInputController" type="Node" parent="."]
 script = ExtResource("4_input")
+
+[node name="MobileControls" parent="." instance=ExtResource("6_mobile")]
 
 [node name="CameraRig" type="Node3D" parent="."]
 script = ExtResource("5_camera")
