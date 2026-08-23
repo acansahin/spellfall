@@ -876,6 +876,12 @@ Each of these cost real time in the first session.
   rate: the spell had crossed the arena and the cooldown had visibly drained before anything
   was read. Measured here at fraction 0.70 where the assertion wanted 0.85, reproducing on the
   commit before the bot existed. Wait on `physics_frame` for anything that is gameplay state.
+- **A windowed screenshot run can be driven by the mouse sitting on top of it.**
+  `emulate_touch_from_mouse` is on and `MobileControls.AUTO` shows the controls because of
+  it, so a pointer resting where the spell buttons are drawn presses them - and the run casts
+  spells and walks the wizard around with nothing in the harness asking it to. It reads as a
+  bug in whatever was just changed. Pass `--touch-ui:off` for any screenshot that is not
+  ABOUT the controls; hidden controls claim nothing.
 - **A timer must not be counted down with the clock it slowed.** Hitstop scales
   `Engine.time_scale`, and `_process`'s delta is scaled with it — so counting the hitstop
   down in delta stretches it by exactly the factor applied, and a 35ms stop lasts 290ms. It
