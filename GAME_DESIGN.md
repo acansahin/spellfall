@@ -242,6 +242,13 @@ something that lasts.
 **Nothing else in the game touches that number.** No spell damages it, so the fight is still
 about instability and position, and the burn is only ever the price of losing ground.
 
+A bar appears over a burning wizard's head and disappears again when they are whole. It is
+where the eye already is while you are on fire and steering for the stone - the HUD row has
+the exact number, but the corner of the screen is not where anybody is looking at that
+moment. It stays hidden while nothing has burned: two permanently full bars over two wizards
+would be furniture, and furniture is what the eye stops seeing, including on the one occasion
+it moves.
+
 ## Win condition
 
 - Burn all the way down in the lava, and you are eliminated for the round.

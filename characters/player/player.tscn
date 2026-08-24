@@ -1,4 +1,4 @@
-[gd_scene load_steps=19 format=3]
+[gd_scene load_steps=20 format=3]
 
 [ext_resource type="Script" path="res://characters/player/player.gd" id="1_player"]
 [ext_resource type="Script" path="res://combat/abilities/ability_component.gd" id="2_abilities"]
@@ -11,6 +11,7 @@
 [ext_resource type="Script" path="res://vfx/spell_flash.gd" id="9_flash"]
 [ext_resource type="Script" path="res://vfx/aim_indicator.gd" id="10_aim"]
 [ext_resource type="Script" path="res://characters/components/health_component.gd" id="11_health"]
+[ext_resource type="Script" path="res://vfx/health_bar.gd" id="12_bar"]
 
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_body"]
 radius = 0.5
@@ -89,6 +90,13 @@ script = ExtResource("10_aim")
 [node name="Abilities" type="Node" parent="."]
 script = ExtResource("2_abilities")
 abilities = Array[ExtResource("4_ability")]([ExtResource("3_fireball"), ExtResource("6_force_wave"), ExtResource("7_blink"), ExtResource("8_shield")])
+
+[node name="HealthBar" type="Node3D" parent="."]
+script = ExtResource("12_bar")
+
+[node name="Back" type="MeshInstance3D" parent="HealthBar"]
+
+[node name="Fill" type="MeshInstance3D" parent="HealthBar"]
 
 [node name="Health" type="Node" parent="."]
 script = ExtResource("11_health")

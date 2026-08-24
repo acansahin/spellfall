@@ -358,6 +358,9 @@ one deliberate departure from it.
 
 ### Still open
 
+- [ ] The burn bar is sized for the WIDEST zoom, so it is chunky by the time the ring has
+      closed and the camera has come in 2.7x. Scaling it against the camera distance would
+      fix that and would also be the first thing in the game to do so.
 - [ ] The lava is one flat orange. It covers the whole screen, so it reads as a coloured
       backdrop rather than as molten rock - it wants cooled crust, a slow pulse, or cracks,
       and all three are shader or texture work the placeholder rule defers.

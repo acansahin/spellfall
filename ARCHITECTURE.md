@@ -807,6 +807,13 @@ walls; what gets a wizard over the 8cm lip is the capsule's lower sphere meeting
 assumptions about someone else's physics engine, and the difference between a second chance
 and a wizard stuck against a kerb until it burns to death. `--lava-test` walks the trip.
 
+`vfx/health_bar.gd` draws the same number over the fighter's head - two billboarded quads, no
+textures, hidden whenever nothing has burned. The fighter wires its own bar to its own
+component in `_ready()`: that is internal wiring rather than the class reaching upward, and it
+means a third fighter gets a working bar by existing. It is a child of the BODY and not of
+`Visual`, which spins to face the aim and would turn the bar edge-on every time the wizard
+looked sideways.
+
 `KillZone` still sits under the world and still reports through the same door. Nothing reaches
 it any more unless a hit clears 60 metres, which is why it is now a backstop rather than the
 rule.
@@ -932,6 +939,7 @@ argument-gated harness. Everything after a bare `--` reaches `OS.get_cmdline_use
 | `--cover-test` | Asserts cover stops spells and walking, and that the layout is fair to both spawns |
 | `--lava-test` | Asserts the lava burns, stone mends, a dunk is survivable, you can climb back, and burning out ends the round |
 | `--shrink-test` | Asserts the ring holds through the grace, closes at its rate, stops at the floor, and drags the lava rule, the bot, the camera and the cover with it |
+| `--burn-pose` | Parks the player in the lava, so a delayed shot catches the burn bar part-way down |
 
 **None of these may be run with `--headless`.** `--shot` needs real rendering, and the input
 tests need a real window: the headless display driver does not route injected

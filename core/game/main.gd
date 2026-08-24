@@ -26,6 +26,7 @@ extends Node3D
 ##   --aim-hold:S,X,Y  hold a drag on button S toward X,Y and never lift, for a screenshot
 ##   --lava-test       assert the lava burns, mends, ends a round, and is survivable
 ##   --shrink-test     assert the ring holds, closes, stops, drags cover and camera with it
+##   --burn-pose       park the player in the lava, so a shot catches the bar draining
 ##   --cover-test      assert the obstacles block spells, block walking, and are fair
 ##                     (every OTHER suite clears the obstacles first - see _clear_cover)
 ##   --feel-test       assert hitstop, shake, sparks, sound and the dash streak all fire
@@ -231,6 +232,8 @@ func _parse_harness_args() -> void:
 			_run_lava_tests()
 		elif arg == "--shrink-test":
 			_run_shrink_tests()
+		elif arg == "--burn-pose":
+			_burn_pose()
 		elif arg.begins_with("--aim-hold:"):
 			# "--aim-hold:0,1,0" aims spell 0 to screen-right. Eleven characters in the
 			# prefix, counted rather than guessed - see ARCHITECTURE.md on --cast-at.
@@ -2176,6 +2179,24 @@ func _run_aim_tests() -> void:
 	get_tree().quit(1 if _touch_failures > 0 else 0)
 
 
+## Stands the player in the lava and holds them there, so a delayed --shot catches the burn
+## bar part-way down.
+##
+## The bar only exists while someone is on fire, which makes it the one piece of the game that
+## cannot be photographed by simply starting a round - the same reason the reference project
+## grew a pose flag for its flying creep and another for its bosses.
+func _burn_pose() -> void:
+	await _wait_for_live()
+	_freeze_bot()
+	_arena.shrinking = false
+	var out_at := _arena.radius + 1.5
+	print("[harness] burning the player at r=%.1fm" % out_at)
+	while is_inside_tree() and not _player.is_eliminated():
+		_player.global_position = Vector3(out_at, 1.2, 0.0)
+		_player.velocity = Vector3.ZERO
+		await get_tree().physics_frame
+
+
 ## Holds a drag on a spell button and never lifts it, so a delayed --shot photographs the
 ## indicator. Nothing casts: the cast is the lift, and this run never lifts.
 func _hold_aim(slot: int, direction: Vector2) -> void:
@@ -2553,6 +2574,25 @@ func _run_lava_tests() -> void:
 		"%.0f left of %.0f" % [hp.current, hp.maximum])
 	_expect("and it cost something that lasts", hp.current < hp.maximum * 0.75,
 		"%.0f left of %.0f" % [hp.current, hp.maximum])
+
+	# --- the bar over the wizard's head follows it ------------------------------------------
+	var bar := _player.get_node_or_null(^"HealthBar") as HealthBar
+	_expect("the fighter carries a burn bar", bar != null, "bar=%s" % bar)
+	if bar != null:
+		# Back on the stone BEFORE resetting. Leave the fighter in the lava and the next tick
+		# burns a sliver off again, so the bar is correctly visible and the assertion reads as
+		# a broken bar - the number even prints as 100%, because 99.6 rounds.
+		await _hold_at(_player, _arena_edge * 0.5, 0.1)
+		hp.reset()
+		await get_tree().process_frame
+		_expect("it is hidden while nothing has burned", not bar.visible,
+			"visible=%s at %.1f%%" % [bar.visible, hp.fraction() * 100.0])
+		await _hold_at(_player, out_at, 1.0)
+		await get_tree().process_frame
+		_expect("it appears once the lava bites", bar.visible, "visible=%s" % bar.visible)
+		_expect("and shows what is left",
+			absf(bar.shown_fraction() - hp.fraction()) < 0.02,
+			"bar %.2f against %.2f" % [bar.shown_fraction(), hp.fraction()])
 
 	# --- and you can WALK back in, which is the promise the whole change rests on ------------
 	#

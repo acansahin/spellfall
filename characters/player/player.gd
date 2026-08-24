@@ -121,12 +121,21 @@ var _eliminated := false
 @onready var _shield_visual: Node3D = get_node_or_null(^"Visual/Shield") as Node3D
 @onready var _flash: SpellFlash = get_node_or_null(^"SpellFlash") as SpellFlash
 @onready var _aim: AimIndicator = get_node_or_null(^"AimIndicator") as AimIndicator
+@onready var _bar: HealthBar = get_node_or_null(^"HealthBar") as HealthBar
 
 ## Optional: a wizard without a spellbook simply never casts, which is what a training
 ## dummy or a not-yet-armed character wants.
 @onready var _abilities: AbilityComponent = get_node_or_null(^"Abilities") as AbilityComponent
 
 var _gravity: float = ProjectSettings.get_setting("physics/3d/default_gravity", 9.8)
+
+
+func _ready() -> void:
+	# The fighter points its own bar at its own burn. This is internal wiring, not the class
+	# reaching upward: it is the only thing that certainly knows which HealthComponent is its,
+	# and doing it here means a third fighter gets a working bar by existing.
+	if _bar != null:
+		_bar.bind(health())
 
 
 func _physics_process(delta: float) -> void:
