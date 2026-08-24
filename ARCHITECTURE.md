@@ -760,6 +760,14 @@ now so it cannot be discovered later.
 
 Performance gets **profiled, not guessed**, once there is enough on screen to profile.
 
+## The camera stops before the ring does
+
+`Arena.min_radius` (4.5m) and `CAMERA_FLOOR_RADIUS` (6.5m) in `main.gd` are different numbers
+on purpose. The ring keeps closing past the camera's floor, so the last stretch of the squeeze
+is felt as the RING tightening around two wizards who stay a readable size, rather than as the
+lens lunging at them - `_on_arena_resized()` clamps what it hands the camera:
+`distance = max(radius, CAMERA_FLOOR_RADIUS) * CAMERA_FRAMING`.
+
 ## The ring, and who owns its size
 
 `arena/arena.gd` owns the radius. It used to be a number typed into a collision shape and read
@@ -786,10 +794,13 @@ The arena is a stone disc inside a 60m field of lava, both solid, the stone stan
 proud. Being knocked out of the ring is no longer a fall and no longer instant: out there a
 fighter burns, and burning is a countdown they can walk out of.
 
-`HealthComponent` counts it, and its name is a trap worth reading twice - **no spell may ever
-touch it.** Hits raise instability and nothing else; if a spell could chip this number the
-game would quietly become a damage race. The lava burns it, stone mends it, and that is the
-whole of its API.
+`HealthComponent` counts it. It shipped under the rule that no spell may ever touch it, to
+keep the fight entirely in instability and knockback - that rule is gone. `Ability.health_damage`
+lets a spell drain it directly, `_apply_hit()` applies it alongside instability rather than
+instead of it, and Fireball is the one spell that carries a non-zero value (20, against a
+100-point total). The lava still burns it; **stone no longer mends it** - `reset()` between
+rounds is the only way back to full, which is what turns the number into a budget rather than
+a bar that tops up between exchanges.
 
 Who is burning is decided by `main.gd._tick_lava()` with a **radius test**, not an `Area3D`.
 The arena is a circle and every other rule in the file already knows it - Blink clamps against
@@ -937,7 +948,7 @@ argument-gated harness. Everything after a bare `--` reaches `OS.get_cmdline_use
 | `--feel-test` | Asserts hitstop, shake, sparks, sound, the dash streak, and that the feel can be switched off |
 | `--feel:off` | Parks the game feel, for a suite that measures a distance or a duration |
 | `--cover-test` | Asserts cover stops spells and walking, and that the layout is fair to both spawns |
-| `--lava-test` | Asserts the lava burns, stone mends, a dunk is survivable, you can climb back, and burning out ends the round |
+| `--lava-test` | Asserts the lava burns, stone only stops it, a Fireball drains health directly, a dunk is survivable, you can climb back, and burning out ends the round |
 | `--shrink-test` | Asserts the ring holds through the grace, closes at its rate, stops at the floor, and drags the lava rule, the bot, the camera and the cover with it |
 | `--burn-pose` | Parks the player in the lava, so a delayed shot catches the burn bar part-way down |
 

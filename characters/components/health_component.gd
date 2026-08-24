@@ -1,20 +1,22 @@
 class_name HealthComponent
 extends Node
 
-## How much longer a fighter can stand in the lava.
+## How much longer a fighter can take.
 ##
-## Read the name carefully: this is NOT a combat health bar, and no spell may ever touch it.
-## Hits raise `InstabilityComponent` and nothing else - that is the whole design, and a spell
-## that could chip this number would quietly turn the game into a damage race. The only thing
-## that burns it is the lava, and the only thing that mends it is standing on stone.
+## This used to be lava-only, on the rule that no spell may ever touch it - keeping combat
+## entirely in instability and knockback, so the fight stayed a positioning game and not a
+## damage race. That rule is gone: Fireball now drains it directly (see `Ability.health_damage`
+## and `_apply_hit()` in main.gd), on top of everything instability still does. Two ways to
+## lose are live at once - destabilise someone into the lava, or simply outshoot them - and the
+## level decides which spells get to use the second one.
 ##
-## What it buys is a second chance. Being knocked out of the ring used to be instant: you
-## touched the void and the round was over, which makes one mistake the whole story of a round
-## and makes a comeback impossible. Burning gives a window - long enough to turn around and
-## walk back, short enough that being out there is genuinely bad.
+## What has NOT changed is that standing on stone no longer heals it. A trip into the lava, or
+## a Fireball taken to the face, costs something for the rest of the round - `reset()` between
+## rounds is the only way back to full. So the total is a budget as much as a health bar: how
+## many hits, and how many seconds in the lava, before this fighter is out.
 ##
-## Like instability, it knows nothing about knockback, the arena, or who is standing where.
-## The level decides who is in the lava; this only counts.
+## Like instability, it knows nothing about knockback, the arena, or who is standing where. The
+## level decides who is burning and who got hit; this only counts.
 
 ## Emitted whenever the value moves. The HUD listens.
 signal changed(current: float, previous: float)
@@ -29,10 +31,6 @@ signal emptied()
 ## half seconds out there, which is two to three seconds of walking back plus a margin for
 ## being knocked out again on the way.
 @export var burn_per_second: float = 22.0
-
-## Points per second recovered while on the stone. Deliberately less than half the burn rate:
-## a dunk should cost something that lasts, or the lava is a nuisance rather than a threat.
-@export var mend_per_second: float = 10.0
 
 var current: float = 0.0
 
@@ -54,15 +52,19 @@ func burn(delta: float) -> void:
 		emptied.emit()
 
 
-## Recovers for one tick's worth, up to the maximum. A fighter already at zero stays there:
-## they are out of the round, and the round system is what puts them back.
-func mend(delta: float) -> void:
-	if current <= 0.0 or current >= maximum:
+## Removes a fixed amount outright - a spell hit, not the lava's per-second burn. Kept as a
+## separate entry point rather than folded into `burn()`: a hit is instantaneous and a burn is
+## a rate, and merging them would mean either scaling a spell's damage by delta (wrong - a
+## Fireball's bite must not depend on the frame it landed on) or scaling the lava by nothing.
+func damage(amount: float) -> void:
+	if amount <= 0.0 or current <= 0.0:
 		return
 	var previous := current
-	current = minf(current + mend_per_second * delta, maximum)
+	current = maxf(current - amount, 0.0)
 	if current != previous:
 		changed.emit(current, previous)
+	if current <= 0.0:
+		emptied.emit()
 
 
 func fraction() -> float:

@@ -10,9 +10,10 @@
 Two wizards. One stone ring in a lake of lava. No health bars in the fight.
 
 Every spell you land makes your opponent **less stable**, and the less stable they are, the
-further your next hit throws them. You do not kill anyone by grinding a health bar down —
-**no spell in the game touches one** — you destabilise them until one clean hit sends them
-off the stone. Out there they burn, and they have a few seconds to walk back.
+further your next hit throws them. Most of the roster still says nothing about a health bar —
+you destabilise someone until one clean hit sends them off the stone, where they burn and have
+a few seconds to walk back. **Fireball is the exception**: a straight shot that drains health
+outright, on top of the instability it always dealt. Two ways to lose are live at once.
 
 The player should understand the whole game in about five seconds of watching it:
 
@@ -239,8 +240,15 @@ half seconds out there - two or three of walking back, plus a margin for being h
 the way. Stone mends 10 a second, deliberately less than half the burn: a dunk should cost
 something that lasts.
 
-**Nothing else in the game touches that number.** No spell damages it, so the fight is still
-about instability and position, and the burn is only ever the price of losing ground.
+**Fireball is the only spell that touches it directly** - 20 points a hit, on a 100-point
+total, so five landed shots end a fighter the way five seconds in the lava does. Force Wave,
+Blink and Arcane Shield still say nothing to it; the fight is still mostly about instability
+and position, with one straight-line threat that skips the knockback question entirely.
+
+**Standing on stone no longer heals it.** A trip into the lava or a Fireball to the face costs
+something for the rest of the round - only the next round's `reset()` gives it back. So the
+number is a budget as much as a bar: how many hits and how many seconds outside can this
+fighter take before the round starts asking harder questions about position.
 
 A bar appears over a burning wizard's head and disappears again when they are whole. It is
 where the eye already is while you are on fire and steering for the stone - the HUD row has

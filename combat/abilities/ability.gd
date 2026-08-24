@@ -50,6 +50,12 @@ enum CastType {
 ## Base knockback, before the target's instability multiplier is applied. Session 4.
 @export var knockback: float = 0.0
 
+## Health points this drains outright, bypassing instability and knockback entirely. 0.0 for
+## every spell but Fireball - most of the game's violence still routes through instability and
+## a fall into the lava, not a bar ticking down on its own. See HealthComponent for why this
+## field exists at all despite that rule.
+@export var health_damage: float = 0.0
+
 @export_group("Projectile")
 ## Metres per second.
 @export var projectile_speed: float = 18.0

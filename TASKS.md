@@ -358,6 +358,11 @@ one deliberate departure from it.
 
 ### Still open
 
+- [ ] Fireball's health damage (20) and the lava's burn rate (22/s) were picked to feel
+      similar - five hits kills about as fast as five seconds outside - but never played
+      against each other. The first thing to judge on a phone.
+- [ ] Only Fireball drains health. Whether Force Wave should too is a question for after a
+      play session, not a default to reach for now.
 - [ ] The burn bar is sized for the WIDEST zoom, so it is chunky by the time the ring has
       closed and the camera has come in 2.7x. Scaling it against the camera distance would
       fix that and would also be the first thing in the game to do so.
@@ -479,3 +484,29 @@ secrets (the keystore path is an editor setting, not a preset field) and CI woul
 
 To put a build on a phone: `adb install -r build/spellfall-debug.apk` with the device
 connected and USB debugging on, or copy the APK across and open it.
+
+## Session 15 - Range, damage, no mending, and a camera floor
+
+- [x] Fireball's lifetime 0.45 -> 0.6s, range 5.4m -> 6.6m (drag makes it arrive slower too:
+      9 m/s at the old range, ~7 m/s at the new one)
+- [x] `Ability.health_damage`, 0 for every spell but Fireball. `_apply_hit()` applies it
+      alongside instability, not instead of it - two ways to lose are live at once now
+- [x] Fireball: 20 health per hit, picked to kill in about as many hits as the lava takes
+      seconds - never played against the lava, first thing to judge on a phone
+- [x] **Stone no longer mends.** `HealthComponent.mend()` and `mend_per_second` removed;
+      `_tick_lava()` only burns. The total is a budget now - `reset()` between rounds is the
+      only way back to full
+- [x] `HealthComponent`'s doc comment rewritten - it no longer claims no spell can touch it
+- [x] Camera stops closing in past a 6.5m ring radius, even though the ring itself keeps
+      shrinking to 4.5m. The last stretch of the squeeze is the RING tightening around two
+      readable-sized wizards, not the lens lunging at them
+- [x] Harness: `--lava-test` gained a direct-damage assertion and a floor-holds assertion in
+      `--shrink-test`; the two mend assertions became one "stops, does not reverse" assertion
+- [x] Fourteen suites green
+
+### Still open
+
+- [ ] Fireball's range (6.6m) still does not reach the opening gap. Each spawn sits 6m from
+      centre - half the starting 12m radius - so the two start 12m apart. The first exchange
+      of a round now requires closing distance on purpose. Confirm that reads as a choice on
+      a phone, not as "my spell doesn't work".

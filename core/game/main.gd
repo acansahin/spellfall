@@ -24,7 +24,7 @@ extends Node3D
 ##   --button-test     assert a finger on button N casts spell N and nothing else
 ##   --aim-test        assert drag-to-aim: the indicator, the direction, and the latch
 ##   --aim-hold:S,X,Y  hold a drag on button S toward X,Y and never lift, for a screenshot
-##   --lava-test       assert the lava burns, mends, ends a round, and is survivable
+##   --lava-test       assert the lava burns, stone stops it, ends a round, and is survivable
 ##   --shrink-test     assert the ring holds, closes, stops, drags cover and camera with it
 ##   --burn-pose       park the player in the lava, so a shot catches the bar draining
 ##   --cover-test      assert the obstacles block spells, block walking, and are fair
@@ -123,7 +123,8 @@ func _physics_process(delta: float) -> void:
 	_tick_lava(delta)
 
 
-## Burns whoever is off the stone and mends whoever is on it.
+## Burns whoever is off the stone. Standing on it only stops the bleeding - it does not
+## reverse it.
 ##
 ## A radius test rather than an Area3D. The arena is a circle and every other rule in this
 ## file already knows it - Blink clamps against it, the bot keeps clear of it, the aim lane
@@ -143,11 +144,13 @@ func _tick_lava(delta: float) -> void:
 		var hp := fighter.health()
 		if hp == null or not hp.is_alive():
 			continue
+		# Stone no longer mends. A trip into the lava, or a hit that drains health directly,
+		# costs something for the rest of the round - reset() between rounds is the only way
+		# back to full, which is what makes the total a budget rather than a bar that refills
+		# between exchanges.
 		if _radius_of(fighter.global_position) > _arena_edge:
 			hp.burn(delta)
 			_feel.burning(fighter.global_position, fighter == _player, delta)
-		else:
-			hp.mend(delta)
 
 
 ## How far the camera stands back, as a multiple of the radius. 3.14 is what the framing that
@@ -155,6 +158,13 @@ func _tick_lava(delta: float) -> void:
 ## means the fight is framed the same at every size - so the wizard grows on screen exactly as
 ## the round gets tighter, which is the one moment readability matters most.
 const CAMERA_FRAMING := 3.14
+
+## The camera stops coming in once the ring closes past this radius, even though the ring
+## itself keeps shrinking to `Arena.min_radius`. Framing the last few metres as tightly as the
+## rest would zoom the camera in far enough to crowd the fight rather than clarify it - the
+## squeeze is meant to be felt as the RING closing around two wizards who stay a readable size,
+## not as the camera lunging at them.
+const CAMERA_FLOOR_RADIUS := 6.5
 
 
 ## Points everything that needs a radius at the radius the arena currently has.
@@ -167,7 +177,7 @@ func _on_arena_resized(value: float) -> void:
 	if _brain != null:
 		_brain.arena_radius = value
 	if _camera_rig != null:
-		_camera_rig.distance = value * CAMERA_FRAMING
+		_camera_rig.distance = maxf(value, CAMERA_FLOOR_RADIUS) * CAMERA_FRAMING
 
 
 func _parse_harness_args() -> void:
@@ -751,6 +761,10 @@ func _apply_hit(body: Node3D, direction: Vector3, ability: Ability) -> void:
 
 	var impulse := Knockback.velocity(ability.knockback, direction, level, knockback_rules)
 	fighter.apply_knockback(impulse)
+	if ability.health_damage > 0.0:
+		var hp := fighter.health()
+		if hp != null:
+			hp.damage(ability.health_damage)
 	var shielded := " (shielded)" if fighter.is_shielded() else ""
 	# What the victim ACTUALLY took, not what was thrown at them: the shield is applied inside
 	# apply_knockback, and a hit somebody shrugged off has to feel like one.
@@ -2503,9 +2517,10 @@ func _run_cover_tests() -> void:
 #
 # The lava replaced instant elimination, which means the round can now be lost slowly - and
 # a slow loss is exactly the kind of rule that can be wrong for a long time without anybody
-# noticing. Four things have to hold: it burns while you are out, it mends while you are in,
-# it ends the round at zero, and a fighter who turns around and walks back SURVIVES. That
-# last one is the whole point of the change; without it this is just a slower void.
+# noticing. Four things have to hold: it burns while you are out, it stops the moment you are
+# back on stone, it ends the round at zero, and a fighter who turns around and walks back
+# SURVIVES with something left. That last one is the whole point of the change; without it
+# this is just a slower void.
 # ---------------------------------------------------------------------------------------
 
 ## Puts one fighter at a radius and holds them there, so a burn can be measured without a
@@ -2533,8 +2548,8 @@ func _run_lava_tests() -> void:
 	_input.set_override_vector(Vector2.ZERO, true)
 	await _wait_for_live()
 	var hp := _player.health()
-	print("[lava-test] max=%.0f burn=%.0f/s mend=%.0f/s, arena r=%.1fm" % [
-		hp.maximum, hp.burn_per_second, hp.mend_per_second, _arena_edge])
+	print("[lava-test] max=%.0f burn=%.0f/s, arena r=%.1fm" % [
+		hp.maximum, hp.burn_per_second, _arena_edge])
 
 	_expect("a fighter has something to burn", hp != null and hp.current == hp.maximum,
 		"%.0f of %.0f" % [hp.current, hp.maximum])
@@ -2556,13 +2571,15 @@ func _run_lava_tests() -> void:
 		absf(burned - hp.burn_per_second) < hp.burn_per_second * 0.25,
 		"%.1f in 1s, rate is %.0f/s" % [burned, hp.burn_per_second])
 
-	# --- and walking back mends -------------------------------------------------------------
+	# --- and walking back stops it, but does not undo it ------------------------------------
+	#
+	# Stone used to mend; it only holds now. A fighter who reaches it stops bleeding out
+	# exactly where they were, which is what makes the total a budget rather than a bar that
+	# tops back up between exchanges.
 	var lowest := hp.current
 	await _hold_at(_player, _arena_edge * 0.5, 1.0)
-	_expect("walking back out of it mends", hp.current > lowest + 1.0,
+	_expect("walking back onto stone stops the burn", is_equal_approx(hp.current, lowest),
 		"%.1f -> %.1f" % [lowest, hp.current])
-	_expect("mending is slower than burning", hp.mend_per_second < hp.burn_per_second,
-		"%.0f/s against %.0f/s" % [hp.mend_per_second, hp.burn_per_second])
 
 	# --- a dunk is survivable, which is the entire point ------------------------------------
 	#
@@ -2574,6 +2591,27 @@ func _run_lava_tests() -> void:
 		"%.0f left of %.0f" % [hp.current, hp.maximum])
 	_expect("and it cost something that lasts", hp.current < hp.maximum * 0.75,
 		"%.0f left of %.0f" % [hp.current, hp.maximum])
+
+	# --- and a spell can drain it directly, on top of instability --------------------------
+	#
+	# The rule this project shipped with was that no spell may ever touch health. Fireball now
+	# does, deliberately, and this is the assertion that would fail first if that stopped being
+	# true - a Fireball landing and health NOT moving would mean the damage silently fell off
+	# somewhere between the ability and the component.
+	hp.reset()
+	var fireball := _player.abilities().ability_in(0)
+	var inst := _bot.instability()
+	if inst != null:
+		inst.reset()
+	var bot_hp := _bot.health()
+	bot_hp.reset()
+	_apply_hit(_bot, Vector3(0.0, 0.0, -1.0), fireball)
+	_expect("a Fireball drains health directly",
+		is_equal_approx(bot_hp.current, bot_hp.maximum - fireball.health_damage),
+		"%.1f left of %.1f, spell claims %.1f damage" % [
+			bot_hp.current, bot_hp.maximum, fireball.health_damage])
+	_expect("and still raises instability alongside it", inst.current > 0.0,
+		"instability=%.0f%%" % inst.current)
 
 	# --- the bar over the wizard's head follows it ------------------------------------------
 	var bar := _player.get_node_or_null(^"HealthBar") as HealthBar
@@ -2725,6 +2763,16 @@ func _run_shrink_tests() -> void:
 	_expect("it stops at the minimum", is_equal_approx(_arena.radius, _arena.min_radius),
 		"%.2fm of a %.2fm floor" % [_arena.radius, _arena.min_radius])
 	_expect("and stops saying it is closing", not _arena.is_closing(), "still closing")
+
+	# --- but the camera does not follow it all the way in --------------------------------------
+	#
+	# The ring keeps closing to min_radius; the camera stops coming in once the ring passes
+	# CAMERA_FLOOR_RADIUS, so the last few metres of squeeze are felt as the RING tightening
+	# around two wizards who stay a readable size, not as the lens lunging at them.
+	_expect("the camera holds its floor rather than following the ring to the minimum",
+		_camera_rig.distance > _arena.min_radius * CAMERA_FRAMING + 0.5,
+		"camera=%.2f, ring alone would put it at %.2f" % [
+			_camera_rig.distance, _arena.min_radius * CAMERA_FRAMING])
 
 	# --- a new round gives the whole board back ------------------------------------------------
 	_arena.reset()
