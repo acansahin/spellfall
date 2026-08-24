@@ -381,6 +381,21 @@ and predict what the next hit does; an exponential curve makes that guesswork.
 Distance goes as **speed squared**, so 50% instability (1.5x speed) carries 2.25x as far. That
 quadratic is the tension curve — the numbers climb gently and the consequences climb fast.
 
+### The legs have a ramp now
+
+`accel_time` and `decel_time` were 0.0 - movement was assigned outright, which is instant and,
+on a phone, weightless: the wizard teleports between directions and a hit you walk out of reads
+as a hiccup. They are now **0.16 and 0.34**, asymmetric on purpose: getting going is nearly as
+quick as it was, stopping takes twice as long, and reversing costs about a third of a second.
+That third of a second is the whole of "momentum" as a player feels it.
+
+The reference map reaches the same place by different arithmetic - it damps one velocity per
+tick and adds the walk on top of whatever is left, rather than ramping toward a target. **The
+exponential half of that model was deliberately not copied.** Knockback here decays linearly,
+which is what gives the slide a closed form (below); exponential decay never quite stops, and
+the question "how far does this hit throw someone" would stop having an answer. The ramp buys
+the feel; the linear drag keeps the mathematics.
+
 ### Drag is linear on purpose too
 
 `knockback_friction` bleeds the hit off at a constant m/s², which gives the slide a closed
@@ -391,8 +406,11 @@ Exponential decay never quite stops and makes the same question unanswerable.
 ### Two velocity accumulators
 
 `player.gd` keeps `_input_velocity` and `_knockback` **separate**, summing them once per tick.
-This is load-bearing, not tidiness. With `accel_time` at 0 the input path assigns `velocity.x`
-outright every tick, so a knockback folded into `velocity` is erased on the very next frame.
+This is load-bearing, not tidiness. It was written when `accel_time` was 0 and the input path
+assigned `velocity.x` outright every tick, which erased any knockback folded into `velocity` on
+the very next frame. The ramp softens that particular failure without removing the need for the
+split: the two decay by different rules - the walk ramps toward what the thumb asks for, the
+hit bleeds off at a constant m/s² - and a single accumulator cannot obey both.
 Worse, reading `velocity` back after `move_and_slide()` as "what I was doing" folds the last
 frame's knockback into this frame's input, and any reduced-authority path (hitstun, airborne)
 then keeps a fraction of it *and* adds the knockback again — the hit compounds with itself and
@@ -521,6 +539,21 @@ buttons can share a finger, and `--button-test` asserts a tap in the gap between
 casts nothing at all.
 
 ### Projectile pooling
+
+### A projectile can slow down
+
+`Ability.projectile_drag` is the fraction of its speed a spell still has one second later; 1.0
+flies flat. Fireball is 0.3 - it leaves at 15.5 m/s and arrives at the end of its range at 9.
+Point blank is lethal, the far end is a lob you can walk out of, and the range is limited by
+physics rather than by a lifetime cutting the spell off in mid-air.
+
+The decay is applied as `pow(drag, delta)` rather than as a per-tick multiply, so a 30fps phone
+and a 144fps desktop agree on where the spell lands.
+
+`Ability.effective_range()` integrates it - `v0 * (drag^t - 1) / ln(drag)` - so the aim
+indicator and the bot's reach check stay honest without either of them knowing the field
+exists. Anything that computes `projectile_speed * lifetime` by hand is now wrong; the bot did,
+and it was the second time that product went stale.
 
 `ProjectilePool` prewarms eight projectiles and reuses them. Spawning and freeing nodes
 mid-fight is the classic mobile stutter, and a four-player fight throws a lot of spells. It is
@@ -924,6 +957,10 @@ Each of these cost real time in the first session.
   anybody could see it. 4 is `SCREEN_SENSOR_LANDSCAPE`, which Godot writes into the manifest as
   `userLandscape`. Check the built APK, not the project file: `aapt2 dump xmltree <apk> --file
   AndroidManifest.xml | grep screenOrientation`.
+- **A signal connected after the event is a race, not a listener.** `--cast-test` connected
+  its hit listener four physics ticks after firing, which was fine while the spell was slow
+  and became a phantom failure - "the projectile never arrived" - the moment it left at
+  15.5 m/s and arrived inside those four ticks. Connect before the thing you are watching for.
 - **A suite must derive its distances from the numbers under test, not from the scene.**
   `--cast-test` and `--knockback-test` fired at whatever gap the SPAWNS happened to put
   between the fighters, and Fireball happened to out-range it. Retuning the spell and growing

@@ -33,14 +33,21 @@ extends CharacterBody3D
 ## in about thirteen seconds; two is a plate, not a place. See GAME_DESIGN.md.
 @export var move_speed := 4.0
 
-## Seconds to reach top speed from a standstill. 0.0 means instant, which is what a
-## competitive brawler wants — direction changes must not feel like steering a truck.
-## Raise it slightly if movement ever feels twitchy; the ramp is here so that is a tuning
-## change and not a rewrite.
-@export_range(0.0, 0.5, 0.01) var accel_time := 0.0
+## Seconds to reach top speed from a standstill.
+##
+## It was 0.0 - instant - on the argument that a brawler must not feel like steering a truck.
+## Played on a phone, instant reads as weightless: the wizard teleports between directions and
+## a hit you slide out of feels like a hiccup rather than a shove. This is the ramp the
+## original's own movement has, arrived at from the other end: it damps a velocity rather than
+## assigning one, which is the same thing said in different arithmetic.
+##
+## The pair is ASYMMETRIC on purpose. Getting going is nearly as quick as it was; stopping
+## takes twice as long, which is what a slide IS. Raise `decel_time` for more skating, lower
+## `accel_time` for a twitchier start.
+@export_range(0.0, 0.5, 0.01) var accel_time := 0.16
 
-## Seconds to stop from top speed. Also 0.0 for immediate, predictable stops.
-@export_range(0.0, 0.5, 0.01) var decel_time := 0.0
+## Seconds to stop from top speed. Longer than the acceleration: see above.
+@export_range(0.0, 0.5, 0.01) var decel_time := 0.34
 
 ## How much steering authority remains while airborne. Knocked off the edge you should
 ## feel committed, not able to fly back — but 0.0 removes all recovery skill.

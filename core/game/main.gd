@@ -889,6 +889,13 @@ func _run_cast_tests() -> void:
 	var reach := fireball.effective_range() * 0.5
 	await _place_fighters(Vector3(0.0, 1.2, -reach * 0.5), Vector3(0.0, 1.2, reach * 0.5))
 
+	# Listening BEFORE the shot, not after it. Connecting afterwards is a race: the assertions
+	# in between cost four physics ticks, and once the spell was retuned to leave at 15.5 m/s
+	# the impact happened inside them - so the suite reported a projectile that never arrived
+	# when in fact it had already arrived.
+	var hit_body: Array = []
+	_pool.projectile_hit.connect(func(b, _d, _a): hit_body.append(b), CONNECT_ONE_SHOT)
+
 	# --- a cast produces exactly one projectile ------------------------------------------
 	var fired: bool = book.try_cast(0, Vector3(0, 0, -1))
 	# One physics tick, NOT _settle(). _settle() straddles render frames, and on a machine
@@ -927,8 +934,6 @@ func _run_cast_tests() -> void:
 		"moved %.3fm in 3 ticks" % moved)
 
 	# --- it hits the bot, and the pool takes it back -----------------------------------
-	var hit_body: Array = []
-	_pool.projectile_hit.connect(func(b, _d, _a): hit_body.append(b), CONNECT_ONE_SHOT)
 	var waited := 0.0
 	while _pool.active_count() > 0 and waited < 2.0:
 		await get_tree().physics_frame

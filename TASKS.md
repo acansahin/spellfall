@@ -272,6 +272,36 @@ The first build on real hardware, and the first three notes from a player rather
       phone. The dial is `ArenaCamera.distance`, and there is room to come in ~10% before the
       rim leaves the screen.
 
+## Session 12 — Weight: momentum in the legs, drag on the shot ✅
+
+The other half of "the shooting does not feel good", taken from the same reference and with
+one deliberate departure from it.
+
+- [x] `accel_time` 0 -> 0.16, `decel_time` 0 -> 0.34. Asymmetric: quick to start, slow to
+      stop, about a third of a second to reverse
+- [x] **The reference's exponential velocity damping was NOT copied.** It reaches the same
+      feel by damping one velocity and adding the walk on top; ours ramps toward a target and
+      keeps knockback on a separate, LINEAR decay. That linearity is what gives the slide a
+      closed form (v squared over 2f) and makes "how far does this throw someone" answerable
+- [x] `Ability.projectile_drag` - the fraction of speed left after one second, as data
+- [x] Fireball: 12 m/s flat -> 15.5 m/s decaying to 9. Same 5.4m range, very different shot
+- [x] Decay applied as `pow(drag, delta)`, so framerate cannot change where a spell lands
+- [x] `effective_range()` integrates the drag, so the aim indicator and the bot's reach check
+      stay right without knowing the field exists
+- [x] Fix: the bot computed reach as speed x lifetime, which is wrong the moment there is
+      drag. It asks `effective_range()` now - the second time that product went stale
+- [x] Fix: `--cast-test` connected its hit listener AFTER firing. Fine at 12 m/s, a phantom
+      failure at 15.5 when the impact landed inside the gap
+- [x] All twelve suites green
+
+### Still open
+
+- [ ] The ramp is the first thing to re-judge on a phone. If it feels sluggish the dial is
+      `accel_time`; if it does not feel like anything, raise `decel_time` rather than
+      lowering `accel_time`.
+- [ ] Only Fireball has drag. Whether the other three want it is a question for after a
+      play session, not before.
+
 ---
 
 ## Carried debt

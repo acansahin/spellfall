@@ -62,6 +62,17 @@ enum CastType {
 ## inside the caster's own collision shape.
 @export var spawn_offset: float = 0.8
 
+## What fraction of its speed a projectile still has one second later. 1.0 flies flat forever;
+## 0.3 keeps under a third of it.
+##
+## A spell that leaves fast and arrives slow says something a constant-speed one cannot: point
+## blank is lethal, the far end of the range is a lob you can walk out of. It also limits the
+## range with physics rather than with a lifetime cut off in mid-air.
+##
+## `effective_range()` below accounts for it, so the aim indicator and the bot's own reach
+## check both stay honest without knowing this field exists.
+@export_range(0.05, 1.0, 0.01) var projectile_drag: float = 1.0
+
 @export_group("Area")
 ## How far the effect reaches, in metres. For a CONE this is the length of the fan. For a
 ## PROJECTILE it would be the splash radius on impact, and 0 means a single-target hit
@@ -98,7 +109,12 @@ enum CastType {
 func effective_range() -> float:
 	match cast_type:
 		CastType.PROJECTILE:
-			return projectile_speed * lifetime
+			if projectile_drag >= 1.0:
+				return projectile_speed * lifetime
+			# Distance under exponential drag: the integral of v0 * drag^t from 0 to lifetime.
+			# Both the numerator and log() are negative, so this comes out positive.
+			var decay := log(projectile_drag)
+			return projectile_speed * (pow(projectile_drag, lifetime) - 1.0) / decay
 		CastType.CONE:
 			return area
 		CastType.DASH:

@@ -30,6 +30,8 @@ const PARKED_POSITION := Vector3(0.0, -1000.0, 0.0)
 
 var _ability: Ability = null
 var _direction := Vector3.ZERO
+## Current speed in m/s. Held rather than read off the ability because it decays in flight.
+var _speed := 0.0
 var _age := 0.0
 ## Guards against a second hit, and against ticking while parked in the pool. A pooled node
 ## is still in the tree, so without this it would keep flying after being reclaimed.
@@ -76,7 +78,12 @@ func _ready() -> void:
 func _physics_process(delta: float) -> void:
 	if not _active:
 		return
-	global_position += _direction * _ability.projectile_speed * delta
+	global_position += _direction * _speed * delta
+	# Framerate-independent decay: `drag` is stated per SECOND, so a 30fps phone and a 144fps
+	# desktop agree on where the spell lands. Multiplying by the raw factor once per tick would
+	# make the same spell travel twice as far on a machine running at half the rate.
+	if _ability.projectile_drag < 1.0:
+		_speed *= pow(_ability.projectile_drag, delta)
 	_age += delta
 	if _age >= _ability.lifetime:
 		_finish()
@@ -88,6 +95,7 @@ func launch(ability: Ability, from: Vector3, direction: Vector3, shooter: Node3D
 	_ability = ability
 	_shooter = shooter
 	_direction = direction.normalized()
+	_speed = ability.projectile_speed
 	_age = 0.0
 	global_position = from
 	var radius := ability.projectile_radius

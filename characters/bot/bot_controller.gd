@@ -338,8 +338,9 @@ func cast_reach() -> float:
 	var slot := _slot_of(book, Ability.CastType.PROJECTILE)
 	if slot < 0:
 		return 0.0
-	var ability := book.ability_in(slot)
-	return ability.projectile_speed * ability.lifetime * 0.9
+	# effective_range(), not speed times lifetime: a spell with drag on it does not travel the
+	# product of its two numbers, and the bot would hold a range it cannot reach.
+	return book.ability_in(slot).effective_range() * 0.9
 
 
 ## First slot holding a spell of this type, or -1.

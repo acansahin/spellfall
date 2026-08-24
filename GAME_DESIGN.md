@@ -145,6 +145,17 @@ They are placed point-symmetrically, and the lane between the two spawns is left
 is decoration: an arena that favours one spawn is a fight decided before it starts, and an
 opening lane full of rock is a round that starts with both players walking sideways.
 
+## Weight
+
+Movement has a ramp: about a sixth of a second to get going, a third to stop, and a third to
+reverse. It was instant before, and instant is what made the wizard feel like a cursor rather
+than a body. Now a direction is a small commitment, stopping is a decision made slightly in
+advance, and a slide from a hit is something you steer out of rather than something you cancel.
+
+Fireball leaves at 15.5 m/s and arrives at 9. The shot is a punch up close and a lob at the
+end of its reach, which means the answer to "am I close enough" is now visible in the flight
+itself. Neither of these is a new mechanic; both are the same spells with weight added.
+
 ## What a hit feels like
 
 Knockback is the mechanic; this is how the game says so. A hit stops the world for a few
