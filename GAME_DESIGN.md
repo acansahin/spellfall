@@ -223,8 +223,11 @@ fifth - which puts the most readable picture of the fight exactly where the figh
 The cover moves in too, at a fixed fraction of the radius: a ring that closed over its own
 rocks would spend its second half as a bare plate.
 
-There are **no walls.** Being pushed off the stone is the entire point, so the boundary is
-communicated by colour — a cold rim, a molten shore — rather than by physics.
+There are **no walls.** Being pushed off is the entire point, so the boundary is communicated
+by colour rather than by physics: **green grass inside, orange lava everywhere outside**, with
+a cold rim and a molten shore marking the line between them. There is no black anywhere on
+screen - the lava field is 60 metres across and covers everything the camera can see, because
+a void reads as "off the map" and lava reads as "somewhere you can be, briefly".
 
 ## Burning, and why it is not a fall
 

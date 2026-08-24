@@ -358,6 +358,9 @@ one deliberate departure from it.
 
 ### Still open
 
+- [ ] The lava is one flat orange. It covers the whole screen, so it reads as a coloured
+      backdrop rather than as molten rock - it wants cooled crust, a slow pulse, or cracks,
+      and all three are shader or texture work the placeholder rule defers.
 - [ ] The squeeze has no warning. A player who is not watching the rim will be standing in
       lava without knowing why. A sound at the moment it starts, or a tightening pulse on the
       shore, is the cheap version.
