@@ -7,11 +7,12 @@
 
 ## The pitch
 
-Two wizards. One small floating arena. No health bars.
+Two wizards. One stone ring in a lake of lava. No health bars in the fight.
 
 Every spell you land makes your opponent **less stable**, and the less stable they are, the
-further your next hit throws them. You do not kill anyone by grinding their health to zero —
-you destabilise them until one clean hit sends them off the edge into the void.
+further your next hit throws them. You do not kill anyone by grinding a health bar down —
+**no spell in the game touches one** — you destabilise them until one clean hit sends them
+off the stone. Out there they burn, and they have a few seconds to walk back.
 
 The player should understand the whole game in about five seconds of watching it:
 
@@ -31,7 +32,8 @@ to future art and audio too.
 2. A short countdown, then the round is live.
 3. Players move, aim and cast. Landing a spell adds **Instability** to the target.
 4. Knockback scales with the target's instability, so hits get more dangerous over time.
-5. A wizard knocked past the arena edge falls and is eliminated for that round.
+5. A wizard knocked off the stone lands in the lava and starts burning. They can walk back.
+   Burn all the way down and they are out of the round.
 6. Last wizard standing takes the round.
 7. _(planned)_ The loser picks one of three upgrades — a small catch-up mechanic.
 8. Next round. First to a set number of round wins takes the match.
@@ -196,20 +198,32 @@ version and stays on the roadmap.
 
 ## Arena
 
-One circular floating platform, currently **7 metres in radius** — about 14 metres across, or
-roughly seven wizard-lengths. It is deliberately small: you should never be more than a
-second or two from a lethal edge.
+One circular stone platform, **10 metres in radius** — 20 across, five seconds of walking.
+Around it, lava: a flat field you can be knocked onto, stand on, and walk back off. The stone
+sits 8cm proud of it, which a wizard's capsule rides up without noticing.
 
-There are **no walls.** Being knocked off is the entire win condition, so the boundary is
-communicated visually — a bright emissive rim — rather than physically. Anything below the
-platform is a fall.
+There are **no walls.** Being pushed off the stone is the entire point, so the boundary is
+communicated by colour — a cold rim, a molten shore — rather than by physics.
+
+## Burning, and why it is not a fall
+
+Being knocked out of the ring used to be instant: you touched the void and the round was over.
+One mistake was the whole story of a round, and there was no such thing as a comeback.
+
+Now the outside is lava. It burns **22 points a second** out of 100, so you have four and a
+half seconds out there - two or three of walking back, plus a margin for being hit again on
+the way. Stone mends 10 a second, deliberately less than half the burn: a dunk should cost
+something that lasts.
+
+**Nothing else in the game touches that number.** No spell damages it, so the fight is still
+about instability and position, and the burn is only ever the price of losing ground.
 
 ## Win condition
 
-- Fall off the arena, and you are eliminated for the round.
+- Burn all the way down in the lava, and you are eliminated for the round.
 - Last wizard standing wins the round.
 - First to `wins_needed` round wins takes the match (currently 3).
-- If everyone falls in the same instant it is a draw and nobody scores.
+- If everyone goes out in the same instant it is a draw and nobody scores.
 
 ## Modes
 

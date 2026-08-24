@@ -6,8 +6,8 @@ Read `GAME_DESIGN.md` first for what the game is. This file is how it is put tog
 > Everything described as _(planned)_ does not exist yet. What is built: the arena, the
 > wizard, movement, the fixed camera, the touch controls, the ability framework with one
 > spell, instability, knockback, the HUD, elimination, the round loop, the bot opponent,
-> all four spells, drag-to-aim with its ground indicators, the game-feel pass, and cover
-> to hide behind. Every Phase 1 step is built; whether the result is FUN is the open
+> all four spells, drag-to-aim with its ground indicators, the game-feel pass, cover to hide
+> behind, and a lava field that burns instead of killing outright. Every Phase 1 step is built; whether the result is FUN is the open
 > question, and it is a question for a human.
 
 ## Ground rules
@@ -34,7 +34,7 @@ res://
   characters/
     player/        player.tscn + player.gd - one script for every fighter
     bot/           bot_controller.gd + bot_wizard.tscn - the opponent
-    components/    instability_component.gd; haptics later
+    components/    instability_component.gd, health_component.gd; haptics later
   combat/
     abilities/     ability.gd (Resource) + ability_component.gd (runtime) + cone_cast.gd
     projectiles/   projectile.gd/.tscn + projectile_pool.gd
@@ -760,6 +760,37 @@ now so it cannot be discovered later.
 
 Performance gets **profiled, not guessed**, once there is enough on screen to profile.
 
+## The lava
+
+The arena is a stone disc inside a 60m field of lava, both solid, the stone standing 8cm
+proud. Being knocked out of the ring is no longer a fall and no longer instant: out there a
+fighter burns, and burning is a countdown they can walk out of.
+
+`HealthComponent` counts it, and its name is a trap worth reading twice - **no spell may ever
+touch it.** Hits raise instability and nothing else; if a spell could chip this number the
+game would quietly become a damage race. The lava burns it, stone mends it, and that is the
+whole of its API.
+
+Who is burning is decided by `main.gd._tick_lava()` with a **radius test**, not an `Area3D`.
+The arena is a circle and every other rule in the file already knows it - Blink clamps against
+it, the bot keeps clear of it, the aim lane stops at it - so a fifth way of asking "am I inside
+the ring" would be a fifth thing to keep in step.
+
+Burning to nothing goes through `RoundManager.report_out()`, the same single door a fall used
+to. That method was called `report_fall` while falling was the only way to lose; the lava made
+the name a lie, and the doc comment on it had already promised the door would take other
+causes.
+
+**The climb back is load-bearing and is asserted.** A `CharacterBody3D` does not step up
+walls; what gets a wizard over the 8cm lip is the capsule's lower sphere meeting it at about
+33 degrees off vertical, inside the 45 the body counts as floor. That is a chain of three
+assumptions about someone else's physics engine, and the difference between a second chance
+and a wizard stuck against a kerb until it burns to death. `--lava-test` walks the trip.
+
+`KillZone` still sits under the world and still reports through the same door. Nothing reaches
+it any more unless a hit clears 60 metres, which is why it is now a backstop rather than the
+rule.
+
 ## Cover
 
 Four obstacles stand in the arena - two rocks and two trees - and they do three things.
@@ -879,6 +910,7 @@ argument-gated harness. Everything after a bare `--` reaches `OS.get_cmdline_use
 | `--feel-test` | Asserts hitstop, shake, sparks, sound, the dash streak, and that the feel can be switched off |
 | `--feel:off` | Parks the game feel, for a suite that measures a distance or a duration |
 | `--cover-test` | Asserts cover stops spells and walking, and that the layout is fair to both spawns |
+| `--lava-test` | Asserts the lava burns, stone mends, a dunk is survivable, you can climb back, and burning out ends the round |
 
 **None of these may be run with `--headless`.** `--shot` needs real rendering, and the input
 tests need a real window: the headless display driver does not route injected
@@ -957,6 +989,11 @@ Each of these cost real time in the first session.
   anybody could see it. 4 is `SCREEN_SENSOR_LANDSCAPE`, which Godot writes into the manifest as
   `userLandscape`. Check the built APK, not the project file: `aapt2 dump xmltree <apk> --file
   AndroidManifest.xml | grep screenOrientation`.
+- **`respawn_at()` resets what your suite is measuring.** The other suites pin a fighter by
+  calling it every tick, which is what a round start does - it clears instability AND health.
+  `--lava-test` copied the trick and measured the lava burning 0.4 points in a second against
+  an advertised 22. Pin by writing `global_position` when the thing under test is state that
+  a respawn clears.
 - **A signal connected after the event is a race, not a listener.** `--cast-test` connected
   its hit listener four physics ticks after firing, which was fine while the spell was slow
   and became a phantom failure - "the projectile never arrived" - the moment it left at

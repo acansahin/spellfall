@@ -24,6 +24,7 @@ extends Node3D
 ##   --button-test     assert a finger on button N casts spell N and nothing else
 ##   --aim-test        assert drag-to-aim: the indicator, the direction, and the latch
 ##   --aim-hold:S,X,Y  hold a drag on button S toward X,Y and never lift, for a screenshot
+##   --lava-test       assert the lava burns, mends, ends a round, and is survivable
 ##   --cover-test      assert the obstacles block spells, block walking, and are fair
 ##                     (every OTHER suite clears the obstacles first - see _clear_cover)
 ##   --feel-test       assert hitstop, shake, sparks, sound and the dash streak all fire
@@ -100,8 +101,8 @@ func _ready() -> void:
 	_wire_combat()
 	# The HUD reads instability and nothing else. It is handed its sources here rather than
 	# hunting for them, so a second fighter is one more line and not a rewrite.
-	_hud.add_readout("YOU", _player.instability())
-	_hud.add_readout("BOT", _bot.instability())
+	_hud.add_readout("YOU", _player.instability(), _player.health())
+	_hud.add_readout("BOT", _bot.instability(), _bot.health())
 	_wire_rounds()
 	_parse_harness_args()
 	_rounds.start_match()
@@ -111,6 +112,37 @@ func _process(_delta: float) -> void:
 	if Input.is_action_just_pressed("debug_respawn"):
 		_rounds.begin_round()
 	_update_aim_indicator()
+
+
+func _physics_process(delta: float) -> void:
+	_tick_lava(delta)
+
+
+## Burns whoever is off the stone and mends whoever is on it.
+##
+## A radius test rather than an Area3D. The arena is a circle and every other rule in this
+## file already knows it - Blink clamps against it, the bot keeps clear of it, the aim lane
+## stops at it - so a fifth way of asking "am I inside the ring" would be a fifth thing to
+## keep in step. It is also two floats of work per fighter per tick.
+##
+## Only while the round is live. Between rounds the fighters stand where the countdown put
+## them, and burning through the interlude would be a fine way to lose a round you have not
+## started yet.
+func _tick_lava(delta: float) -> void:
+	if not _rounds.is_live():
+		return
+	var fighters: Array[Player] = [_player, _bot]
+	for fighter in fighters:
+		if fighter == null or fighter.is_eliminated():
+			continue
+		var hp := fighter.health()
+		if hp == null or not hp.is_alive():
+			continue
+		if _radius_of(fighter.global_position) > _arena_edge:
+			hp.burn(delta)
+			_feel.burning(fighter.global_position, fighter == _player, delta)
+		else:
+			hp.mend(delta)
 
 
 ## The platform's radius, read off the arena's own collision shape rather than typed in a
@@ -184,6 +216,8 @@ func _parse_harness_args() -> void:
 			_run_feel_tests()
 		elif arg == "--cover-test":
 			_run_cover_tests()
+		elif arg == "--lava-test":
+			_run_lava_tests()
 		elif arg.begins_with("--aim-hold:"):
 			# "--aim-hold:0,1,0" aims spell 0 to screen-right. Eleven characters in the
 			# prefix, counted rather than guessed - see ARCHITECTURE.md on --cast-at.
@@ -803,8 +837,18 @@ func _distance_to_rim(from: Vector3, aim: Vector3) -> float:
 func _wire_rounds() -> void:
 	_rounds.add_fighter(_player, spawn_point, "YOU")
 	_rounds.add_fighter(_bot, bot_spawn, "BOT")
-	_kill_zone.fighter_fell.connect(_rounds.report_fall)
+	# A body that leaves the world entirely still counts - a hit hard enough to clear a 60m
+	# lava field has earned it - but on a flat arena nothing reaches this any more. It is a
+	# backstop now, not the rule.
+	_kill_zone.fighter_fell.connect(_rounds.report_out)
 
+	# Burning to nothing goes through the same door a fall does. The round system never learns
+	# that lava exists, exactly as it never learned what a KillZone was.
+	var burners: Array[Player] = [_player, _bot]
+	for fighter in burners:
+		var hp := fighter.health()
+		if hp != null:
+			hp.emptied.connect(_rounds.report_out.bind(fighter))
 	_rounds.round_started.connect(_on_round_started)
 	_rounds.countdown_changed.connect(_on_countdown)
 	_rounds.fighter_eliminated.connect(_on_eliminated)
@@ -814,6 +858,7 @@ func _wire_rounds() -> void:
 
 
 func _on_round_started(number: int) -> void:
+	_feel.stopped_burning()
 	_kill_zone.clear()
 	_hud.set_round(number)
 	print("[round] %d start" % number)
@@ -1338,7 +1383,7 @@ func _run_round_tests() -> void:
 
 	# --- a fall outside a live round is ignored --------------------------------------------
 	var before := _rounds.alive_count()
-	_rounds.report_fall(_bot)
+	_rounds.report_out(_bot)
 	_expect("a fall during the countdown is ignored", _rounds.alive_count() == before,
 		"alive %d -> %d" % [before, _rounds.alive_count()])
 
@@ -1358,7 +1403,7 @@ func _run_round_tests() -> void:
 	# match is won, so a score-based condition would never see the target reached.
 	while matched.is_empty() and safety < 40:
 		await _wait_for_live()
-		_rounds.report_fall(_bot)
+		_rounds.report_out(_bot)
 		var g := 0
 		while _rounds.state != RoundManager.State.COUNTDOWN and g < 1200:
 			await get_tree().process_frame
@@ -2391,5 +2436,134 @@ func _run_cover_tests() -> void:
 		"%.2fm -> %.2fm from its centre (rock is 0.7 wide, a wizard 0.5)" % [started, gap])
 
 	print("[cover] %s (%d failure(s))" % [
+		"ALL PASS" if _touch_failures == 0 else "FAILURES", _touch_failures])
+	get_tree().quit(1 if _touch_failures > 0 else 0)
+
+
+# ---------------------------------------------------------------------------------------
+# Lava harness
+#
+# The lava replaced instant elimination, which means the round can now be lost slowly - and
+# a slow loss is exactly the kind of rule that can be wrong for a long time without anybody
+# noticing. Four things have to hold: it burns while you are out, it mends while you are in,
+# it ends the round at zero, and a fighter who turns around and walks back SURVIVES. That
+# last one is the whole point of the change; without it this is just a slower void.
+# ---------------------------------------------------------------------------------------
+
+## Puts one fighter at a radius and holds them there, so a burn can be measured without a
+## slide or a bot walking out of the measurement.
+##
+## Writes the position directly rather than calling `respawn_at()`, which the other suites use
+## for pinning. `respawn_at` resets instability AND health - it is what a round start does -
+## so pinning with it wipes the very number this suite is measuring, once per tick. The first
+## run reported the lava burning 0.4 points in a second against an advertised 22.
+func _hold_at(fighter: Player, radius: float, seconds: float) -> void:
+	var waited := 0.0
+	while waited < seconds:
+		fighter.global_position = Vector3(radius, 1.2, 0.0)
+		fighter.velocity = Vector3.ZERO
+		await get_tree().physics_frame
+		waited += 1.0 / 60.0
+
+
+func _run_lava_tests() -> void:
+	await _settle()
+	_quiet_feel()
+	_clear_cover()
+	_freeze_bot()
+	_input.set_override_vector(Vector2.ZERO, true)
+	await _wait_for_live()
+	var hp := _player.health()
+	print("[lava-test] max=%.0f burn=%.0f/s mend=%.0f/s, arena r=%.1fm" % [
+		hp.maximum, hp.burn_per_second, hp.mend_per_second, _arena_edge])
+
+	_expect("a fighter has something to burn", hp != null and hp.current == hp.maximum,
+		"%.0f of %.0f" % [hp.current, hp.maximum])
+
+	# --- on the stone, nothing happens ------------------------------------------------------
+	await _hold_at(_player, _arena_edge * 0.5, 0.5)
+	_expect("standing on the stone costs nothing",
+		is_equal_approx(hp.current, hp.maximum), "%.1f" % hp.current)
+
+	# --- off the stone, it burns at the rate it says ----------------------------------------
+	#
+	# Measured against the component's own rate rather than a copied number: a retune should
+	# move the game, not break the suite.
+	var out_at := _arena_edge + 2.0
+	await _hold_at(_player, out_at, 1.0)
+	var burned := hp.maximum - hp.current
+	_expect("the lava burns", burned > 0.0, "%.1f burned in 1s" % burned)
+	_expect("it burns at the rate it advertises",
+		absf(burned - hp.burn_per_second) < hp.burn_per_second * 0.25,
+		"%.1f in 1s, rate is %.0f/s" % [burned, hp.burn_per_second])
+
+	# --- and walking back mends -------------------------------------------------------------
+	var lowest := hp.current
+	await _hold_at(_player, _arena_edge * 0.5, 1.0)
+	_expect("walking back out of it mends", hp.current > lowest + 1.0,
+		"%.1f -> %.1f" % [lowest, hp.current])
+	_expect("mending is slower than burning", hp.mend_per_second < hp.burn_per_second,
+		"%.0f/s against %.0f/s" % [hp.mend_per_second, hp.burn_per_second])
+
+	# --- a dunk is survivable, which is the entire point ------------------------------------
+	#
+	# Two seconds out there and back. If this ever fails, being knocked out of the ring has
+	# gone back to being a death sentence and the change was pointless.
+	hp.reset()
+	await _hold_at(_player, out_at, 2.0)
+	_expect("two seconds in the lava is survivable", hp.is_alive(),
+		"%.0f left of %.0f" % [hp.current, hp.maximum])
+	_expect("and it cost something that lasts", hp.current < hp.maximum * 0.75,
+		"%.0f left of %.0f" % [hp.current, hp.maximum])
+
+	# --- and you can WALK back in, which is the promise the whole change rests on ------------
+	#
+	# The stone stands 8cm proud of the lava, and a CharacterBody3D does not step up walls.
+	# What saves it is the capsule: its lower sphere meets a lip that small at about 33 degrees
+	# off vertical, inside the 45 the body counts as floor, so it rides up. That is a chain of
+	# three assumptions about someone else's physics engine, and it is the difference between
+	# a second chance and a wizard stuck against a kerb until it burns to death. Measured.
+	hp.reset()
+	_player.global_position = Vector3(_arena_edge + 1.2, 1.2, 0.0)
+	for i in 10:
+		await get_tree().physics_frame
+	var walked_in := false
+	var toward_centre := Vector2(-1.0, 0.0)
+	_input.set_override_vector(toward_centre, true)
+	var trudge := 0.0
+	while trudge < 4.0:
+		await get_tree().physics_frame
+		trudge += 1.0 / 60.0
+		if _radius_of(_player.global_position) < _arena_edge - 0.6:
+			walked_in = true
+			break
+	_input.set_override_vector(Vector2.ZERO, true)
+	_expect("a burning fighter can walk back onto the stone", walked_in,
+		"reached r=%.2f in %.1fs (edge %.1f)" % [
+			_radius_of(_player.global_position), trudge, _arena_edge])
+	_expect("and is standing on it, not sunk into it",
+		absf(_player.global_position.y - 1.0) < 0.25,
+		"y=%.2f" % _player.global_position.y)
+
+	# --- staying in it ends the round -------------------------------------------------------
+	var eliminations: Array = []
+	var watch := func(fighter: Player, _title: String) -> void:
+		eliminations.append(fighter)
+	_rounds.fighter_eliminated.connect(watch)
+	var guard := 0.0
+	while hp.is_alive() and guard < 12.0:
+		_player.global_position = Vector3(out_at, 1.2, 0.0)
+		_player.velocity = Vector3.ZERO
+		await get_tree().physics_frame
+		guard += 1.0 / 60.0
+	# One more tick for the signal to travel.
+	await get_tree().physics_frame
+	_rounds.fighter_eliminated.disconnect(watch)
+	_expect("staying in it burns you down", not hp.is_alive(),
+		"%.1f left after %.1fs" % [hp.current, guard])
+	_expect("burning to nothing takes you out of the round",
+		eliminations.has(_player), "%d elimination(s)" % eliminations.size())
+
+	print("[lava] %s (%d failure(s))" % [
 		"ALL PASS" if _touch_failures == 0 else "FAILURES", _touch_failures])
 	get_tree().quit(1 if _touch_failures > 0 else 0)

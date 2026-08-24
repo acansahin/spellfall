@@ -27,7 +27,11 @@ var _labels: Dictionary = {}
 
 
 ## Adds a readout for one fighter. `title` is what the player sees.
-func add_readout(title: String, source: InstabilityComponent) -> void:
+##
+## `burn` is optional and is only shown while it is below full: a health number that sits at
+## 100 all round is a number the eye learns to skip, and then misses the one moment it moves.
+func add_readout(title: String, source: InstabilityComponent,
+		burn: HealthComponent = null) -> void:
 	if source == null:
 		return
 	var label := Label.new()
@@ -35,9 +39,11 @@ func add_readout(title: String, source: InstabilityComponent) -> void:
 	label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.75))
 	label.add_theme_constant_override("outline_size", 6)
 	_rows.add_child(label)
-	_labels[source] = {"label": label, "title": title}
+	_labels[source] = {"label": label, "title": title, "burn": burn}
 	# Bind the source so one handler serves every row, however many fighters there are.
 	source.changed.connect(_on_changed.bind(source))
+	if burn != null:
+		burn.changed.connect(_on_changed.bind(source))
 	_refresh(source)
 
 
@@ -50,8 +56,19 @@ func _refresh(source: InstabilityComponent) -> void:
 		return
 	var entry: Dictionary = _labels[source]
 	var label: Label = entry["label"]
-	label.text = "%s  %d%%" % [entry["title"], roundi(source.current)]
-	label.add_theme_color_override("font_color", _tint(source.current))
+	var text := "%s  %d%%" % [entry["title"], roundi(source.current)]
+	var burn: HealthComponent = entry.get("burn")
+	var burning := burn != null and burn.current < burn.maximum
+	if burning:
+		text += "   %d" % ceili(burn.current)
+	label.text = text
+	# While something is burning, that is the only thing worth colouring for. Instability is a
+	# slow build; the lava is a countdown, and a countdown wins the player's attention.
+	if burning:
+		label.add_theme_color_override("font_color",
+			DANGER if burn.fraction() < 0.5 else RISING)
+	else:
+		label.add_theme_color_override("font_color", _tint(source.current))
 
 
 func _tint(value: float) -> Color:

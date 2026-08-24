@@ -9,9 +9,10 @@ extends Node
 ## giant GameManager - a round system tangled into combat cannot be tested without playing
 ## the game, and cannot be replaced when the rules change.
 ##
-## It also does not know what a KillZone is. `report_fall()` is the only way in, so a future
-## out-of-bounds rule, a suicide, or a server telling us someone disconnected all arrive
-## through one door.
+## It also does not know what a KillZone is, or what lava is. `report_out()` is the only way
+## in, so burning to nothing, dropping out of the world, a suicide, or a server telling us
+## someone disconnected all arrive through one door. It was called `report_fall` while falling
+## was the only way to lose; the lava made that name a lie.
 
 signal round_started(number: int)
 ## Seconds left, counted down. 0 means "go".
@@ -107,8 +108,8 @@ func _tick_interlude(delta: float) -> void:
 		begin_round()
 
 
-## The only way a fall enters this system.
-func report_fall(body: Node3D) -> void:
+## The only way a fighter leaves a round.
+func report_out(body: Node3D) -> void:
 	if state != State.LIVE:
 		return
 	var index := _fighters.find(body)

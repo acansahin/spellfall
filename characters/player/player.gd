@@ -227,6 +227,9 @@ func respawn_at(point: Vector3) -> void:
 	var inst := instability()
 	if inst != null:
 		inst.reset()
+	var hp := health()
+	if hp != null:
+		hp.reset()
 
 
 ## Turns a latched ability request into a cast. Casting is deliberately AFTER movement and
@@ -350,6 +353,12 @@ func knockback_velocity() -> Vector3:
 ## The fighter's instability tracker, or null if it has none.
 func instability() -> InstabilityComponent:
 	return get_node_or_null(^"Instability") as InstabilityComponent
+
+
+## How much longer this fighter can stand in the lava, or null. Nothing in combat may touch
+## it - see health_component.gd.
+func health() -> HealthComponent:
+	return get_node_or_null(^"Health") as HealthComponent
 
 
 ## Takes the fighter out of the round: no input, no physics, no collision, not drawn.

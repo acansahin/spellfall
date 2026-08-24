@@ -56,6 +56,11 @@ extends Node
 ## of you got hit.
 @export_range(0.0, 1.0, 0.05) var shake_on_others := 0.55
 
+## Seconds between one spit of lava and the next, while a fighter stands in it. Fast enough
+## to read as continuous, slow enough that four and a half seconds out there is not forty
+## sound effects.
+@export var sizzle_gap := 0.32
+
 @export_group("Haptics")
 ## Milliseconds of vibration for a light and a heavy hit.
 @export var buzz_light := 18
@@ -75,6 +80,9 @@ var streak: GroundStreak = null
 ## with the clock it slowed - which stretches by exactly the factor it applied and comes out
 ## eight times too long.
 var _resume_at := 0
+
+## Seconds until the next lava sizzle. See `burning()`.
+var _sizzle := 0.0
 
 
 func _process(_delta: float) -> void:
@@ -153,6 +161,30 @@ func eliminated(at: Vector3, was_player: bool) -> void:
 		camera.shake(0.4)
 	if was_player:
 		_buzz(70)
+
+
+## A fighter is standing in the lava. Called every tick they are out there, and rate-limited
+## here rather than at the call site: the level's job is to say what is true, not to remember
+## how often it last said so.
+func burning(at: Vector3, on_player: bool, delta: float) -> void:
+	if not enabled:
+		return
+	_sizzle -= delta
+	if _sizzle > 0.0:
+		return
+	_sizzle = sizzle_gap
+	if sparks != null:
+		sparks.burst(at + Vector3(0.0, -0.6, 0.0), Color(1.0, 0.45, 0.12), 3.0)
+	if sounds != null:
+		sounds.play(&"hit", 0.18, -6.0)
+	if on_player:
+		_buzz(10)
+
+
+## Somebody stopped burning, or the round moved on. Lets the next dunk sizzle immediately
+## rather than waiting out a gap left over from the last one.
+func stopped_burning() -> void:
+	_sizzle = 0.0
 
 
 ## The countdown ticked. `remaining` of 0 is "GO".

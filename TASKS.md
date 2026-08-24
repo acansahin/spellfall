@@ -302,6 +302,39 @@ one deliberate departure from it.
 - [ ] Only Fireball has drag. Whether the other three want it is a question for after a
       play session, not before.
 
+## Session 13 - Lava instead of a void
+
+- [x] A 60m lava field around the arena, solid and standable. No more empty space
+- [x] `HealthComponent` - burned by lava at 22/s, mended by stone at 10/s, out of 100.
+      **No spell may ever touch it**; hits still raise instability and nothing else
+- [x] Burning to nothing goes through `RoundManager.report_out()` - renamed from
+      `report_fall`, which the lava made into a lie
+- [x] `_tick_lava()` decides who is burning with a radius test, the same question Blink,
+      the bot and the aim lane already ask
+- [x] HUD shows the burn only while it is below full, and takes over the row's colour when
+      it does - a countdown beats a slow build for attention
+- [x] Sizzle and sparks while burning, rate-limited inside GameFeel rather than at the call
+      site
+- [x] The stone stands 8cm proud, and **the climb back is asserted** - a CharacterBody3D
+      does not step up walls; the capsule's curve is what saves it
+- [x] Look: three passes. Flat emissive orange filled the screen and drowned the UI; a dark
+      ember field plus a narrow molten shore reads as lava and leaves the arena brightest
+- [x] Harness: `--lava-test` (12 assertions)
+- [x] Fix: the suite pinned the fighter with `respawn_at()`, which resets health every tick.
+      It measured the lava burning 0.4/s against an advertised 22
+- [x] All thirteen suites green
+
+### Still open
+
+- [ ] **Rounds can now stall.** Nobody goes out by accident any more, so two cautious players
+      can circle forever. The original answers this by shrinking the arena every round - which
+      is why its radius is a variable that decrements. That is the obvious next mechanic.
+- [ ] The lava is one flat colour. It wants movement - a slow pulse, or brighter cracks - but
+      that is a shader, and the placeholder rule says not yet.
+- [ ] Nothing marks a burning fighter except the HUD row and the sparks. A tint on the wizard
+      would read from across the arena.
+- [ ] `KillZone` is now unreachable unless a hit clears 60m. Kept as a backstop.
+
 ---
 
 ## Carried debt
