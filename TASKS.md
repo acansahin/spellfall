@@ -326,14 +326,45 @@ one deliberate departure from it.
 
 ### Still open
 
-- [ ] **Rounds can now stall.** Nobody goes out by accident any more, so two cautious players
-      can circle forever. The original answers this by shrinking the arena every round - which
-      is why its radius is a variable that decrements. That is the obvious next mechanic.
+- [x] ~~**Rounds can now stall.**~~ Answered in Session 14 by a ring that closes on a clock -
+      and during a round rather than between rounds, which is where the stall actually was.
 - [ ] The lava is one flat colour. It wants movement - a slow pulse, or brighter cracks - but
       that is a shader, and the placeholder rule says not yet.
 - [ ] Nothing marks a burning fighter except the HUD row and the sparks. A tint on the wizard
       would read from across the arena.
 - [ ] `KillZone` is now unreachable unless a hit clears 60m. Kept as a backstop.
+
+## Session 14 - The ring closes
+
+- [x] `arena/arena.gd` owns the radius. It starts at 12m, holds for 12 seconds, then closes
+      at 0.3 m/s to a floor of 4.5m - so a round nobody wins is over in well under a minute
+- [x] **During a round, not between rounds.** The reference shrinks one step per round, which
+      bounds a match and leaves a single round able to run forever - and that is exactly the
+      stall the lava created by making a knock-out survivable
+- [x] Five readers ask the arena instead of copying: the lava rule, the bot, Blink's clamp,
+      the aim lane and the camera. By signal, so none of them can hold a stale edge
+- [x] The camera comes in with it at a fixed 3.14x framing, so the wizards GROW on screen as
+      the ring tightens - about a fifteenth of screen height to nearly a fifth
+- [x] Cover moves in at a fixed fraction of the radius; a ring that closed over its own rocks
+      would spend its second half as a bare plate
+- [x] Meshes and shapes `duplicate()`d before being written to every frame
+- [x] `Arena.shrinking = false` is the fourth thing a measuring suite parks
+- [x] Spawns moved out to half the starting radius
+- [x] Harness: `--shrink-test` (15 assertions)
+- [x] Fix: three call sites still asked the deleted `_arena_radius()`, which also produced a
+      type-inference error two files away - the parser reports where the type is missing, not
+      where the function went
+- [x] All fourteen suites green
+
+### Still open
+
+- [ ] The squeeze has no warning. A player who is not watching the rim will be standing in
+      lava without knowing why. A sound at the moment it starts, or a tightening pulse on the
+      shore, is the cheap version.
+- [ ] Nothing shows how long the grace has left, and nothing says how long a round can run.
+      Both are numbers only the arena knows.
+- [ ] 12s / 0.3 m/s / 4.5m are three numbers picked to make a round land under a minute. They
+      have never been played. That is the first thing a session on a phone should judge.
 
 ---
 

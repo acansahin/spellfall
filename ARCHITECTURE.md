@@ -760,6 +760,26 @@ now so it cannot be discovered later.
 
 Performance gets **profiled, not guessed**, once there is enough on screen to profile.
 
+## The ring, and who owns its size
+
+`arena/arena.gd` owns the radius. It used to be a number typed into a collision shape and read
+once at startup; it moves now, so five readers ask instead of copying: Blink clamps against
+it, the bot keeps clear of it, the aim lane stops at it, the lava burns whoever is outside it,
+and the camera frames it. It arrives by `radius_changed` rather than being fetched, because a
+stale copy would put the bot's idea of the edge, the lava's idea of it and the drawn rim in
+three different places.
+
+`_apply()` moves the platform mesh and its collision shape, the rim, the molten shore and the
+obstacles - the last at a fixed FRACTION of the radius, so cover shrinks with the ring instead
+of being swallowed by it. Every mesh and shape it writes to is `duplicate()`d in `_ready()`,
+the same precaution `projectile.gd` takes and for the same reason: sub-resources are shared
+between instances of a scene, and geometry that is rewritten every frame must not be.
+
+`Arena.shrinking = false` is the fourth thing a measuring suite parks, after the bot, the game
+feel and the cover. Several suites run longer than the grace period and every one of them
+picks its distances by hand, so without it the ground moves under the measurement - and the
+failure looks like a broken spell rather than a moving arena.
+
 ## The lava
 
 The arena is a stone disc inside a 60m field of lava, both solid, the stone standing 8cm
@@ -911,6 +931,7 @@ argument-gated harness. Everything after a bare `--` reaches `OS.get_cmdline_use
 | `--feel:off` | Parks the game feel, for a suite that measures a distance or a duration |
 | `--cover-test` | Asserts cover stops spells and walking, and that the layout is fair to both spawns |
 | `--lava-test` | Asserts the lava burns, stone mends, a dunk is survivable, you can climb back, and burning out ends the round |
+| `--shrink-test` | Asserts the ring holds through the grace, closes at its rate, stops at the floor, and drags the lava rule, the bot, the camera and the cover with it |
 
 **None of these may be run with `--headless`.** `--shot` needs real rendering, and the input
 tests need a real window: the headless display driver does not route injected

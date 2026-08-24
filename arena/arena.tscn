@@ -1,6 +1,7 @@
-[gd_scene load_steps=17 format=3]
+[gd_scene load_steps=18 format=3]
 
 [ext_resource type="Script" path="res://arena/kill_zone.gd" id="1_killzone"]
+[ext_resource type="Script" path="res://arena/arena.gd" id="4_arena"]
 [ext_resource type="PackedScene" path="res://arena/obstacles/rock.tscn" id="2_rock"]
 [ext_resource type="PackedScene" path="res://arena/obstacles/tree.tscn" id="3_tree"]
 
@@ -80,6 +81,7 @@ albedo_color = Color(0.301961, 0.254902, 0.454902, 1)
 roughness = 1.0
 
 [node name="Arena" type="Node3D"]
+script = ExtResource("4_arena")
 
 [node name="Lava" type="StaticBody3D" parent="."]
 collision_layer = 1

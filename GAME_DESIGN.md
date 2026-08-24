@@ -198,9 +198,30 @@ version and stays on the roadmap.
 
 ## Arena
 
-One circular stone platform, **10 metres in radius** — 20 across, five seconds of walking.
-Around it, lava: a flat field you can be knocked onto, stand on, and walk back off. The stone
-sits 8cm proud of it, which a wizard's capsule rides up without noticing.
+One circular stone platform. It starts **12 metres in radius** — 24 across, six seconds of
+walking — and **closes during the round**. Around it, lava: a flat field you can be knocked
+onto, stand on, and walk back off. The stone sits 8cm proud of it, which a wizard's capsule
+rides up without noticing.
+
+## The ring closes
+
+Twelve seconds at full size, then the stone gives way at 0.3 metres a second until it is
+4.5m in radius. A round nobody wins outright is therefore over in well under a minute.
+
+It closes **during** a round, not between rounds. The map this game takes after shrinks one
+step per round, which bounds a match but leaves a single round able to run forever - and that
+is the problem the lava created: now that being knocked out is survivable, nobody goes out by
+accident, and two careful players can circle each other indefinitely. A ring on a clock turns
+"hold your ground" into a decision with a deadline.
+
+The twelve seconds of grace are not padding. The opening exchange should happen on the whole
+board, or the squeeze arrives before there is anything to break.
+
+**The camera comes in with it**, holding the same framing at every size. So the wizards grow
+on screen as the ring tightens - from about a fifteenth of the screen's height to nearly a
+fifth - which puts the most readable picture of the fight exactly where the fight is hardest.
+The cover moves in too, at a fixed fraction of the radius: a ring that closed over its own
+rocks would spend its second half as a bare plate.
 
 There are **no walls.** Being pushed off the stone is the entire point, so the boundary is
 communicated by colour — a cold rim, a molten shore — rather than by physics.

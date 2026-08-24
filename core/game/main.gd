@@ -25,6 +25,7 @@ extends Node3D
 ##   --aim-test        assert drag-to-aim: the indicator, the direction, and the latch
 ##   --aim-hold:S,X,Y  hold a drag on button S toward X,Y and never lift, for a screenshot
 ##   --lava-test       assert the lava burns, mends, ends a round, and is survivable
+##   --shrink-test     assert the ring holds, closes, stops, drags cover and camera with it
 ##   --cover-test      assert the obstacles block spells, block walking, and are fair
 ##                     (every OTHER suite clears the obstacles first - see _clear_cover)
 ##   --feel-test       assert hitstop, shake, sparks, sound and the dash streak all fire
@@ -35,14 +36,14 @@ extends Node3D
 ## route injected InputEventScreenTouch/Key to _input(), so every assertion silently
 ## reads zero and the run reports failures that say nothing about the code.
 
-## Where the player is put on start and after falling off. Half the arena radius out, so the
-## opening gap is 10m - outside Fireball's 6.3m reach, which is what makes the first move of a
-## round a decision rather than a race to click.
-@export var spawn_point := Vector3(0.0, 1.2, 5.0)
+## Where the player is put on start. Half the arena's STARTING radius out, so the opening gap
+## is wider than Fireball's reach - which is what makes the first move of a round a decision
+## rather than a race to click.
+@export var spawn_point := Vector3(0.0, 1.2, 6.0)
 
 ## Where the bot stands. Directly opposite the player, so neither side opens the round
 ## nearer the edge than the other.
-@export var bot_spawn := Vector3(0.0, 1.2, -5.0)
+@export var bot_spawn := Vector3(0.0, 1.2, -6.0)
 
 ## How a hit is turned into speed. A Resource so the central mechanic is tuned by editing
 ## data, never by editing logic - see combat/knockback/knockback_rules.gd.
@@ -56,6 +57,7 @@ extends Node3D
 @onready var _brain: BotController = $BotController
 @onready var _hud: Hud = $Hud
 @onready var _rounds: RoundManager = $Rounds
+@onready var _arena: Arena = $Arena
 @onready var _kill_zone: KillZone = $Arena/KillZone
 @onready var _obstacles: Node3D = $Arena/Obstacles
 @onready var _camera_rig: ArenaCamera = $CameraRig
@@ -91,8 +93,8 @@ func _ready() -> void:
 	_brain.body = _bot
 	_brain.target = _player
 	_wire_feel()
-	_arena_edge = _arena_radius()
-	_brain.arena_radius = _arena_edge
+	_arena.radius_changed.connect(_on_arena_resized)
+	_on_arena_resized(_arena.radius)
 	# The stick is a dumb widget that reports where a thumb is; this single line is what
 	# gives its output a meaning. Wiring it here rather than inside either node keeps the
 	# stick reusable and keeps PlayerInputController unaware that a UI exists - the same
@@ -115,6 +117,8 @@ func _process(_delta: float) -> void:
 
 
 func _physics_process(delta: float) -> void:
+	if _rounds.is_live():
+		_arena.tick(delta)
 	_tick_lava(delta)
 
 
@@ -145,17 +149,24 @@ func _tick_lava(delta: float) -> void:
 			hp.mend(delta)
 
 
-## The platform's radius, read off the arena's own collision shape rather than typed in a
-## second time. The bot needs to know where the edge is, and a copied number would go stale
-## the first time the arena is resized - silently, and only for the bot.
-func _arena_radius() -> float:
-	var shape := get_node_or_null(^"Arena/Platform/Collision") as CollisionShape3D
-	if shape != null:
-		var cylinder := shape.shape as CylinderShape3D
-		if cylinder != null:
-			return cylinder.radius
-	push_warning("arena radius not found; the bot is falling back to 10.0")
-	return 10.0
+## How far the camera stands back, as a multiple of the radius. 3.14 is what the framing that
+## was solved at radius 7 and distance 22 worked out to, and holding it while the ring closes
+## means the fight is framed the same at every size - so the wizard grows on screen exactly as
+## the round gets tighter, which is the one moment readability matters most.
+const CAMERA_FRAMING := 3.14
+
+
+## Points everything that needs a radius at the radius the arena currently has.
+##
+## Five things read it and it is now a moving value, so it arrives by signal rather than being
+## copied at startup. A stale copy would put the bot's idea of the edge, the lava's idea of it
+## and the drawn rim in three different places.
+func _on_arena_resized(value: float) -> void:
+	_arena_edge = value
+	if _brain != null:
+		_brain.arena_radius = value
+	if _camera_rig != null:
+		_camera_rig.distance = value * CAMERA_FRAMING
 
 
 func _parse_harness_args() -> void:
@@ -218,6 +229,8 @@ func _parse_harness_args() -> void:
 			_run_cover_tests()
 		elif arg == "--lava-test":
 			_run_lava_tests()
+		elif arg == "--shrink-test":
+			_run_shrink_tests()
 		elif arg.begins_with("--aim-hold:"):
 			# "--aim-hold:0,1,0" aims spell 0 to screen-right. Eleven characters in the
 			# prefix, counted rather than guessed - see ARCHITECTURE.md on --cast-at.
@@ -274,6 +287,18 @@ func _quiet_feel() -> void:
 ##
 ## The bodies stay in the tree and simply stop colliding and drawing. `--cover-test` is where
 ## they get to matter.
+## Stops the ring closing, for a suite that measures.
+##
+## Fourth in the family after the bot, the game feel and the cover. Every suite that places a
+## fighter at a distance picks that distance by hand, and several run for longer than the
+## grace period - so without this the ground would move under the measurement, and the failure
+## would look like a broken spell rather than a moving arena.
+func _freeze_arena() -> void:
+	_arena.shrinking = false
+	_arena.reset()
+	print("[harness] arena frozen at %.1fm" % _arena.radius)
+
+
 func _clear_cover() -> void:
 	for child in _obstacles.get_children():
 		var body := child as CollisionObject3D
@@ -858,6 +883,7 @@ func _wire_rounds() -> void:
 
 
 func _on_round_started(number: int) -> void:
+	_arena.reset()
 	_feel.stopped_burning()
 	_kill_zone.clear()
 	_hud.set_round(number)
@@ -903,6 +929,7 @@ func _run_cast_tests() -> void:
 	await _settle()
 	_quiet_feel()
 	_clear_cover()
+	_freeze_arena()
 	# a moving target would make every flight assertion a coin toss.
 	_freeze_bot()
 	# The countdown freezes fighters, so anything that casts or steers before the
@@ -1030,6 +1057,7 @@ func _run_two_thumb_tests() -> void:
 	await _settle()
 	_quiet_feel()
 	_clear_cover()
+	_freeze_arena()
 	# the wizard must move because the STICK moved it, nothing else.
 	_freeze_bot()
 	# The countdown freezes fighters, so anything that casts or steers before the
@@ -1166,6 +1194,7 @@ func _run_knockback_tests() -> void:
 	await _settle()
 	_quiet_feel()
 	_clear_cover()
+	_freeze_arena()
 	# a slide with steering in it measures the bot, not the formula.
 	_freeze_bot()
 	# The countdown freezes fighters, so anything that casts or steers before the
@@ -1303,6 +1332,7 @@ func _run_round_tests() -> void:
 	await _settle()
 	_quiet_feel()
 	_clear_cover()
+	_freeze_arena()
 	# a fighter that walks off on its own would end the round early.
 	_freeze_bot()
 	print("[round-test] countdown=%.1fs interlude=%.1fs wins_needed=%d" % [
@@ -1478,6 +1508,7 @@ func _run_bot_tests() -> void:
 	await _settle()
 	_quiet_feel()
 	_clear_cover()
+	_freeze_arena()
 	# The bot rolls its aim error and its strafe timing. A suite that fails one run in ten is
 	# worse than no suite at all, so the random stream is pinned for the duration.
 	_brain.reseed(20260823)
@@ -1700,6 +1731,7 @@ func _run_spell_tests() -> void:
 	await _settle()
 	_quiet_feel()
 	_clear_cover()
+	_freeze_arena()
 	# The suite casts AT the bot and measures where it ends up, so it must not steer.
 	_freeze_bot()
 	_input.set_override_vector(Vector2.ZERO, true)
@@ -1791,14 +1823,14 @@ func _run_spell_tests() -> void:
 		"remaining %.2fs" % book.cooldown_remaining(dash))
 
 	# --- ...and never into the void -----------------------------------------------------------
-	var rim := _arena_radius() - 0.4
+	var rim := _arena_edge - 0.4
 	await _place_fighters(Vector3(0.0, 1.2, -5.0), Vector3(rim, 1.2, 0.0))
 	book.reset()
 	book.try_cast(dash, Vector3(1, 0, 0))
 	await get_tree().physics_frame
 	var landed := _radius_of(_player.global_position)
-	_expect("Blink aimed off the arena lands on the arena", landed <= _arena_radius() - 0.5,
-		"from %.2fm outward, landed at %.2fm, rim %.2fm" % [rim, landed, _arena_radius()])
+	_expect("Blink aimed off the arena lands on the arena", landed <= _arena_edge - 0.5,
+		"from %.2fm outward, landed at %.2fm, rim %.2fm" % [rim, landed, _arena_edge])
 
 	# --- ...and cancels the slide, but not the stun --------------------------------------------
 	await _place_fighters(Vector3(0.0, 1.2, -5.0), Vector3(0.0, 1.2, 0.0))
@@ -1857,6 +1889,7 @@ func _run_button_tests() -> void:
 	await _settle()
 	_quiet_feel()
 	_clear_cover()
+	_freeze_arena()
 	_freeze_bot()
 	_input.set_override_vector(Vector2.ZERO, true)
 	await _wait_for_live()
@@ -1963,6 +1996,7 @@ func _run_aim_tests() -> void:
 	await _settle()
 	_quiet_feel()
 	_clear_cover()
+	_freeze_arena()
 	# Nothing here is about the opponent, and a bot walking into a Fireball would end a round
 	# in the middle of a measurement.
 	_freeze_bot()
@@ -2339,6 +2373,9 @@ func _wait(seconds: float) -> void:
 func _run_cover_tests() -> void:
 	await _settle()
 	_quiet_feel()
+	# Cover moves with the ring now, so a closing arena would walk the obstacles out from
+	# under every position this suite measures.
+	_freeze_arena()
 	_freeze_bot()
 	_input.set_override_vector(Vector2.ZERO, true)
 	await _wait_for_live()
@@ -2470,6 +2507,7 @@ func _run_lava_tests() -> void:
 	await _settle()
 	_quiet_feel()
 	_clear_cover()
+	_freeze_arena()
 	_freeze_bot()
 	_input.set_override_vector(Vector2.ZERO, true)
 	await _wait_for_live()
@@ -2565,5 +2603,96 @@ func _run_lava_tests() -> void:
 		eliminations.has(_player), "%d elimination(s)" % eliminations.size())
 
 	print("[lava] %s (%d failure(s))" % [
+		"ALL PASS" if _touch_failures == 0 else "FAILURES", _touch_failures])
+	get_tree().quit(1 if _touch_failures > 0 else 0)
+
+
+# ---------------------------------------------------------------------------------------
+# Shrinking-ring harness
+#
+# The ring closing is the only thing that ends a round nobody wins, so it has to be right in
+# four ways: it holds still through the grace period, it closes at the rate it advertises, it
+# stops at the floor, and everything that reads the radius follows it. That last one is the
+# expensive failure - a bot with a stale edge walks into lava, and a lava rule with a stale
+# edge burns a fighter standing on stone.
+# ---------------------------------------------------------------------------------------
+
+func _run_shrink_tests() -> void:
+	await _settle()
+	_quiet_feel()
+	_freeze_bot()
+	_input.set_override_vector(Vector2.ZERO, true)
+	await _wait_for_live()
+	# Deliberately NOT frozen: this suite is the one that watches it move.
+	_arena.shrinking = true
+	_arena.reset()
+	print("[shrink-test] start=%.1fm min=%.1fm grace=%.0fs rate=%.2fm/s" % [
+		_arena.start_radius, _arena.min_radius, _arena.grace_seconds,
+		_arena.shrink_per_second])
+
+	_expect("a round starts at full size",
+		is_equal_approx(_arena.radius, _arena.start_radius),
+		"%.2fm of %.2fm" % [_arena.radius, _arena.start_radius])
+	_expect("the lava rule and the arena agree", is_equal_approx(_arena_edge, _arena.radius),
+		"edge=%.2f arena=%.2f" % [_arena_edge, _arena.radius])
+	_expect("so does the bot", is_equal_approx(_brain.arena_radius, _arena.radius),
+		"bot=%.2f arena=%.2f" % [_brain.arena_radius, _arena.radius])
+
+	# --- it holds still while the fight opens -------------------------------------------------
+	var held := _arena.radius
+	await _wait(1.0)
+	_expect("it does not move during the grace period",
+		is_equal_approx(_arena.radius, held) and _arena.grace_left() > 0.0,
+		"%.2fm, %.1fs of grace left" % [_arena.radius, _arena.grace_left()])
+
+	# --- then it closes, at the rate it says ---------------------------------------------------
+	#
+	# Rather than wait out the whole grace period in real time, spend it: the clock is the
+	# arena's own, and ticking it directly is the same thing the round does, only faster.
+	while _arena.grace_left() > 0.0:
+		_arena.tick(1.0 / 60.0)
+	var before := _arena.radius
+	var cover_before: Vector2 = _cover_points()[0]
+	var camera_before: float = _camera_rig.distance
+	await _wait(1.0)
+	var closed := before - _arena.radius
+	_expect("it closes once the grace runs out", closed > 0.0,
+		"%.2fm -> %.2fm" % [before, _arena.radius])
+	_expect("at the rate it advertises",
+		absf(closed - _arena.shrink_per_second) < _arena.shrink_per_second * 0.25,
+		"%.2fm in 1s, rate is %.2fm/s" % [closed, _arena.shrink_per_second])
+	_expect("and it says it is closing", _arena.is_closing(), "is_closing=%s" % _arena.is_closing())
+
+	# --- everything that reads the radius came with it -----------------------------------------
+	_expect("the lava rule followed it in", is_equal_approx(_arena_edge, _arena.radius),
+		"edge=%.2f arena=%.2f" % [_arena_edge, _arena.radius])
+	_expect("the bot followed it in", is_equal_approx(_brain.arena_radius, _arena.radius),
+		"bot=%.2f arena=%.2f" % [_brain.arena_radius, _arena.radius])
+	_expect("the camera came in with it", _camera_rig.distance < camera_before,
+		"%.2f -> %.2f" % [camera_before, _camera_rig.distance])
+	var cover_now: Vector2 = _cover_points()[0]
+	_expect("the cover came in with it", cover_now.length() < cover_before.length() - 0.01,
+		"%.2fm -> %.2fm from the centre" % [cover_before.length(), cover_now.length()])
+	_expect("and the cover is still inside the ring", cover_now.length() < _arena.radius,
+		"cover at %.2fm, rim at %.2fm" % [cover_now.length(), _arena.radius])
+
+	# --- it stops at the floor -----------------------------------------------------------------
+	var guard := 0
+	while _arena.radius > _arena.min_radius and guard < 60 * 120:
+		_arena.tick(1.0 / 60.0)
+		guard += 1
+	_arena.tick(1.0)
+	_expect("it stops at the minimum", is_equal_approx(_arena.radius, _arena.min_radius),
+		"%.2fm of a %.2fm floor" % [_arena.radius, _arena.min_radius])
+	_expect("and stops saying it is closing", not _arena.is_closing(), "still closing")
+
+	# --- a new round gives the whole board back ------------------------------------------------
+	_arena.reset()
+	_expect("a new round starts full size again",
+		is_equal_approx(_arena.radius, _arena.start_radius)
+			and is_equal_approx(_arena_edge, _arena.start_radius),
+		"%.2fm, edge %.2fm" % [_arena.radius, _arena_edge])
+
+	print("[shrink] %s (%d failure(s))" % [
 		"ALL PASS" if _touch_failures == 0 else "FAILURES", _touch_failures])
 	get_tree().quit(1 if _touch_failures > 0 else 0)
