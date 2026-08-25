@@ -1,0 +1,25 @@
+[gd_resource type="Resource" script_class="Ability" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://combat/abilities/ability.gd" id="1_ability"]
+
+[resource]
+script = ExtResource("1_ability")
+id = &"seeker"
+display_name = "Seeker"
+blurb = "Turns after them. Walk across it and it misses."
+colour = Color(0.949020, 0.450980, 0.850980, 1)
+cast_type = 0
+cooldown = 2.6
+charges = 1
+instability = 14.0
+health_damage = 18.0
+knockback = 7.0
+projectile_speed = 11.0
+projectile_radius = 0.33
+lifetime = 1.3
+spawn_offset = 0.9
+projectile_drag = 1.0
+homing_turn = 220.0
+homing_radius = 9.0
+area = 0.0
+cone_angle = 45.0

@@ -6,6 +6,7 @@
 script = ExtResource("1_ability")
 id = &"fireball"
 display_name = "Fireball"
+blurb = "Fast, cheap, and the one spell you always have."
 colour = Color(1, 0.478431, 0.180392, 1)
 cast_type = 0
 cooldown = 0.9

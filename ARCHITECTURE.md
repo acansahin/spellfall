@@ -44,11 +44,14 @@ res://
   ui/
     hud/           hud.gd/.tscn - instability, round number, score, banner
     mobile_controls/ touch_stick, ability_button (press-drag-lift to aim), mobile_controls
+    loadout/       loadout_screen.gd/.tscn - the spell picker, built from the catalogue
   systems/
     round/         round_manager.gd - countdown, elimination, score, reset
     feel/          game_feel.gd - hitstop, shake, sparks, sound and haptics, in one place
+    loadout/       spell_catalogue.gd + spell_column.gd (the roster, as data) +
+                   loadout_store.gd (user://loadout.cfg, by spell id)
     spawn/         (planned)
-  data/            abilities/fireball.tres, knockback_rules.tres
+  data/            abilities/*.tres (eleven spells), spell_catalogue.tres, knockback_rules.tres
   network/         (planned) Phase C onward
   vfx/             ground_shapes.gd - flat meshes; spell_flash.gd - the fan Force Wave
                    draws; aim_indicator.gd - what a spell will do, before it does it;
@@ -479,20 +482,37 @@ indexing `_cooldowns` crashed once, because the bounds that were tested were not
 that were used; `abilities` now resizes the cooldown array through its setter, so a spellbook
 assigned at runtime cannot desync the two.
 
-### The four spells
+### The eleven spells
 
-All four are `.tres` files in `data/abilities/`. None of them has a script. What differs
+All eleven are `.tres` files in `data/abilities/`. None of them has a script. What differs
 between them is numbers and which **cast type** they select, and each cast type has exactly
 one runtime, in `main.gd`, at the seam where a cast request becomes something in the world.
 
 | Spell | Cast type | Runtime | The rule that makes it that spell |
 |---|---|---|---|
 | Fireball | `PROJECTILE` | `ProjectilePool.fire` | travels, hits the first body, expires |
+| Arc Lance | `PROJECTILE` | the same | no drag and three times the speed — it is Fireball's numbers, nothing more |
+| Seeker | `PROJECTILE` | the same + `Projectile._home` | turns at `homing_turn` deg/s toward the nearest fighter |
+| Loopshot | `PROJECTILE` | the same + `_turn_for_home` | turns at `returns_after` of its life and flies at the caster; `pierces` lets it catch the same wizard twice |
+| Warp Bolt | `PROJECTILE` | the same + `_swap_places` | `swaps_places` — the caster and the target exchange positions |
 | Force Wave | `CONE` | `_cast_cone` → `ConeCast.targets` | thrown **away from the caster**, not along the aim |
 | Blink | `DASH` | `_cast_dash` | landing point **clamped inside the arena** |
+| Lunge | `DASH` | the same + `_dash_targets` | `dash_hits` — the corridor is swept and everyone in it goes through `_apply_hit` |
 | Arcane Shield | `BUFF` | `_cast_buff` → `Player.apply_shield` | a multiplier on incoming knockback, not a block |
+| Momentum | `BUFF` | the same | `speed_per_absorbed` — what the ward swallowed is paid back as walking speed |
+| Rewind | `BUFF` | `_cast_buff` → `Player.begin_rewind` | position and health recorded at CAST time, restored at resolve time |
 
-Three details are load-bearing:
+**Seven spells were added in one session and no cast type was.** Four ride on existing runtimes
+with nothing but different numbers; three added a field to `Ability` and a handful of lines
+where that field is read. The test for a new cast type has not changed: different CONTROL FLOW,
+not different numbers — and a swap, a charge and a rewind all still fly, sweep or tick exactly
+the way their neighbours do.
+
+Four details are load-bearing:
+
+- **A rewind restores position and health, never instability.** What the round took out of you
+  stays taken, so the escalation curve survives the spell. `Ability.rewind` says so in its own
+  doc comment, and `--loadout-test` asserts it rather than trusting it.
 
 - **Force Wave pushes outward, not forward.** A wave shoves what it touches, so someone caught
   at the shoulder of the fan is thrown sideways — which near a rim is off it. That is the
@@ -508,6 +528,33 @@ Three details are load-bearing:
 **One door for every hit.** `_apply_hit()` raises instability and hands out knockback, and both
 a projectile arriving and a cone catching someone go through it. A second path would be a
 second place the escalation rule lived.
+
+### The loadout
+
+Which spells a wizard carries is decided in `main.gd` and nowhere else. Three pieces:
+
+| Piece | Owns |
+|---|---|
+| `SpellCatalogue` (`data/spell_catalogue.tres`) | the roster: one fixed spell, one `SpellColumn` per remaining slot |
+| `LoadoutScreen` (`ui/loadout/`) | drawing the choice and reporting `confirmed(picks)`. Decides nothing |
+| `LoadoutStore` | reading and writing `user://loadout.cfg`, by spell ID |
+
+The same three-step shape the touch controls already use: a widget reports, a rule decides, the
+level performs. `_on_loadout_confirmed` is the only thing that writes an `AbilityComponent`.
+
+Four things are deliberate:
+
+- **The screen is BUILT from the catalogue**, not laid out in a scene. Adding a fourth option
+  to a column is one line in a `.tres` — no node, no index, no label to retype.
+- **Picks are stored as IDS, not indices.** Reordering a column would otherwise silently hand a
+  returning player a different spell. An id the catalogue no longer holds leaves that column on
+  its default rather than failing the whole loadout.
+- **A harness run never sees the menu.** `_show_loadout` starts as "were there no user args at
+  all", because fifteen suites open by awaiting a live round and a menu waiting on a human
+  would hang every one of them. `--loadout:on` is the deliberate exception.
+- **Nothing fights behind it.** `Player.accepts_input` defaults to true and the round system has
+  not started yet, so the screen turns both fighters off and the HUD with them. The first
+  screenshot of the menu caught the bot shooting the player through it.
 
 `ConeCast` runs a physics query rather than walking a list of known fighters, for the same
 reason `KillZone` is an `Area3D`: it finds anything on the players layer, including a fighter
@@ -951,6 +998,16 @@ argument-gated harness. Everything after a bare `--` reaches `OS.get_cmdline_use
 | `--lava-test` | Asserts the lava burns, stone only stops it, a Fireball drains health directly, a dunk is survivable, you can climb back, and burning out ends the round |
 | `--shrink-test` | Asserts the ring holds through the grace, closes at its rate, stops at the floor, and drags the lava rule, the bot, the camera and the cover with it |
 | `--burn-pose` | Parks the player in the lava, so a delayed shot catches the burn bar part-way down |
+| `--loadout-test` | Asserts the catalogue, the picks, the screen end to end, and each added spell's own rule |
+| `--loadout:on` | Opens the spell-picking screen even though other harness args were given, for a screenshot of it |
+| `--loadout:off` | Skips it. This is the default whenever ANY user arg is passed |
+| `--loadout:a,b,c` | Arms the player with these spell ids |
+| `--wipe-loadout` | Forgets the stored picks, so the next plain launch opens the menu with nothing chosen |
+
+**Any user argument at all puts the run on the DEFAULT loadout.** The stored one belongs to the
+player. A suite that inherited whatever the last play session picked would measure a different
+wizard every day — and it did, once: `--aim-test` went looking for a cone slot, found a stored
+loadout that had none, and crashed on a null.
 
 **None of these may be run with `--headless`.** `--shot` needs real rendering, and the input
 tests need a real window: the headless display driver does not route injected
@@ -1034,6 +1091,12 @@ Each of these cost real time in the first session.
   `--lava-test` copied the trick and measured the lava burning 0.4 points in a second against
   an advertised 22. Pin by writing `global_position` when the thing under test is state that
   a respawn clears.
+- **Adding a parameter to a signal silently breaks every lambda already listening.** The
+  projectile's `hit` grew a `shooter` argument, and two harness listeners written as
+  `func(b, _d, _a)` stopped receiving anything at all. Godot refuses the call at emit time, so
+  what you see is not an arity error - it is a suite reporting `hits=0`, a projectile that
+  "never arrived", and a caster that "was not hit by its own spell". `grep` for every
+  `.connect(` on a signal before changing its shape; the compiler will not.
 - **A signal connected after the event is a race, not a listener.** `--cast-test` connected
   its hit listener four physics ticks after firing, which was fine while the spell was slow
   and became a phantom failure - "the projectile never arrived" - the moment it left at

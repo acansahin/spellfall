@@ -4,12 +4,12 @@
 
 [resource]
 script = ExtResource("1_ability")
-id = &"arcane_shield"
-display_name = "Arcane Shield"
-blurb = "Most of the next hit does not land."
-colour = Color(0.6, 1, 0.847059, 1)
+id = &"momentum"
+display_name = "Momentum"
+blurb = "Half of every hit becomes walking speed."
+colour = Color(1, 0.549020, 0.549020, 1)
 cast_type = 3
-cooldown = 8.0
+cooldown = 6.5
 charges = 1
 instability = 0.0
 knockback = 0.0
@@ -20,5 +20,7 @@ spawn_offset = 0.0
 area = 0.0
 cone_angle = 45.0
 dash_distance = 0.0
-duration = 1.2
-knockback_resist = 0.35
+duration = 6.0
+knockback_resist = 0.5
+speed_per_absorbed = 0.30
+speed_cap = 2.5

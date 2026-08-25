@@ -1,0 +1,39 @@
+[gd_resource type="Resource" script_class="SpellCatalogue" load_steps=15 format=3]
+
+[ext_resource type="Script" path="res://systems/loadout/spell_catalogue.gd" id="1_catalogue"]
+[ext_resource type="Script" path="res://systems/loadout/spell_column.gd" id="2_column"]
+[ext_resource type="Script" path="res://combat/abilities/ability.gd" id="3_ability"]
+[ext_resource type="Resource" path="res://data/abilities/fireball.tres" id="4_fireball"]
+[ext_resource type="Resource" path="res://data/abilities/force_wave.tres" id="5_force_wave"]
+[ext_resource type="Resource" path="res://data/abilities/arc_lance.tres" id="6_arc_lance"]
+[ext_resource type="Resource" path="res://data/abilities/seeker.tres" id="7_seeker"]
+[ext_resource type="Resource" path="res://data/abilities/loopshot.tres" id="8_loopshot"]
+[ext_resource type="Resource" path="res://data/abilities/blink.tres" id="9_blink"]
+[ext_resource type="Resource" path="res://data/abilities/lunge.tres" id="10_lunge"]
+[ext_resource type="Resource" path="res://data/abilities/warp_bolt.tres" id="11_warp_bolt"]
+[ext_resource type="Resource" path="res://data/abilities/arcane_shield.tres" id="12_shield"]
+[ext_resource type="Resource" path="res://data/abilities/rewind.tres" id="13_rewind"]
+[ext_resource type="Resource" path="res://data/abilities/momentum.tres" id="14_momentum"]
+
+[sub_resource type="Resource" id="Column_strike"]
+script = ExtResource("2_column")
+title = "STRIKE"
+subtitle = "Your second way to land one"
+spells = Array[ExtResource("3_ability")]([ExtResource("5_force_wave"), ExtResource("6_arc_lance"), ExtResource("7_seeker"), ExtResource("8_loopshot")])
+
+[sub_resource type="Resource" id="Column_motion"]
+script = ExtResource("2_column")
+title = "MOTION"
+subtitle = "How you close a gap, or leave one"
+spells = Array[ExtResource("3_ability")]([ExtResource("9_blink"), ExtResource("10_lunge"), ExtResource("11_warp_bolt")])
+
+[sub_resource type="Resource" id="Column_guard"]
+script = ExtResource("2_column")
+title = "GUARD"
+subtitle = "What you do about the hit you saw coming"
+spells = Array[ExtResource("3_ability")]([ExtResource("12_shield"), ExtResource("13_rewind"), ExtResource("14_momentum")])
+
+[resource]
+script = ExtResource("1_catalogue")
+primary = ExtResource("4_fireball")
+columns = Array[ExtResource("2_column")]([SubResource("Column_strike"), SubResource("Column_motion"), SubResource("Column_guard")])

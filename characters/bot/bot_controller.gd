@@ -265,10 +265,51 @@ func _choose_slot() -> int:
 		if here.distance_to(_flat(_seen_pos)) <= book.ability_in(cone).area * CONE_TRIGGER:
 			return cone
 
+	# A dash that HITS is a second finisher, not an escape, so it is offered here rather than
+	# above with the retreat: charge someone standing inside its reach. A dash that does not
+	# hit is left where it was - as the only way out of trouble it must not be spent on a
+	# shove that never lands.
+	if dash >= 0 and book.is_ready(dash) and book.ability_in(dash).dash_hits:
+		if here.distance_to(_flat(_seen_pos)) <= book.ability_in(dash).dash_distance * CONE_TRIGGER:
+			return dash
+
 	var buff := _slot_of(book, Ability.CastType.BUFF)
 	if buff >= 0 and book.is_ready(buff) and _own_instability() >= shield_above:
 		return buff
 
+	return _best_projectile(book)
+
+
+## The hardest shot it can take right now, or its primary if none of the others is ready.
+##
+## Written when a second projectile became possible: a wizard can now carry a lance, a seeker
+## or a loopshot alongside Fireball, and `_slot_of` returns the FIRST match - which is always
+## slot 0. A bot that used only its primary would have carried the spell it chose and never
+## thrown it, which looks exactly like a spell that does not work.
+##
+## Ranked by what the hit is worth rather than by slot, so a spell added to a column is used
+## on its merits and nothing here learns its name. A spell whose payload is not damage - a
+## warp bolt trades places and hurts nobody - scores zero and is simply never chosen, which is
+## honest: the bot has no plan that a swap would serve.
+func _best_projectile(book: AbilityComponent) -> int:
+	var best := -1
+	var best_worth := -1.0
+	var gap := _flat(body.global_position).distance_to(_flat(_seen_pos))
+	for slot in book.slot_count():
+		var ability := book.ability_in(slot)
+		if ability == null or ability.cast_type != Ability.CastType.PROJECTILE:
+			continue
+		if not book.is_ready(slot) or gap > ability.effective_range() * 0.9:
+			continue
+		var worth := ability.instability + ability.knockback + ability.health_damage
+		if worth > best_worth:
+			best_worth = worth
+			best = slot
+	if best >= 0:
+		return best
+	# Nothing is both ready and in range. Fall back to the primary so the guard in
+	# `_consider_cast` gets to make the same call it always did, rather than this returning -1
+	# and the bot silently deciding it has no spells at all.
 	return _slot_of(book, Ability.CastType.PROJECTILE)
 
 
@@ -300,9 +341,14 @@ func _consider_cast(delta: float, slot: int, aim: Vector2) -> void:
 	if _cast_timer > 0.0:
 		return
 	if ability.cast_type == Ability.CastType.PROJECTILE:
-		# Do not throw a spell that expires before it arrives. Same number `holding_range()`
-		# clamps against, so the bot never stands where it refuses to shoot from.
-		if _flat(body.global_position).distance_to(_flat(_seen_pos)) > cast_reach():
+		# Do not throw a spell that expires before it arrives. Asked of the spell being thrown
+		# and not of the primary: a lance that reaches twice as far as Fireball must be allowed
+		# to be used at twice the distance, or carrying it changes nothing.
+		#
+		# `holding_range()` still clamps against the PRIMARY's reach, and deliberately. Where the
+		# bot stands has to be a distance it can fight from every second, not one it can only use
+		# while its longest cooldown happens to be up.
+		if _flat(body.global_position).distance_to(_flat(_seen_pos)) > _reach_of(ability):
 			return
 	request_ability(slot)
 	_cast_timer = _num("cast_gap")
@@ -338,9 +384,17 @@ func cast_reach() -> float:
 	var slot := _slot_of(book, Ability.CastType.PROJECTILE)
 	if slot < 0:
 		return 0.0
-	# effective_range(), not speed times lifetime: a spell with drag on it does not travel the
-	# product of its two numbers, and the bot would hold a range it cannot reach.
-	return book.ability_in(slot).effective_range() * 0.9
+	return _reach_of(book.ability_in(slot))
+
+
+## How far a shot with THIS spell is allowed to be taken.
+##
+## effective_range(), not speed times lifetime: a spell with drag on it does not travel the
+## product of its two numbers, and a spell that comes back only threatens as far as its turn.
+## The 0.9 keeps clear of the very end of the flight, where a target that steps back is missed
+## by a whisker.
+func _reach_of(ability: Ability) -> float:
+	return ability.effective_range() * 0.9 if ability != null else 0.0
 
 
 ## First slot holding a spell of this type, or -1.

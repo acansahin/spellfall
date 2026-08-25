@@ -22,10 +22,28 @@ The player should understand the whole game in about five seconds of watching it
 ## Originality
 
 This project takes inspiration from the *philosophy* of knockback-elimination arena games and
-from the *usability* of modern mobile action games. It copies nothing. No characters, maps,
-names, art, sound, spell designs, UI layouts or text come from any existing game. Every asset
-and every name in this repo is original to it. That constraint is not negotiable and applies
-to future art and audio too.
+from the *usability* of modern mobile action games.
+
+**Session 16 narrowed this constraint deliberately, and it is worth reading the change rather
+than the rule.** It used to say that nothing at all came from any existing game, spell designs
+included. The spell roster is now taken from the Warcraft III arena map this project takes
+after: its list was read straight out of the map file - see `docs` on `extract_w3x` in the
+sibling tower-defense repo - and eleven spells were built from what it does, not from what a
+wiki says about it. What each spell *is* comes from there.
+
+What still does not, and is not negotiable:
+
+- **No names.** Every spell in this repo is named here. `Fireball` is a word, not a borrowing.
+- **No art, sound, models, text or UI layouts.** All of it is original and all of it is
+  placeholder.
+- **No numbers.** The map's cooldowns are a set of RATIOS - its main spell recharges in 4.8s
+  and its lightning in 16.5s - and those ratios were mapped onto our own Fireball. Nothing was
+  copied at face value onto an arena a fifth the size.
+- **No code.** Nothing was decompiled and nothing was ported.
+
+The trade is the same one the proportions section below already made and says out loud: this
+game is a small original arena brawler standing on a design that fifteen years of players have
+already sanded smooth, and pretending otherwise produced worse spells, not more original ones.
 
 ## Core loop
 
@@ -176,21 +194,54 @@ from tones rather than recorded, the sparks are untextured spheres, and the shak
 That is deliberate at this phase: the feel is meant to be tuned by playing, and none of it
 should cost anything to throw away.
 
-## The four starting spells
+## The eleven spells, and the four you take
 
-All four are **built**. Numbers below are placeholders to be tuned in playtesting, and they
-live in `data/abilities/*.tres` — one file each, no scripts.
+You carry **four**. Fireball is one of them, always, and the other three are chosen before the
+match from three columns of three or four. Nine choices in, that is 36 loadouts, and every one
+of them still opens with the same spell — which is what keeps the game teachable while the
+build is yours.
 
-| Spell | Type | Instability | Knockback | Role |
+All eleven are **built**. Numbers are placeholders to be tuned in playtesting, and they live in
+`data/abilities/*.tres` — one file each, no scripts. The roster is
+`data/spell_catalogue.tres`; adding a spell is a file and a line, never a code change.
+
+### Always with you
+
+| Spell | Type | Inst | Knock | Role |
 |---|---|---|---|---|
-| **Fireball** | Aimed projectile, disappears on hit | 12 | 6 | Your main damage. Rewards prediction. 0.9s cooldown. |
-| **Force Wave** | 110° cone, 4m, fires instantly | 5 | 11 | The finisher. Weak in the open, lethal near an edge. Throws away from YOU, not along the aim. 3.5s. |
-| **Blink** | 5m teleport | — | — | Dodge and reposition. Clamped inside the arena, cancels the slide you are in, keeps the hitstun. 5s. |
-| **Arcane Shield** | 1.2s defensive buff | — | — | 35% of a hit gets through. Measured: a hit that carries 2.35m carries 0.30m through it. 8s. |
+| **Fireball** | Aimed projectile, dies on hit | 12 | 6 | Your main damage, and the only spell that is a habit rather than a decision. 0.9s. |
 
-The intended tension: Fireball builds instability from range, Force Wave converts it into a
-kill but forces you to close in, Blink is both your escape and your approach, and Shield is a
-read — spend it early and it is gone when the real hit lands.
+### STRIKE — your second way to land one
+
+| Spell | Type | Inst | Knock | Role |
+|---|---|---|---|---|
+| **Force Wave** | 110° cone, 4m, instant | 5 | 11 | The finisher. Weak in the open, lethal near an edge. Throws away from YOU, not along the aim. 3.5s. |
+| **Arc Lance** | Flat, fast, 15m | 10 | 5 | Crosses the ring almost instantly and barely pushes. The answer to someone who will not come close. 3.1s. |
+| **Seeker** | Slow projectile, turns 220°/s | 14 | 7 | Corrects an aim that was wrong, and still loses somebody who walks across its nose. 2.6s. |
+| **Loopshot** | Flies out 11m, returns, pierces | 9 | 8 | Two chances at the same wizard from one cast — if you are still standing where it comes home. 3.0s. |
+
+### MOTION — how you close a gap, or leave one
+
+| Spell | Type | Inst | Knock | Role |
+|---|---|---|---|---|
+| **Blink** | 5m teleport | — | — | Dodge and reposition. Clamped inside the arena, cancels the slide you are in, keeps the hitstun. 5s. |
+| **Lunge** | 6m charge that hits | 10 | 9 | The same escape, spent as an attack. It shoves what it runs through, and it puts you where they are. 5.3s. |
+| **Warp Bolt** | Projectile, trades places | — | — | Hurts nobody. It takes the ground they were standing on — including the ground over the lava. 5s. |
+
+### GUARD — what you do about the hit you saw coming
+
+| Spell | Type | Inst | Knock | Role |
+|---|---|---|---|---|
+| **Arcane Shield** | 1.2s ward | — | — | 35% of a hit gets through. Measured: a hit that carries 2.35m carries 0.30m through it. 8s. |
+| **Rewind** | Undo, 3.2s later | — | — | Puts you back where you cast it, with the health you had. It does NOT give back instability — the round still remembers. 7s. |
+| **Momentum** | 6s, converts | — | — | Half of every hit is swallowed and paid back as walking speed, up to +2.5 m/s. The only guard that rewards standing in a fight. 6.5s. |
+
+The intended tension is unchanged and now has three shapes instead of one: something builds
+instability from range, something converts it into a kill but costs you position, something
+moves you, and something is a read — spend it early and it is gone when the real hit lands.
+
+**The bot brings a random loadout every match.** Not for difficulty: it is the cheapest way to
+make sure a spell you never chose is still a spell you have had used against you.
 
 Arcane Shield ships as **knockback reduction** rather than projectile-blocking. Reduction is
 one number multiplied into the existing knockback formula; blocking needs projectile

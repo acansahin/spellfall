@@ -510,3 +510,62 @@ connected and USB debugging on, or copy the APK across and open it.
       centre - half the starting 12m radius - so the two start 12m apart. The first exchange
       of a round now requires closing distance on purpose. Confirm that reads as a choice on
       a phone, not as "my spell doesn't work".
+
+---
+
+## Session 16 - Eleven spells, and a choice before the match
+
+Read the roster out of the Warcraft III arena map this game follows, rather than guessing at
+one. `Warlock097.w3x` -> `war3map.w3a` gives the whole list with its own tooltips, cooldowns
+and column structure: one fixed spell and seven columns of three, pick one per column. That IS
+a loadout screen, and it is the shape this session built.
+
+- [x] Read the map's ability table (the tower-defense repo's `extract_w3x.py` needed MPQ file
+      decryption to get at it - every file in that map is encrypted, and the key is derived
+      from the filename)
+- [x] Seven new spells, all `.tres`, no new cast type and no subclass:
+  - [x] **Arc Lance** - flat and fast, 15m, barely pushes. Pure data, not one line of runtime
+  - [x] **Seeker** - `homing_turn` 220 deg/s toward the nearest fighter. A turn RATE, so
+        walking across its nose still loses it
+  - [x] **Loopshot** - `returns_after` 0.5 of its life, then flies at the caster; `pierces`
+        lets it catch the same wizard going and coming
+  - [x] **Lunge** - `dash_hits`: the corridor is swept and everyone in it goes through
+        `_apply_hit`, the same door a projectile uses
+  - [x] **Warp Bolt** - `swaps_places`. Hurts nobody; takes the ground they were standing on
+  - [x] **Rewind** - position and health recorded at CAST time, restored `duration` later.
+        Instability deliberately NOT restored
+  - [x] **Momentum** - `speed_per_absorbed`: what the ward swallowed comes back as walking
+        speed, capped at +2.5 m/s
+- [x] `SpellCatalogue` + `SpellColumn` as Resources - the roster is `data/spell_catalogue.tres`
+- [x] `LoadoutScreen`, BUILT from the catalogue. A fourth option in a column is one line of
+      data and no node
+- [x] `LoadoutStore` - `user://loadout.cfg`, keyed by spell ID so reordering a column cannot
+      hand a returning player a different spell
+- [x] The bot draws a random loadout every match, so every spell gets used against the player
+- [x] The bot picks the hardest projectile it has ready and in range, and charges with a dash
+      that hits. Without this it would have carried a spell and never thrown it
+- [x] `--loadout-test` (36 assertions), `--loadout:on|off|a,b,c`, `--wipe-loadout`
+- [x] Fix: `Projectile.hit` grew a `shooter` argument and two harness lambdas silently stopped
+      receiving anything - `--cast-test` and `--bot-test` reported a projectile that never
+      arrived. Written up in ARCHITECTURE.md
+- [x] Fix: nothing froze the fighters while the menu was up, so the bot opened fire on a player
+      still reading the spell list. Caught by the first screenshot of the screen
+- [x] Fix: `--wipe-loadout` deleted the file after `_ready` had already read it, so the run
+      still played the loadout it was told to forget
+- [x] GAME_DESIGN.md's Originality section rewritten - spell DESIGNS now come from the map;
+      names, art, sound, text, UI and numbers still do not
+- [x] Sixteen suites green
+
+### Still open
+
+- [ ] **Four of the map's seven columns are not built.** Meteor / Splitter / WindWalk,
+      Drain / Fire Spray / Bouncer, Entangle / Gravity / Link, and the self-centred novas
+      (Scourge / Cataclysm / Pious). Each needs a runtime this game does not have yet -
+      a ground-targeted cast, a tether, a root, invisibility - and there are only four
+      buttons on the screen, so a fourth column needs the UI to grow first.
+- [ ] Nothing is balanced. The cooldowns are the map's RATIOS mapped onto our Fireball, and
+      the damage numbers are guesses beside it. Judge Seeker's 220 deg/s and Momentum's
+      +2.5 m/s ceiling on a phone before touching anything else.
+- [ ] The bot never casts Warp Bolt - it scores zero on a ranking made of damage, which is
+      honest but means one spell is never used against the player.
+

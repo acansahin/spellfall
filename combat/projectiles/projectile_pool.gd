@@ -14,7 +14,7 @@ extends Node3D
 
 ## Emitted when any projectile from this pool hits something. Re-broadcast here so the
 ## combat layer connects once, rather than to every projectile as it is launched.
-signal projectile_hit(body: Node3D, direction: Vector3, ability: Ability)
+signal projectile_hit(body: Node3D, direction: Vector3, ability: Ability, shooter: Node3D)
 
 @export var projectile_scene: PackedScene = null
 
@@ -55,8 +55,8 @@ func _reclaim(p: Projectile) -> void:
 		_idle.append(p)
 
 
-func _relay_hit(body: Node3D, direction: Vector3, ability: Ability) -> void:
-	projectile_hit.emit(body, direction, ability)
+func _relay_hit(body: Node3D, direction: Vector3, ability: Ability, shooter: Node3D) -> void:
+	projectile_hit.emit(body, direction, ability, shooter)
 
 
 ## Number currently in flight. Used by the harness to prove reuse rather than growth.
@@ -66,6 +66,20 @@ func active_count() -> int:
 		if p.is_active():
 			n += 1
 	return n
+
+
+## Every projectile currently in the air.
+##
+## For the harness, which has to WATCH one fly. Three of the eleven spells are about the shape
+## of the flight rather than about the hit at the end of it - a seeker turning, a boomerang
+## coming home - and a suite that could only see the impact could not tell those apart from a
+## spell that happened to be aimed well.
+func in_flight() -> Array[Projectile]:
+	var out: Array[Projectile] = []
+	for p in _all:
+		if p.is_active():
+			out.append(p)
+	return out
 
 
 ## Total instances ever built. If this stays at `prewarm` across many casts, reuse works.

@@ -21,6 +21,13 @@ extends Node3D
 ##   --bot:off         park the bot, for a screenshot or a suite measuring something else
 ##   --bot-skill:S     play against calm|steady|sharp instead of the scene's setting
 ##   --spells-test     assert Force Wave, Blink and Arcane Shield do what they claim
+##   --loadout-test    assert the catalogue, the picks, the screen, and each added spell's rule
+##   --loadout:on      open the spell-picking screen even though other harness args were given
+##   --loadout:off     skip it (the default whenever ANY user arg is passed)
+##   --loadout:a,b,c   arm the player with these spell ids
+##   --wipe-loadout    forget the stored picks, so the next PLAIN launch opens with nothing set
+## Any user argument at all puts the run on the DEFAULT loadout - the stored one belongs to
+## the player, and a suite inheriting it measures a different wizard every day.
 ##   --button-test     assert a finger on button N casts spell N and nothing else
 ##   --aim-test        assert drag-to-aim: the indicator, the direction, and the latch
 ##   --aim-hold:S,X,Y  hold a drag on button S toward X,Y and never lift, for a screenshot
@@ -50,6 +57,11 @@ extends Node3D
 ## data, never by editing logic - see combat/knockback/knockback_rules.gd.
 @export var knockback_rules: KnockbackRules = null
 
+## Every spell in the game, and the choice the player is offered before a match. Null simply
+## means "leave the wizards with whatever their scenes gave them", which is what keeps this
+## level runnable with the catalogue unassigned.
+@export var catalogue: SpellCatalogue = null
+
 @onready var _player: Player = $Player
 @onready var _input: PlayerInputController = $PlayerInputController
 @onready var _mobile: MobileControls = $MobileControls
@@ -63,8 +75,17 @@ extends Node3D
 @onready var _obstacles: Node3D = $Arena/Obstacles
 @onready var _camera_rig: ArenaCamera = $CameraRig
 @onready var _feel: GameFeel = $Feel
+@onready var _loadout: LoadoutScreen = $LoadoutScreen
 
 var _trace := false
+
+## What the player picked, one index per column. Held so a rematch, the save and the harness
+## all read one answer rather than each asking the screen again.
+var _picks := PackedInt32Array()
+
+## Whether this run opens the spell-picking screen. False for every harness run: a dozen suites
+## begin by awaiting a live round, and a menu waiting on a human would hang all of them.
+var _show_loadout := false
 
 ## The platform's radius, measured once in _ready. Blink clamps against it and the bot is
 ## handed it; nothing else in the level needs to know the arena has a size.
@@ -107,8 +128,19 @@ func _ready() -> void:
 	_hud.add_readout("YOU", _player.instability(), _player.health())
 	_hud.add_readout("BOT", _bot.instability(), _bot.health())
 	_wire_rounds()
+	# A run with ANY user argument starts from the DEFAULT loadout, never the stored one. A suite
+	# that inherited whatever the last play session picked would measure a different wizard every
+	# day - and it did: `--aim-test` went looking for a cone slot, found a stored loadout that had
+	# none, and crashed on a null. The stored picks are for the player, and the player is who
+	# launches with no arguments at all.
+	_show_loadout = OS.get_cmdline_user_args().is_empty()
+	_picks = LoadoutStore.load_picks(catalogue) if _show_loadout else _default_picks()
+	_arm_fighters(false)
 	_parse_harness_args()
-	_rounds.start_match()
+	if _show_loadout:
+		_open_loadout()
+	else:
+		_rounds.start_match()
 
 
 func _process(_delta: float) -> void:
@@ -181,6 +213,9 @@ func _on_arena_resized(value: float) -> void:
 
 
 func _parse_harness_args() -> void:
+	# `_show_loadout` is already decided in `_ready` - a script is driving whenever there is an
+	# argument at all, and a script must never be handed a menu. `--loadout:on` below is how a
+	# screenshot run asks for one anyway.
 	# Settings first: --touch-test needs the stick already shown and laid out, and a suite
 	# that reads a bot number must read the one the run asked for.
 	for arg in OS.get_cmdline_user_args():
@@ -193,6 +228,23 @@ func _parse_harness_args() -> void:
 			print("[harness] bot parked")
 		elif arg == "--feel:off":
 			_quiet_feel()
+		elif arg == "--wipe-loadout":
+			# Only deletes the file. This run is already on the defaults - see `_ready` - so what
+			# this is for is the NEXT plain launch, which must open the menu with nothing chosen.
+			LoadoutStore.clear()
+			print("[harness] stored loadout forgotten")
+		elif arg == "--loadout:on":
+			_show_loadout = true
+		elif arg == "--loadout:off":
+			_show_loadout = false
+		elif arg.begins_with("--loadout:"):
+			# The two exact spellings above are tested FIRST, or "--loadout:off" would be read
+			# as a request for a spell called "off" and silently leave the loadout at default.
+			# Ten characters in the prefix - counted, see ARCHITECTURE.md on --cast-at.
+			if catalogue != null:
+				_picks = catalogue.picks_from_ids(arg.substr(10).split(","))
+				_arm_fighters(false)
+				print("[harness] loadout %s" % str(catalogue.ids_from_picks(_picks)))
 		elif arg.begins_with("--bot-skill:"):
 			# Twelve characters. Counted, not guessed - see ARCHITECTURE.md on --cast-at.
 			_set_bot_skill(arg.substr(12))
@@ -230,6 +282,8 @@ func _parse_harness_args() -> void:
 			_run_bot_tests()
 		elif arg == "--spells-test":
 			_run_spell_tests()
+		elif arg == "--loadout-test":
+			_run_loadout_tests()
 		elif arg == "--button-test":
 			_run_button_tests()
 		elif arg == "--aim-test":
@@ -651,6 +705,91 @@ func _wire_combat() -> void:
 		button.source = _player.abilities()
 
 
+# ---------------------------------------------------------------------------------------
+# Loadout
+#
+# Which spells a wizard carries is decided HERE and nowhere else. The screen reports a set of
+# picks, the catalogue turns picks into a spellbook, and this level assigns it - the same
+# three-step shape the touch buttons already follow, where a widget reports, a rule decides,
+# and the level performs.
+#
+# Nothing downstream learns a spell's name. The buttons read whatever the spellbook holds, the
+# bot chooses by cast type, and the aim indicator asks the Ability what its reach is. That is
+# what made seven new spells a data change with a handful of runtime lines rather than a pass
+# over the whole file.
+# ---------------------------------------------------------------------------------------
+
+## The catalogue's own defaults, or nothing if this level was given no catalogue.
+func _default_picks() -> PackedInt32Array:
+	return catalogue.default_picks() if catalogue != null else PackedInt32Array()
+
+
+func _open_loadout() -> void:
+	# Guarded because the suite opens the screen too, and a second connection would arm the
+	# wizards twice and start two matches off one button.
+	if not _loadout.confirmed.is_connected(_on_loadout_confirmed):
+		_loadout.confirmed.connect(_on_loadout_confirmed)
+	# The HUD reports a fight that has not started. Hidden rather than dimmed: a round counter
+	# and two instability bars ghosting through the menu read as a bug, and they are about to be
+	# correct again the moment the player presses FIGHT.
+	_hud.visible = false
+	# The spell buttons live on their own CanvasLayer and claim touches through `_input`, which
+	# runs whether or not anything is drawn over them. Hiding them is what stops a thumb landing
+	# on the menu and also arming a cast underneath it.
+	_mobile.visible = false
+	# Nobody fights while the menu is up. The round system has not started yet, and a fighter's
+	# default is to accept input - so without this the bot opens fire on a player who is still
+	# reading the spell list, and the first screenshot of the screen caught exactly that.
+	var waiting: Array[Player] = [_player, _bot]
+	for fighter in waiting:
+		fighter.accepts_input = false
+	_loadout.open(catalogue, _picks)
+
+
+func _on_loadout_confirmed(picks: PackedInt32Array) -> void:
+	_picks = picks
+	# Saving BEFORE the match, not after it. A player who chose a loadout and then closed the
+	# game mid-round still chose it, and losing the pick because the round did not finish would
+	# be the kind of small betrayal nobody reports and everybody notices.
+	LoadoutStore.save_picks(catalogue, _picks)
+	_arm_fighters(true)
+	_mobile.visible = true
+	_hud.visible = true
+	_rounds.start_match()
+
+
+## Hands both wizards their spellbooks.
+##
+## The bot's is RANDOM in a real match and fixed in a scripted one. Random because a spell the
+## player never has used against them is a spell they never learn to read, and this is the
+## cheapest way to put all eleven in front of them; fixed under the harness because a dozen
+## suites were written against a bot that carries a cone and a dash, and an opponent whose
+## loadout changed per run would fail them for entirely correct reasons.
+##
+## Seeded from the bot's own generator, so `rng_seed` still replays a whole fight - including
+## which spells it brought to it.
+func _arm_fighters(randomise_bot: bool) -> void:
+	if catalogue == null:
+		return
+	var mine := _player.abilities()
+	if mine != null:
+		mine.abilities = catalogue.spellbook(_picks)
+	if not randomise_bot:
+		return
+	var theirs := _bot.abilities()
+	if theirs == null:
+		return
+	var rng := RandomNumberGenerator.new()
+	if _brain.rng_seed == 0:
+		rng.randomize()
+	else:
+		rng.seed = _brain.rng_seed
+	var picks := catalogue.random_picks(rng)
+	theirs.abilities = catalogue.spellbook(picks)
+	print("[loadout] you %s | bot %s" % [
+		str(catalogue.ids_from_picks(_picks)), str(catalogue.ids_from_picks(picks))])
+
+
 func _on_cast_requested(ability: Ability, origin: Vector3, direction: Vector3, caster: Node3D) -> void:
 	if caster == _player:
 		_last_cast_dir = direction
@@ -674,8 +813,9 @@ func _on_cast_requested(ability: Ability, origin: Vector3, direction: Vector3, c
 
 ## The projectile pool reports contact and stops there. Every hit in the game, from any
 ## source, goes through `_apply_hit` below.
-func _on_projectile_hit(body: Node3D, direction: Vector3, ability: Ability) -> void:
-	_apply_hit(body, direction, ability)
+func _on_projectile_hit(body: Node3D, direction: Vector3, ability: Ability,
+		shooter: Node3D) -> void:
+	_apply_hit(body, direction, ability, shooter)
 
 
 ## Force Wave. Everything standing in the fan is hit on this frame, and thrown AWAY FROM THE
@@ -698,7 +838,7 @@ func _cast_cone(ability: Ability, direction: Vector3, caster: Node3D) -> void:
 		push.y = 0.0
 		if push.length_squared() < 0.0001:
 			push = direction
-		_apply_hit(body, push.normalized(), ability)
+		_apply_hit(body, push.normalized(), ability, caster)
 
 
 ## Blink. The landing point is clamped INSIDE the arena here, in the level, because the level
@@ -710,8 +850,54 @@ func _cast_dash(ability: Ability, direction: Vector3, caster: Node3D) -> void:
 		return
 	var from := fighter.global_position
 	var landing := _blink_landing(fighter, direction, ability)
+	# Swept BEFORE the move, while the corridor still runs from where the caster was standing.
+	# After the teleport the two endpoints are the same point and the sweep finds nothing - the
+	# charge would land silently and read as a spell that simply does not work.
+	var caught: Array[Node3D] = []
+	if ability.dash_hits:
+		caught = _dash_targets(from, landing, ability, fighter)
 	fighter.blink_to(landing)
 	_feel.dashed(from, landing, ability.colour)
+	for body in caught:
+		# Thrown along the charge, which is the direction the caster travelled and not the line
+		# out from where they ended up. A charge shoves what it ran through forward.
+		_apply_hit(body, direction.normalized(), ability, caster)
+
+
+## Fighters standing in the corridor a charge sweeps from `from` to `to`.
+##
+## Sampled along the line rather than shape-cast, because a cast reports only the FIRST thing
+## it meets and a charge through two bodies has to catch both - a rule that costs nothing today
+## with two fighters and is the one that will still be right in a free-for-all.
+##
+## The step is the corridor's own width, so no body can sit between two samples and be missed.
+func _dash_targets(from: Vector3, to: Vector3, ability: Ability,
+		caster: Node3D) -> Array[Node3D]:
+	var found: Array[Node3D] = []
+	var space := get_world_3d().direct_space_state
+	if space == null:
+		return found
+	var travel := to - from
+	travel.y = 0.0
+	var span := travel.length()
+	var width := maxf(ability.dash_width, 0.1)
+	var probe := SphereShape3D.new()
+	probe.radius = width
+	var query := PhysicsShapeQueryParameters3D.new()
+	query.shape = probe
+	query.collision_mask = ConeCast.PLAYERS_MASK
+	query.collide_with_bodies = true
+	query.collide_with_areas = false
+	var steps := maxi(1, int(ceil(span / width)))
+	for step in steps + 1:
+		var at := from + travel * (float(step) / float(steps))
+		query.transform = Transform3D(Basis.IDENTITY, at)
+		for hit in space.intersect_shape(query, ConeCast.MAX_TARGETS):
+			var body := hit.get("collider") as Node3D
+			if body == null or body == caster or found.has(body):
+				continue
+			found.append(body)
+	return found
 
 
 ## Where a dash from `fighter` along `direction` would put them, clamped to the arena.
@@ -728,13 +914,23 @@ func _blink_landing(fighter: Player, direction: Vector3, ability: Ability) -> Ve
 	return Vector3(flat.x, fighter.global_position.y, flat.y)
 
 
-## Arcane Shield. Reduction rather than blocking - see GAME_DESIGN.md for why blocking is the
+## Every self-cast spell. Which one it is comes off the Ability, not off a second cast type:
+## a ward, a conversion and a rewind all do exactly one thing to the caster and nothing to the
+## world, so they share a runtime and differ in which fields are set.
+##
+## Arcane Shield is reduction rather than blocking - see GAME_DESIGN.md for why blocking is the
 ## better long-term version and still not the one that ships.
 func _cast_buff(ability: Ability, caster: Node3D) -> void:
 	var fighter := caster as Player
 	if fighter == null:
 		return
-	fighter.apply_shield(ability.duration, ability.knockback_resist)
+	if ability.rewind:
+		fighter.begin_rewind(ability.duration)
+		print("[buff] %s -> %s | back to here in %.1fs" % [
+			ability.id, fighter.name, ability.duration])
+		return
+	fighter.apply_shield(ability.duration, ability.knockback_resist,
+		ability.speed_per_absorbed, ability.speed_cap)
 	print("[buff] %s -> %s | %.0f%% of a hit gets through, for %.1fs" % [
 		ability.id, fighter.name, ability.knockback_resist * 100.0, ability.duration])
 
@@ -745,10 +941,18 @@ func _cast_buff(ability: Ability, caster: Node3D) -> void:
 ##
 ## `direction` is the way the victim gets thrown: a projectile's travel direction, or the line
 ## out from the caster for a cone.
-func _apply_hit(body: Node3D, direction: Vector3, ability: Ability) -> void:
+##
+## `caster` is who threw it, and may be null for a hit with no author. Only one rule reads it -
+## a spell that trades places needs both ends - but it arrives here rather than being looked up
+## because two spells can be in the air at once and "whoever cast last" is a guess.
+func _apply_hit(body: Node3D, direction: Vector3, ability: Ability,
+		caster: Node3D = null) -> void:
 	var fighter := body as Player
 	if fighter == null:
 		return
+
+	if ability.swaps_places:
+		_swap_places(caster as Player, fighter, ability)
 
 	# Instability is raised FIRST, and the knockback reads the new value. So a hit is
 	# amplified by the destabilisation it just caused, which makes a landed combo escalate
@@ -772,6 +976,23 @@ func _apply_hit(body: Node3D, direction: Vector3, ability: Ability) -> void:
 	_feel.hit(fighter.global_position, ability.colour, landed, fighter == _player)
 	print("[hit] %s -> %s | instability %.0f%% | knockback %.1f m/s%s" % [
 		ability.id, body.name, level, Vector2(impulse.x, impulse.z).length(), shielded])
+
+
+## Trades two fighters over. Both go through `blink_to`, so a swap lands under exactly the rule
+## a dash lands under: momentum cleared, hitstun kept.
+##
+## NOT clamped to the arena, and that is the spell. Both ends were somewhere a fighter was
+## already standing, so neither can be the void - and if one of them was over the lava, putting
+## the caster there is the whole reason to press it.
+func _swap_places(caster: Player, victim: Player, ability: Ability) -> void:
+	if caster == null or victim == null or caster == victim:
+		return
+	var theirs := victim.global_position
+	var mine := caster.global_position
+	caster.blink_to(theirs)
+	victim.blink_to(mine)
+	_feel.dashed(mine, theirs, ability.colour)
+	print("[swap] %s <-> %s" % [caster.name, victim.name])
 
 
 # ---------------------------------------------------------------------------------------
@@ -983,7 +1204,7 @@ func _run_cast_tests() -> void:
 	# the impact happened inside them - so the suite reported a projectile that never arrived
 	# when in fact it had already arrived.
 	var hit_body: Array = []
-	_pool.projectile_hit.connect(func(b, _d, _a): hit_body.append(b), CONNECT_ONE_SHOT)
+	_pool.projectile_hit.connect(func(b, _d, _a, _s): hit_body.append(b), CONNECT_ONE_SHOT)
 
 	# --- a cast produces exactly one projectile ------------------------------------------
 	var fired: bool = book.try_cast(0, Vector3(0, 0, -1))
@@ -1644,7 +1865,8 @@ func _run_bot_tests() -> void:
 	var landed: Array = []
 	var on_cast := func(_slot: int, _ability: Ability) -> void:
 		casts.append(1)
-	var on_hit := func(body: Node3D, _direction: Vector3, _ability: Ability) -> void:
+	var on_hit := func(body: Node3D, _direction: Vector3, _ability: Ability,
+			_shooter: Node3D) -> void:
 		if body == _player:
 			landed.append(1)
 	_bot.abilities().cast_performed.connect(on_cast)
@@ -2784,3 +3006,343 @@ func _run_shrink_tests() -> void:
 	print("[shrink] %s (%d failure(s))" % [
 		"ALL PASS" if _touch_failures == 0 else "FAILURES", _touch_failures])
 	get_tree().quit(1 if _touch_failures > 0 else 0)
+
+
+## The roster and the seven spells added with it.
+##
+## Split into two halves. The first is pure data - what the catalogue holds, and that picks
+## survive a round trip through ids - and needs neither a window nor a live round. The second
+## casts each new spell and measures the ONE rule that makes it that spell: a lance that
+## out-reaches a fireball, a seeker that turns, a loopshot that comes home and can catch the
+## same wizard twice, a lunge that hits what it runs through, a bolt that trades places, a
+## rewind that undoes where you are but not what you took, and a buff that pays for a hit in
+## walking speed.
+##
+## Every assertion derives its numbers from the spell under test, never from the scene - see
+## ARCHITECTURE.md on the two suites that broke when Fireball was retuned.
+func _run_loadout_tests() -> void:
+	await _settle()
+	_quiet_feel()
+	_clear_cover()
+	_freeze_arena()
+	_freeze_bot()
+	_input.set_override_vector(Vector2.ZERO, true)
+
+	_expect("the level was handed a catalogue", catalogue != null,
+		"catalogue=%s" % catalogue)
+	if catalogue == null:
+		get_tree().quit(1)
+		return
+
+	# --- the roster ------------------------------------------------------------------------
+	var all := catalogue.all_spells()
+	var ids := {}
+	var blank := 0
+	for spell in all:
+		ids[spell.id] = true
+		if spell.blurb.is_empty() or spell.display_name.is_empty():
+			blank += 1
+	print("[loadout] %d spells across %d columns" % [all.size(), catalogue.columns.size()])
+	_expect("every spell has a unique id", ids.size() == all.size(),
+		"%d ids for %d spells" % [ids.size(), all.size()])
+	_expect("every spell is named and described", blank == 0,
+		"%d missing a name or a blurb" % blank)
+	_expect("the primary is Fireball", catalogue.primary != null
+		and catalogue.primary.id == &"fireball", "primary=%s" % catalogue.primary)
+	var primary_in_column := false
+	for column in catalogue.columns:
+		if column.index_of(&"fireball") >= 0:
+			primary_in_column = true
+	_expect("and is not also a choice", not primary_in_column,
+		"Fireball is fixed, so it must not compete for a slot")
+	_expect("one column per remaining button",
+		catalogue.slot_count() == _mobile.buttons.size(),
+		"%d slots, %d buttons" % [catalogue.slot_count(), _mobile.buttons.size()])
+
+	# --- picks survive the trip through ids ---------------------------------------------------
+	var defaults := catalogue.default_picks()
+	var round_trip := catalogue.picks_from_ids(catalogue.ids_from_picks(defaults))
+	_expect("default picks round-trip through their ids", round_trip == defaults,
+		"%s -> %s" % [str(defaults), str(round_trip)])
+	var mixed := catalogue.picks_from_ids(
+		PackedStringArray(["loopshot", "warp_bolt", "momentum"]))
+	var mixed_book := catalogue.spellbook(mixed)
+	_expect("picks by id arm the spells they name",
+		mixed_book.size() == 4 and mixed_book[0].id == &"fireball"
+			and mixed_book[1].id == &"loopshot" and mixed_book[2].id == &"warp_bolt"
+			and mixed_book[3].id == &"momentum",
+		str(catalogue.ids_from_picks(mixed)))
+	var stale := catalogue.picks_from_ids(PackedStringArray(["no_such_spell", "momentum"]))
+	_expect("an id the catalogue lost leaves that column on its default",
+		stale[0] == 0 and stale[2] == catalogue.columns[2].index_of(&"momentum"),
+		"stale picks %s" % str(stale))
+	var absurd := catalogue.spellbook(PackedInt32Array([99, -4]))
+	var holes := 0
+	for spell in absurd:
+		if spell == null:
+			holes += 1
+	_expect("an out-of-range pick still produces a whole spellbook",
+		absurd.size() == 4 and holes == 0, "%d spells, %d holes" % [absurd.size(), holes])
+
+	var rng_a := RandomNumberGenerator.new()
+	var rng_b := RandomNumberGenerator.new()
+	rng_a.seed = 77
+	rng_b.seed = 77
+	_expect("a seeded random loadout replays",
+		catalogue.random_picks(rng_a) == catalogue.random_picks(rng_b),
+		"same seed, same picks")
+
+	# --- arming ---------------------------------------------------------------------------
+	_picks = mixed
+	_arm_fighters(false)
+	var book := _player.abilities()
+	_expect("the chosen spells reach the wizard",
+		book.slot_count() == 4 and book.ability_in(0).id == &"fireball"
+			and book.ability_in(1).id == &"loopshot"
+			and book.ability_in(3).id == &"momentum",
+		"slot 0 %s, slot 1 %s, slot 3 %s" % [
+			book.ability_in(0).id, book.ability_in(1).id, book.ability_in(3).id])
+	_expect("and the buttons follow them",
+		_mobile.buttons[1].source == book
+			and _mobile.buttons[1].source.ability_in(1).id == &"loopshot",
+		"button 1 draws %s" % _mobile.buttons[1].source.ability_in(1).display_name)
+
+	# --- the screen itself, end to end -------------------------------------------------------
+	# Driven through its own public surface rather than through injected touch: what is under
+	# test is that a pick reaches a spellbook, not that a finger can find a panel.
+	_open_loadout()
+	_expect("the screen opens", _loadout.is_open(), "is_open=%s" % _loadout.is_open())
+	_expect("and nothing fights behind it",
+		not _player.accepts_input and not _bot.accepts_input and not _mobile.visible,
+		"player=%s bot=%s controls=%s" % [
+			_player.accepts_input, _bot.accepts_input, _mobile.visible])
+	_loadout.select(0, catalogue.columns[0].index_of(&"arc_lance"))
+	_loadout.select(2, catalogue.columns[2].index_of(&"rewind"))
+	_loadout.confirm()
+	await get_tree().physics_frame
+	_expect("what was picked is what the wizard carries",
+		book.ability_in(1).id == &"arc_lance" and book.ability_in(3).id == &"rewind",
+		"slot 1 %s, slot 3 %s" % [book.ability_in(1).id, book.ability_in(3).id])
+	_expect("the controls come back with the fight",
+		_mobile.visible and _hud.visible and not _loadout.is_open(),
+		"controls=%s hud=%s menu=%s" % [_mobile.visible, _hud.visible, _loadout.is_open()])
+	_expect("and the picks are remembered for next time",
+		LoadoutStore.load_picks(catalogue) == _picks,
+		"stored %s" % str(catalogue.ids_from_picks(LoadoutStore.load_picks(catalogue))))
+
+	await _wait_for_live()
+
+	# --- Arc Lance: the long one --------------------------------------------------------------
+	var fireball: Ability = catalogue.primary
+	var lance := _spell(&"arc_lance")
+	_expect("Arc Lance reaches far past Fireball",
+		lance.effective_range() > fireball.effective_range() * 1.8,
+		"%.1fm vs %.1fm" % [lance.effective_range(), fireball.effective_range()])
+	_expect("and pays for it in cooldown", lance.cooldown > fireball.cooldown * 2.0,
+		"%.1fs vs %.1fs" % [lance.cooldown, fireball.cooldown])
+
+	# --- Seeker: it turns, and the turn is what lands it ----------------------------------------
+	await _equip(&"seeker", &"blink", &"arcane_shield")
+	await _place_fighters(Vector3(0.0, 1.2, 0.0), Vector3(0.0, 1.2, -5.0))
+	var seeker := _spell(&"seeker")
+	var opening := Vector3(sin(deg_to_rad(45.0)), 0.0, cos(deg_to_rad(45.0)))
+	book.reset()
+	book.try_cast(1, opening)
+	await get_tree().physics_frame
+	var flying := _pool.in_flight()
+	_expect("the seeker is away", flying.size() == 1, "%d in flight" % flying.size())
+	var launched := flying[0].direction() if flying.size() == 1 else Vector3.ZERO
+	await _wait(0.25)
+	var now := _pool.in_flight()
+	var steered := now[0].direction() if now.size() == 1 else launched
+	var opened := Vector2(launched.x, launched.z).angle_to(Vector2(0.0, 1.0))
+	var closed := Vector2(steered.x, steered.z).angle_to(Vector2(0.0, 1.0))
+	_expect("a seeker turns toward what it can see", absf(closed) < absf(opened) - 0.15,
+		"aimed %.0f degrees off, now %.0f" % [rad_to_deg(opened), rad_to_deg(closed)])
+	var caught := await _instability_after(seeker.lifetime + 0.2)
+	_expect("and lands the shot the aim missed", caught >= seeker.instability - 0.01,
+		"instability rose %.0f, spell adds %.0f" % [caught, seeker.instability])
+
+	# --- Loopshot: it comes home, and it can catch you twice --------------------------------------
+	await _equip(&"loopshot", &"blink", &"arcane_shield")
+	var loop := _spell(&"loopshot")
+	_expect("its stated reach is the outward leg, not the whole flight",
+		absf(loop.effective_range()
+			- loop.projectile_speed * loop.lifetime * loop.returns_after) < 0.2,
+		"%.1fm for a %.1fs flight at %.1f m/s" % [
+			loop.effective_range(), loop.lifetime, loop.projectile_speed])
+	# Thrown at nobody, so the only thing that can bring it back is the spell.
+	await _place_fighters(Vector3(0.0, 1.2, 9.0), Vector3(0.0, 1.2, 0.0))
+	book.reset()
+	book.try_cast(1, Vector3(1, 0, 0))
+	var furthest := 0.0
+	var nearest := INF
+	var turned := false
+	var ticks := 0
+	while ticks < int(loop.lifetime * 60.0) + 6:
+		await get_tree().physics_frame
+		ticks += 1
+		var air := _pool.in_flight()
+		if air.is_empty():
+			break
+		var gap: float = air[0].global_position.distance_to(_player.global_position)
+		furthest = maxf(furthest, gap)
+		if furthest > 1.0 and gap < furthest - 0.5:
+			turned = true
+		if turned:
+			nearest = minf(nearest, gap)
+	_expect("a loopshot turns around", turned, "flew out to %.1fm" % furthest)
+	_expect("and comes back to the hand", nearest < furthest * 0.5,
+		"out to %.1fm, back to %.1fm" % [furthest, nearest])
+
+	var hits := [0]
+	var counter := func(_b: Node3D, _d: Vector3, a: Ability, _s: Node3D) -> void:
+		if a.id == &"loopshot":
+			hits[0] += 1
+	_pool.projectile_hit.connect(counter)
+	await _place_fighters(Vector3(4.0, 1.2, 0.0), Vector3(0.0, 1.2, 0.0))
+	book.reset()
+	book.try_cast(1, Vector3(1, 0, 0))
+	# Pinned by writing the position, not by respawning - a respawn would clear the very
+	# instability this is about to read. See ARCHITECTURE.md.
+	var held := Vector3(4.0, 1.2, 0.0)
+	var waited := 0.0
+	while waited < loop.lifetime + 0.2:
+		_bot.global_position = held
+		await get_tree().physics_frame
+		waited += 1.0 / 60.0
+	_pool.projectile_hit.disconnect(counter)
+	_expect("and can catch the same wizard going and coming", hits[0] >= 2,
+		"%d hits from one cast" % hits[0])
+
+	# --- Lunge: a charge that hits what it runs through --------------------------------------------
+	await _equip(&"force_wave", &"lunge", &"arcane_shield")
+	var lunge := _spell(&"lunge")
+	await _place_fighters(Vector3(3.0, 1.2, 0.0), Vector3(0.0, 1.2, 0.0))
+	var before := _instability_of(_bot)
+	var from := _player.global_position
+	book.reset()
+	book.try_cast(2, Vector3(1, 0, 0))
+	await get_tree().physics_frame
+	var moved := Vector2(_player.global_position.x - from.x, _player.global_position.z - from.z)
+	_expect("a lunge moves the caster its full distance",
+		absf(moved.length() - lunge.dash_distance) < 0.3,
+		"moved %.2fm, spell says %.1fm" % [moved.length(), lunge.dash_distance])
+	_expect("and catches whoever was in the way",
+		_instability_of(_bot) - before >= lunge.instability - 0.01,
+		"instability rose %.0f, spell adds %.0f" % [
+			_instability_of(_bot) - before, lunge.instability])
+
+	# --- ...and a plain Blink still does not -------------------------------------------------------
+	await _equip(&"force_wave", &"blink", &"arcane_shield")
+	await _place_fighters(Vector3(3.0, 1.2, 0.0), Vector3(0.0, 1.2, 0.0))
+	before = _instability_of(_bot)
+	book.reset()
+	book.try_cast(2, Vector3(1, 0, 0))
+	await _wait(0.2)
+	_expect("an escape is still only an escape",
+		is_equal_approx(_instability_of(_bot), before),
+		"Blink left instability at %.0f" % _instability_of(_bot))
+
+	# --- Warp Bolt: it trades, and it does not hurt ----------------------------------------------
+	await _equip(&"force_wave", &"warp_bolt", &"arcane_shield")
+	await _place_fighters(Vector3(4.5, 1.2, 0.0), Vector3(0.0, 1.2, 0.0))
+	var mine := _player.global_position
+	var theirs := _bot.global_position
+	before = _instability_of(_bot)
+	book.reset()
+	book.try_cast(2, Vector3(1, 0, 0))
+	await _wait(0.5)
+	_expect("a warp bolt puts the caster where the target stood",
+		_player.global_position.distance_to(theirs) < 1.0,
+		"landed %.2fm from where they were" % _player.global_position.distance_to(theirs))
+	_expect("and the target where the caster was",
+		_bot.global_position.distance_to(mine) < 1.5,
+		"landed %.2fm from where I was" % _bot.global_position.distance_to(mine))
+	_expect("and costs the target nothing but the ground they held",
+		is_equal_approx(_instability_of(_bot), before),
+		"instability %.0f" % _instability_of(_bot))
+
+	# --- Rewind: it undoes where you are, never what you took ----------------------------------------
+	await _equip(&"force_wave", &"blink", &"rewind")
+	var rewind := _spell(&"rewind")
+	await _place_fighters(Vector3(0.0, 1.2, 6.0), Vector3(2.0, 1.2, 0.0))
+	var anchor := _player.global_position
+	var hp := _player.health()
+	var health_then := hp.current
+	book.reset()
+	book.try_cast(3, Vector3.ZERO)
+	await get_tree().physics_frame
+	_player.global_position = Vector3(-5.0, 1.2, 4.0)
+	hp.damage(30.0)
+	_player.instability().add(40.0)
+	var instability_then := _instability_of(_player)
+	await _wait(rewind.duration + 0.25)
+	_expect("a rewind puts the caster back where they cast it",
+		_player.global_position.distance_to(anchor) < 0.3,
+		"landed %.2fm from the anchor" % _player.global_position.distance_to(anchor))
+	_expect("and mends what the round burned off",
+		absf(hp.current - health_then) < 0.5,
+		"health %.0f, was %.0f at cast" % [hp.current, health_then])
+	_expect("but not what the round made of you",
+		is_equal_approx(_instability_of(_player), instability_then),
+		"instability %.0f, still the %.0f it climbed to" % [
+			_instability_of(_player), instability_then])
+
+	# --- Momentum: the hit pays for itself -------------------------------------------------------
+	await _equip(&"force_wave", &"blink", &"momentum")
+	var momentum := _spell(&"momentum")
+	var blow := Knockback.velocity(9.0, Vector3(1, 0, 0), 0.0, knockback_rules)
+	await _place_fighters(Vector3(0.0, 1.2, 6.0), Vector3(0.0, 1.2, 0.0))
+	_player.apply_knockback(blow)
+	var bare := await _drift_of(_player, 0.7)
+	await _place_fighters(Vector3(0.0, 1.2, 6.0), Vector3(0.0, 1.2, 0.0))
+	book.reset()
+	book.try_cast(3, Vector3.ZERO)
+	await get_tree().physics_frame
+	_player.apply_knockback(blow)
+	var braced := await _drift_of(_player, 0.7)
+	_expect("a hit taken under it carries less", braced.length() < bare.length() * 0.8
+		and bare.length() > 0.5,
+		"%.2fm bare, %.2fm braced" % [bare.length(), braced.length()])
+	_expect("and what it swallowed becomes speed", _player.speed_bonus() > 0.05,
+		"+%.2f m/s on a %.1f m/s walk" % [_player.speed_bonus(), _player.move_speed])
+	for repeat in 6:
+		_player.apply_knockback(blow)
+		await get_tree().physics_frame
+	_expect("and never past its ceiling",
+		_player.speed_bonus() <= momentum.speed_cap + 0.001,
+		"+%.2f m/s, cap %.2f" % [_player.speed_bonus(), momentum.speed_cap])
+	await _wait(momentum.duration + 0.2)
+	_expect("the speed leaves with the buff", _player.speed_bonus() <= 0.001,
+		"+%.2f m/s after it dropped" % _player.speed_bonus())
+
+	print("[loadout] %s (%d failure(s))" % [
+		"ALL PASS" if _touch_failures == 0 else "FAILURES", _touch_failures])
+	get_tree().quit(1 if _touch_failures > 0 else 0)
+
+
+## Arms the player with these three choices and lets a tick pass, so the spellbook the next
+## assertion reads is the one it asked for.
+func _equip(strike: StringName, motion: StringName, guard: StringName) -> void:
+	_picks = catalogue.picks_from_ids(PackedStringArray([
+		String(strike), String(motion), String(guard)]))
+	_arm_fighters(false)
+	await get_tree().physics_frame
+
+
+## One spell out of the catalogue, by id. Fails loudly rather than returning null, because
+## every caller below immediately reads a number off it.
+func _spell(id: StringName) -> Ability:
+	for spell in catalogue.all_spells():
+		if spell.id == id:
+			return spell
+	_expect("the catalogue holds %s" % id, false, "not found")
+	return Ability.new()
+
+
+## How much instability the bot gained over `seconds`.
+func _instability_after(seconds: float) -> float:
+	var before := _instability_of(_bot)
+	await _wait(seconds)
+	return _instability_of(_bot) - before

@@ -113,6 +113,24 @@ var _hitstun := 0.0
 var _shield_factor := 1.0
 var _shield_timer := 0.0
 
+## Extra walking speed earned by taking hits under a converting buff, in m/s, and the two
+## numbers that produced it.
+##
+## Held on the fighter rather than on the buff because it is a property of THIS body: the
+## same spell on a heavier character would pay out the same absorbed metres per second and
+## they would carry it differently. It survives the buff dropping and bleeds off with it -
+## see `_drop_shield`, which is the one place a buff ends.
+var _speed_bonus := 0.0
+var _speed_per_absorbed := 0.0
+var _speed_cap := 0.0
+
+## A rewind in progress: where to put this fighter back, what to put the bar back to, and how
+## long until it happens. Recorded at cast time, so what comes back is the state that was true
+## when the button was pressed and not the state at the moment it resolves.
+var _rewind_timer := 0.0
+var _rewind_position := Vector3.ZERO
+var _rewind_health := 0.0
+
 var _eliminated := false
 
 @onready var _visual: Node3D = $Visual
@@ -149,6 +167,10 @@ func _physics_process(delta: float) -> void:
 		_shield_timer = maxf(0.0, _shield_timer - delta)
 		if _shield_timer == 0.0:
 			_drop_shield()
+	if _rewind_timer > 0.0:
+		_rewind_timer = maxf(0.0, _rewind_timer - delta)
+		if _rewind_timer == 0.0:
+			_finish_rewind()
 
 	_apply_horizontal(wish, delta)
 	# The single place the two accumulators meet. Assigned, never accumulated, so nothing
@@ -166,7 +188,12 @@ func _physics_process(delta: float) -> void:
 ## Drives `_input_velocity` toward the requested direction. Touches only the steering
 ## accumulator - knockback is summed in afterwards, in _physics_process.
 func _apply_horizontal(wish: Vector2, delta: float) -> void:
-	var target := Vector3(wish.x, 0.0, wish.y) * move_speed
+	# One local, read three times below. `move_speed` is the fighter's own top speed and a
+	# converting buff adds to it; reading the export directly in the ramp - as this did before
+	# the buff existed - would accelerate toward a speed the target no longer states, and the
+	# bonus would show up as a longer ramp instead of a faster walk.
+	var top := move_speed + _speed_bonus
+	var target := Vector3(wish.x, 0.0, wish.y) * top
 
 	var authority := 1.0 if is_on_floor() else air_control
 	if _hitstun > 0.0:
@@ -180,7 +207,7 @@ func _apply_horizontal(wish: Vector2, delta: float) -> void:
 	if ramp <= 0.0:
 		_input_velocity = target
 	else:
-		_input_velocity = _input_velocity.move_toward(target, (move_speed / ramp) * delta)
+		_input_velocity = _input_velocity.move_toward(target, (top / ramp) * delta)
 
 
 func _apply_gravity(delta: float) -> void:
@@ -231,6 +258,7 @@ func respawn_at(point: Vector3) -> void:
 	_input_velocity = Vector3.ZERO
 	_knockback = Vector3.ZERO
 	_hitstun = 0.0
+	_rewind_timer = 0.0
 	_drop_shield()
 	global_position = point
 	var inst := instability()
@@ -279,6 +307,7 @@ func apply_knockback(impulse: Vector3) -> void:
 	# whoever is being hit, not to the hit. Hitstun then falls out of the reduced speed for
 	# free, which is the behaviour you want: a hit you shrugged off should not pin you either.
 	var arriving := impulse * _shield_factor
+	_bank_absorbed(impulse, arriving)
 	var flat := Vector3(arriving.x, 0.0, arriving.z)
 	if flat.length() >= Vector3(_knockback.x, 0.0, _knockback.z).length():
 		_knockback = arriving
@@ -290,21 +319,52 @@ func apply_knockback(impulse: Vector3) -> void:
 ## Recasting REPLACES rather than stacks, keeping the stronger of the two - the same rule
 ## knockback itself uses, and for the same reason. Two shields multiplying into near
 ## invulnerability is not a mechanic anybody designed.
-func apply_shield(seconds: float, factor: float) -> void:
+func apply_shield(seconds: float, factor: float,
+		speed_per_absorbed: float = 0.0, speed_cap: float = 0.0) -> void:
 	if _shield_timer > 0.0:
 		_shield_factor = minf(_shield_factor, factor)
 	else:
 		_shield_factor = factor
+		# A fresh buff starts the conversion from nothing. Keeping the bonus across a recast
+		# would let two casts of a 3 m/s buff stack to 6, which is the same "two shields
+		# multiplying into invulnerability" the paragraph above refuses.
+		_speed_bonus = 0.0
+	_speed_per_absorbed = speed_per_absorbed
+	_speed_cap = speed_cap
 	_shield_timer = maxf(_shield_timer, seconds)
 	if _shield_visual != null:
 		_shield_visual.visible = true
 
 
+## Turns the knockback a buff just swallowed into walking speed.
+##
+## Reads the DIFFERENCE between what was thrown and what landed, so it is impossible for this
+## to pay out without the buff actually having reduced something - and a buff with no
+## conversion set simply multiplies by zero. The bonus does not decay on its own; it is what
+## the fighter carries until the buff drops.
+func _bank_absorbed(thrown: Vector3, landed: Vector3) -> void:
+	if _speed_per_absorbed <= 0.0 or _shield_timer <= 0.0:
+		return
+	var absorbed := Vector2(thrown.x, thrown.z).length() - Vector2(landed.x, landed.z).length()
+	if absorbed <= 0.0:
+		return
+	_speed_bonus = minf(_speed_bonus + absorbed * _speed_per_absorbed, _speed_cap)
+
+
 func _drop_shield() -> void:
 	_shield_timer = 0.0
 	_shield_factor = 1.0
+	_speed_bonus = 0.0
+	_speed_per_absorbed = 0.0
+	_speed_cap = 0.0
 	if _shield_visual != null:
 		_shield_visual.visible = false
+
+
+## Extra walking speed currently earned, in m/s. For the HUD, the harness, and a bot deciding
+## whether the buff it is holding has paid for itself.
+func speed_bonus() -> float:
+	return _speed_bonus
 
 
 ## True while a shield is up. For the HUD, for tests, and for a bot deciding whether the hit
@@ -325,6 +385,38 @@ func blink_to(point: Vector3) -> void:
 	velocity = Vector3.ZERO
 	_input_velocity = Vector3.ZERO
 	_knockback = Vector3.ZERO
+
+
+## Starts a rewind: `seconds` from now this fighter returns to where it is standing and to
+## the health it has right now.
+##
+## Recording at CAST time and not at resolve time is the spell. The player presses it, keeps
+## fighting - or keeps running - and gets pulled back to the moment they pressed it, which is
+## what makes it a decision made in advance rather than an escape pressed after the fact.
+##
+## Instability is not recorded and not restored. What the round has taken out of you stays
+## taken; see `Ability.rewind`.
+func begin_rewind(seconds: float) -> void:
+	_rewind_position = global_position
+	var hp := health()
+	_rewind_health = hp.current if hp != null else 0.0
+	_rewind_timer = maxf(seconds, 0.0)
+
+
+func _finish_rewind() -> void:
+	var hp := health()
+	if hp != null:
+		hp.restore_to(_rewind_health)
+	# Through blink_to, so a rewind lands under the same rule a dash does: momentum cleared,
+	# hitstun kept. A second way of moving a body without touching its velocity is a second
+	# place for a fighter to arrive somewhere still carrying the slide that put them there.
+	blink_to(_rewind_position)
+
+
+## True while a rewind is pending. For the HUD, the harness, and a bot that should not spend
+## a second escape on top of one already in flight.
+func is_rewinding() -> bool:
+	return _rewind_timer > 0.0
 
 
 ## The fighter's instant-spell flash, or null. The level plays it, because the fighter has no
@@ -383,6 +475,10 @@ func eliminate() -> void:
 	_input_velocity = Vector3.ZERO
 	_knockback = Vector3.ZERO
 	_hitstun = 0.0
+	# A pending rewind would otherwise resolve on a body that is out of the round - and since
+	# physics processing stops here, it would resolve on the NEXT round instead, teleporting a
+	# fighter to where they died in the last one.
+	_rewind_timer = 0.0
 	visible = false
 	set_physics_process(false)
 	# Stop being a valid target while out. Deferred because this can be reached from inside

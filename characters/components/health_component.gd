@@ -67,6 +67,21 @@ func damage(amount: float) -> void:
 		emptied.emit()
 
 
+## Puts the bar back to a value it held earlier, for a spell that rewinds its caster.
+##
+## Deliberately not `damage(-n)`: healing and un-doing are different claims. Nothing in this
+## game heals - stone does not mend a burn, and a Fireball taken stays taken - but one spell
+## restores the reading a fighter had a few seconds ago, and it has to be able to say so
+## without opening a door that lets any negative number through `damage()`.
+##
+## Clamped to the maximum, so a rewind taken while full cannot bank spare health.
+func restore_to(value: float) -> void:
+	var previous := current
+	current = clampf(value, 0.0, maximum)
+	if current != previous:
+		changed.emit(current, previous)
+
+
 func fraction() -> float:
 	return current / maxf(maximum, 0.001)
 
