@@ -518,9 +518,31 @@ Two details are worth keeping:
   drawing therefore serves a 72px button and a 32px "always with you" row, and a resized button
   cannot leave its icon behind. Only the line width is in pixels, deliberately: a hairline
   scaled down disappears.
+- **`Node3D.scale = …` keeps the rotation.** A pooled projectile relaunched as a different
+  shape came back still lying at the previous shape's angle, and only for the shapes that do
+  not re-aim themselves every tick — visible in about one screenshot in ten. Assign the whole
+  basis when a reused node must start clean.
 - **`draw_colored_polygon` triangulates without checking.** A concave outline comes out with
   chunks missing rather than with an error, which is why the flame is two convex shapes stacked
   rather than one honest fire silhouette.
+
+**In the air, shape carries the identity too.** `Ability.bolt` picks one of five meshes built
+once and shared by every projectile that ever flies with it: an `ORB` (Fireball), a `SHARD`
+(Arc Lance), a `DART` (Seeker), a spinning `BLADE` (Loopshot) and a flat `RING` (Warp Bolt).
+`--bolt-pose` fires all five down parallel lanes so one screenshot compares them.
+
+Three rules hold it together:
+
+- **The hitbox is ALWAYS a sphere of `projectile_radius`, whatever is drawn.** What a spell
+  catches you with has to be the thing you learned from Fireball; a per-shape collider would
+  make "did that graze me?" a different question for every spell.
+- **A shape may stretch only ALONG the flight.** Its cross-section matches the sphere, so a
+  drawing can never be wider than what hits — the length reads as speed, and nobody judges the
+  exact extent of something crossing at 30 m/s.
+- **Only the MESH is turned, never the Area3D.** Rotating the node would rotate the collider
+  with it, which changes nothing today and is a subtle bug waiting for the day the collider
+  stops being a sphere. `ORB` and `RING` are not aimed at all — a ball has no direction, and a
+  hoop stood across the flight path is a vertical sliver from this camera's angle.
 
 **Seven spells were added in one session and no cast type was.** Four ride on existing runtimes
 with nothing but different numbers; three added a field to `Ability` and a handful of lines
@@ -1018,6 +1040,7 @@ argument-gated harness. Everything after a bare `--` reaches `OS.get_cmdline_use
 | `--lava-test` | Asserts the lava burns, stone only stops it, a Fireball drains health directly, a dunk is survivable, you can climb back, and burning out ends the round |
 | `--shrink-test` | Asserts the ring holds through the grace, closes at its rate, stops at the floor, and drags the lava rule, the bot, the camera and the cover with it |
 | `--burn-pose` | Parks the player in the lava, so a delayed shot catches the burn bar part-way down |
+| `--bolt-pose` | Fires every projectile spell down parallel lanes, over and over, so one delayed shot compares all five flight shapes from the same angle |
 | `--loadout-test` | Asserts the catalogue, the picks, the screen end to end, and each added spell's own rule |
 | `--loadout:on` | Opens the spell-picking screen even though other harness args were given, for a screenshot of it |
 | `--loadout:off` | Skips it. This is the default whenever ANY user arg is passed |

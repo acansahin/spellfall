@@ -61,6 +61,24 @@ enum Glyph {
 	SURGE,
 }
 
+## What a projectile LOOKS like in flight. The icon says which spell it is before you cast it;
+## this says which spell is coming at you while it is in the air.
+##
+## Named for the form and not for the spell, like `Glyph` above, and for the same reason.
+## Drawn by `Projectile`; every shape but ORB is oriented along the direction of travel.
+enum Bolt {
+	## A ball. Fireball, and the default for anything that has not thought about it.
+	ORB,
+	## A long thin spike along the line of flight. Arc Lance.
+	SHARD,
+	## A cone with its point forward. Seeker.
+	DART,
+	## A flat bar, spinning as it goes. Loopshot.
+	BLADE,
+	## A hoop, lying flat. Warp Bolt.
+	RING,
+}
+
 @export_group("Identity")
 ## Stable key used in code and save data. Never shown to a player.
 @export var id: StringName = &""
@@ -108,8 +126,16 @@ enum Glyph {
 @export_group("Projectile")
 ## Metres per second.
 @export var projectile_speed: float = 18.0
-## Collision radius, in metres. Also the drawn size.
+## Collision radius, in metres, and the size the drawing is scaled to.
+##
+## The HITBOX IS ALWAYS A SPHERE of this radius, whatever shape is drawn. A lance that is
+## drawn a metre long is still caught by a ball a tenth of that: what a spell hits has to be
+## the thing the player learned from Fireball, and a per-shape collider would make "did that
+## graze me?" a different question for every spell in the game.
 @export var projectile_radius: float = 0.35
+
+## Which shape is drawn in flight. See `Bolt`.
+@export var bolt: Bolt = Bolt.ORB
 ## Seconds before it expires on its own. Combined with speed this is the real range:
 ## 18 m/s for 1.2s reaches 21.6m, comfortably across a 14m arena.
 @export var lifetime: float = 1.2

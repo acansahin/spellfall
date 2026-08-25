@@ -245,6 +245,11 @@ bolt, a spiral, a boomerang, a hop, three chevrons, two swapping arrows, a shiel
 surge. All eleven are drawn in code and all eleven are placeholder, like everything else here.
 Colour alone carried four spells and stopped carrying eleven.
 
+In flight they differ too: Fireball is a ball, Arc Lance a long spike, Seeker a dart with its
+point forward, Loopshot a flat bar spinning as it goes, and Warp Bolt a hoop lying flat. What a
+spell HITS with is still the same sphere for all five — the shape is what it looks like, never
+what it catches you with.
+
 **The bot brings a random loadout every match.** Not for difficulty: it is the cheapest way to
 make sure a spell you never chose is still a spell you have had used against you.
 

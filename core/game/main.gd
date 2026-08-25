@@ -34,6 +34,8 @@ extends Node3D
 ##   --lava-test       assert the lava burns, stone stops it, ends a round, and is survivable
 ##   --shrink-test     assert the ring holds, closes, stops, drags cover and camera with it
 ##   --burn-pose       park the player in the lava, so a shot catches the bar draining
+##   --bolt-pose       fan every projectile spell out from the centre, again and again, so a
+##                     delayed --shot photographs all five shapes at once
 ##   --cover-test      assert the obstacles block spells, block walking, and are fair
 ##                     (every OTHER suite clears the obstacles first - see _clear_cover)
 ##   --feel-test       assert hitstop, shake, sparks, sound and the dash streak all fire
@@ -298,6 +300,8 @@ func _parse_harness_args() -> void:
 			_run_shrink_tests()
 		elif arg == "--burn-pose":
 			_burn_pose()
+		elif arg == "--bolt-pose":
+			_bolt_pose()
 		elif arg.begins_with("--aim-hold:"):
 			# "--aim-hold:0,1,0" aims spell 0 to screen-right. Eleven characters in the
 			# prefix, counted rather than guessed - see ARCHITECTURE.md on --cast-at.
@@ -2421,6 +2425,45 @@ func _run_aim_tests() -> void:
 ## The bar only exists while someone is on fire, which makes it the one piece of the game that
 ## cannot be photographed by simply starting a round - the same reason the reference project
 ## grew a pose flag for its flying creep and another for its bosses.
+## Fans every PROJECTILE spell in the catalogue out from the middle of an empty arena, over and
+## over, so a `--shot:N` at any moment catches all five shapes in flight together.
+##
+## Fired straight into the pool rather than through a spellbook. A wizard holds four spells and
+## only some of them are projectiles, so casting these properly would mean re-arming between
+## every shot and photographing them one at a time - and what has to be checked here is exactly
+## that they look DIFFERENT FROM EACH OTHER, which needs them in one frame.
+##
+## Re-fired on a loop like `--burn-pose` holds its burn: the shapes are only visible while they
+## are in the air, and the shortest of them lives half a second.
+func _bolt_pose() -> void:
+	await _settle()
+	_quiet_feel()
+	_clear_cover()
+	_freeze_arena()
+	_freeze_bot()
+	if catalogue == null:
+		return
+	var bolts: Array[Ability] = []
+	for spell in catalogue.all_spells():
+		if spell.cast_type == Ability.CastType.PROJECTILE:
+			bolts.append(spell)
+	print("[harness] bolt pose: %d projectile spells" % bolts.size())
+	await _wait_for_live()
+	while is_inside_tree():
+		# Parked well off to the side. The caster is a live body and a spell fired past its nose
+		# still shoves it, which would walk the next volley somewhere else.
+		_player.respawn_at(Vector3(0.0, 1.2, 9.0))
+		_bot.respawn_at(Vector3(0.0, 1.2, 40.0))
+		# PARALLEL LANES, not a fan. Every shape leaves along +X and is therefore seen from the
+		# same angle, so what the photograph compares is the shapes and not the foreshortening -
+		# a fan had a cone flying away from the camera next to a bar flying across it, and the
+		# two were not comparable at all.
+		for index in bolts.size():
+			var lane := Vector3(-8.0, 1.2, -4.0 + 2.0 * float(index))
+			_pool.fire(bolts[index], lane, Vector3.RIGHT, _player)
+		await _wait(1.2)
+
+
 func _burn_pose() -> void:
 	await _wait_for_live()
 	_freeze_bot()
@@ -3062,6 +3105,20 @@ func _run_loadout_tests() -> void:
 		"%d shapes for %d spells" % [shapes.size(), all.size()])
 	_expect("and every one of them is a shape that exists", stray == 0,
 		"%d glyphs outside the enum" % stray)
+
+	# The same argument one layer further in: an icon tells them apart before the cast, and the
+	# bolt has to tell them apart while it is in the air. Only the spells that actually fly are
+	# checked - `bolt` means nothing on a cone, a dash or a buff, and they all sit at the
+	# default, which is not a clash.
+	var hurled: Array[Ability] = []
+	var bolts := {}
+	for spell in all:
+		if spell.cast_type != Ability.CastType.PROJECTILE:
+			continue
+		hurled.append(spell)
+		bolts[spell.bolt] = true
+	_expect("every projectile flies as a different shape", bolts.size() == hurled.size(),
+		"%d shapes for %d projectile spells" % [bolts.size(), hurled.size()])
 	_expect("the primary is Fireball", catalogue.primary != null
 		and catalogue.primary.id == &"fireball", "primary=%s" % catalogue.primary)
 	var primary_in_column := false

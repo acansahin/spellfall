@@ -17,6 +17,7 @@ health_damage = 16.0
 knockback = 5.0
 projectile_speed = 30.0
 projectile_radius = 0.22
+bolt = 1
 lifetime = 0.5
 spawn_offset = 0.9
 projectile_drag = 1.0

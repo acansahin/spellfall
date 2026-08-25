@@ -563,6 +563,16 @@ a loadout screen, and it is the shape this session built.
 - [x] Fix: the flame drawn as one shape read as a WATER droplet at button size. Two convex
       shapes stacked - concave is the honest silhouette and `draw_colored_polygon`
       triangulates it wrong without complaining
+- [x] Five flight shapes: `Ability.Bolt` - orb, shard, dart, spinning blade, flat ring. One
+      shared mesh per shape, sized by the node so `projectile_radius` is the only number that
+      decides how big a spell looks. Hitbox stays a sphere for all five
+- [x] Projectile emission 2.2 -> 1.15. At 2.2 every tint blew toward white, which was survivable
+      while all five were identical spheres and is a straight loss now that shape carries the
+      identity
+- [x] `--bolt-pose`: all five down parallel lanes, so one shot compares them from one angle
+- [x] Fix: `Node3D.scale =` keeps the rotation, so a pooled projectile relaunched as a hoop kept
+      the shard's angle from its last flight
+- [x] Fix: a ring stood across the flight path is a vertical sliver from this camera. Laid flat
 - [x] Sixteen suites green
 
 ### Still open
