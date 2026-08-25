@@ -8,6 +8,7 @@ id = &"arc_lance"
 display_name = "Arc Lance"
 blurb = "Crosses the ring in a blink. Barely pushes."
 colour = Color(1, 0.945098, 0.552941, 1)
+glyph = 2
 cast_type = 0
 cooldown = 3.1
 charges = 1

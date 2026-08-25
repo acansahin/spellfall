@@ -44,7 +44,8 @@ res://
   ui/
     hud/           hud.gd/.tscn - instability, round number, score, banner
     mobile_controls/ touch_stick, ability_button (press-drag-lift to aim), mobile_controls
-    loadout/       loadout_screen.gd/.tscn - the spell picker, built from the catalogue
+    loadout/       loadout_screen.gd/.tscn - the spell picker, built from the catalogue;
+                   spell_icon.gd - a glyph as a laid-out rectangle
   systems/
     round/         round_manager.gd - countdown, elimination, score, reset
     feel/          game_feel.gd - hitstop, shake, sparks, sound and haptics, in one place
@@ -53,7 +54,8 @@ res://
     spawn/         (planned)
   data/            abilities/*.tres (eleven spells), spell_catalogue.tres, knockback_rules.tres
   network/         (planned) Phase C onward
-  vfx/             ground_shapes.gd - flat meshes; spell_flash.gd - the fan Force Wave
+  vfx/             spell_glyph.gd - the eleven icons, as vector shapes in a unit box;
+                   ground_shapes.gd - flat meshes; spell_flash.gd - the fan Force Wave
                    draws; aim_indicator.gd - what a spell will do, before it does it;
                    impact_burst.gd - sparks; ground_streak.gd - the smear a Blink leaves
   audio/           sound_bank.gd - every sound, synthesized. There are no audio files
@@ -501,6 +503,24 @@ one runtime, in `main.gd`, at the seam where a cast request becomes something in
 | Arcane Shield | `BUFF` | `_cast_buff` → `Player.apply_shield` | a multiplier on incoming knockback, not a block |
 | Momentum | `BUFF` | the same | `speed_per_absorbed` — what the ward swallowed is paid back as walking speed |
 | Rewind | `BUFF` | `_cast_buff` → `Player.begin_rewind` | position and health recorded at CAST time, restored at resolve time |
+
+**Eleven spells need eleven SHAPES, not eleven tints.** `Ability.glyph` picks one of
+`SpellGlyph`'s vector icons, drawn straight into the spell button and into each menu row.
+Four spells were four tinted discs and that read; eleven are eleven tinted discs, three of them
+some shade of blue, under a thumb, mid-fight. The shapes are named for what they look like
+(`FLAME`, `FAN`, `BOLT`, …) rather than for the spell that uses one, so a twelfth spell reaches
+for the closest fit before anybody draws a new one — and `--loadout-test` asserts that no two
+spells in the roster share a shape.
+
+Two details are worth keeping:
+
+- **Every glyph is authored in a UNIT BOX**, -1..1 with y down, and scaled at draw time. One
+  drawing therefore serves a 72px button and a 32px "always with you" row, and a resized button
+  cannot leave its icon behind. Only the line width is in pixels, deliberately: a hairline
+  scaled down disappears.
+- **`draw_colored_polygon` triangulates without checking.** A concave outline comes out with
+  chunks missing rather than with an error, which is why the flame is two convex shapes stacked
+  rather than one honest fire silhouette.
 
 **Seven spells were added in one session and no cast type was.** Four ride on existing runtimes
 with nothing but different numbers; three added a field to `Ability` and a handful of lines

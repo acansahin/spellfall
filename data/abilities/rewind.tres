@@ -8,6 +8,7 @@ id = &"rewind"
 display_name = "Rewind"
 blurb = "Puts you back where you were, burn and all."
 colour = Color(0.921569, 0.858824, 0.619608, 1)
+glyph = 9
 cast_type = 3
 cooldown = 7.0
 charges = 1

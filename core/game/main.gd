@@ -3047,6 +3047,21 @@ func _run_loadout_tests() -> void:
 		"%d ids for %d spells" % [ids.size(), all.size()])
 	_expect("every spell is named and described", blank == 0,
 		"%d missing a name or a blurb" % blank)
+
+	# Colour stopped being enough at eleven spells - three of them are some shade of blue - so
+	# the SHAPE is what has to be unique. Asserted across the whole roster and not merely within
+	# a column: the four buttons on screen come from four different columns, and two identical
+	# glyphs sitting side by side there is exactly the confusion this is meant to prevent.
+	var shapes := {}
+	var stray := 0
+	for spell in all:
+		shapes[spell.glyph] = true
+		if spell.glyph < 0 or spell.glyph >= Ability.Glyph.size():
+			stray += 1
+	_expect("every spell draws a different glyph", shapes.size() == all.size(),
+		"%d shapes for %d spells" % [shapes.size(), all.size()])
+	_expect("and every one of them is a shape that exists", stray == 0,
+		"%d glyphs outside the enum" % stray)
 	_expect("the primary is Fireball", catalogue.primary != null
 		and catalogue.primary.id == &"fireball", "primary=%s" % catalogue.primary)
 	var primary_in_column := false

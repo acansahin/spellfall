@@ -8,6 +8,7 @@ id = &"warp_bolt"
 display_name = "Warp Bolt"
 blurb = "Trades places with whoever it hits."
 colour = Color(0.450980, 0.549020, 1, 1)
+glyph = 7
 cast_type = 0
 cooldown = 5.0
 charges = 1

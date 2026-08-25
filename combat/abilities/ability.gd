@@ -32,6 +32,35 @@ enum CastType {
 	BUFF,
 }
 
+## The little drawing on the spell button, so eleven spells are eleven SHAPES and not eleven
+## tints. Named for what each looks like rather than for the spell that uses it - two spells
+## may share one, and a new spell should reach for the closest fit before anybody draws a
+## twelfth. `SpellGlyph` in `vfx/` is where they are actually drawn.
+enum Glyph {
+	## A teardrop. Fireball.
+	FLAME,
+	## Arcs spreading from a point. Force Wave.
+	FAN,
+	## A lightning zigzag. Arc Lance.
+	BOLT,
+	## A curl tightening inward, with a head. Seeker.
+	SPIRAL,
+	## A bent, thrown thing. Loopshot.
+	BOOMERANG,
+	## Two feet and a dashed hop. Blink.
+	JUMP,
+	## Three forward chevrons. Lunge.
+	CHEVRON,
+	## Two arrows passing each other. Warp Bolt.
+	SWAP,
+	## A heraldic shield. Arcane Shield.
+	SHIELD,
+	## A clock with its hands set back. Rewind.
+	CLOCK,
+	## A wall, and lines leaving it faster. Momentum.
+	SURGE,
+}
+
 @export_group("Identity")
 ## Stable key used in code and save data. Never shown to a player.
 @export var id: StringName = &""
@@ -48,6 +77,13 @@ enum CastType {
 ## Placeholder tint until real art exists - the button and the projectile both read it, so a
 ## spell is recognisable by colour alone while everything is untextured primitives.
 @export var colour: Color = Color(1, 1, 1)
+
+## Which shape the button and the menu draw for this spell.
+##
+## Sits beside `colour` because it is the same kind of fact and answers the same question -
+## "which spell is this?" - and because colour on its own stopped answering it at eleven
+## spells, three of which are some shade of blue.
+@export var glyph: Glyph = Glyph.FLAME
 
 @export_group("Casting")
 @export var cast_type: CastType = CastType.PROJECTILE

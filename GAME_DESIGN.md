@@ -240,6 +240,11 @@ The intended tension is unchanged and now has three shapes instead of one: somet
 instability from range, something converts it into a kill but costs you position, something
 moves you, and something is a read — spend it early and it is gone when the real hit lands.
 
+Each spell has its own **shape** on the button, not just its own colour — a flame, a fan, a
+bolt, a spiral, a boomerang, a hop, three chevrons, two swapping arrows, a shield, a clock, a
+surge. All eleven are drawn in code and all eleven are placeholder, like everything else here.
+Colour alone carried four spells and stopped carrying eleven.
+
 **The bot brings a random loadout every match.** Not for difficulty: it is the cheapest way to
 make sure a spell you never chose is still a spell you have had used against you.
 

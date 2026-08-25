@@ -34,6 +34,10 @@ const IDLE_FILL := Color(1, 1, 1, 0.06)
 const IDLE_EDGE := Color(1, 1, 1, 0.16)
 const DIM_TEXT := Color(0.72, 0.72, 0.80)
 
+## Side of the square each option's glyph sits in. Matched to the two lines of text beside it,
+## so the icon reads as the row's own mark rather than as a picture stuck next to one.
+const ICON_SIDE := 46.0
+
 var _catalogue: SpellCatalogue = null
 var _picks := PackedInt32Array()
 
@@ -105,7 +109,9 @@ func _build() -> void:
 	root.add_child(page)
 
 	page.add_child(_heading("CHOOSE YOUR SPELLS", 30, Color(1, 0.93, 0.72)))
-	page.add_child(_heading("Fireball is always with you. Pick one from each column.", 16, DIM_TEXT))
+	page.add_child(_heading("Pick one from each column.", 16, DIM_TEXT))
+	if _catalogue.primary != null:
+		page.add_child(_build_fixed(_catalogue.primary))
 
 	var row := HBoxContainer.new()
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -124,6 +130,35 @@ func _build() -> void:
 	start.add_theme_font_size_override("font_size", 24)
 	start.pressed.connect(_on_start)
 	page.add_child(start)
+
+
+## The spell nobody chooses, shown anyway.
+##
+## It is the one thing on this screen that is not a decision, and leaving it off made the screen
+## say the player carries three spells. It also puts Fireball's own glyph in front of them once,
+## which is otherwise the only icon in the game they meet for the first time mid-fight.
+##
+## Drawn deliberately unlike an option: no border, dimmer, centred, and it claims no input.
+func _build_fixed(spell: Ability) -> Control:
+	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 10)
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	var icon := SpellIcon.new()
+	icon.ability = spell
+	icon.custom_minimum_size = Vector2.ONE * (ICON_SIDE * 0.7)
+	icon.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	row.add_child(icon)
+
+	var label := Label.new()
+	label.text = "%s — always with you" % spell.display_name
+	label.add_theme_font_size_override("font_size", 15)
+	label.add_theme_color_override("font_color", spell.colour)
+	label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(label)
+	return row
 
 
 func _heading(text: String, font_size: int, tint: Color) -> Label:
@@ -165,10 +200,22 @@ func _build_option(spell: Ability, column_index: int, choice: int) -> PanelConta
 	# after a column is reordered.
 	panel.gui_input.connect(_on_option_input.bind(column_index, choice))
 
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 12)
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	panel.add_child(row)
+
+	var icon := SpellIcon.new()
+	icon.ability = spell
+	icon.custom_minimum_size = Vector2.ONE * ICON_SIDE
+	icon.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	row.add_child(icon)
+
 	var lines := VBoxContainer.new()
 	lines.add_theme_constant_override("separation", 2)
+	lines.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	lines.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	panel.add_child(lines)
+	row.add_child(lines)
 
 	var title := HBoxContainer.new()
 	title.mouse_filter = Control.MOUSE_FILTER_IGNORE

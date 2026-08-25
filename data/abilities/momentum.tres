@@ -8,6 +8,7 @@ id = &"momentum"
 display_name = "Momentum"
 blurb = "Half of every hit becomes walking speed."
 colour = Color(1, 0.549020, 0.549020, 1)
+glyph = 10
 cast_type = 3
 cooldown = 6.5
 charges = 1

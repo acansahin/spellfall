@@ -554,6 +554,15 @@ a loadout screen, and it is the shape this session built.
       still played the loadout it was told to forget
 - [x] GAME_DESIGN.md's Originality section rewritten - spell DESIGNS now come from the map;
       names, art, sound, text, UI and numbers still do not
+- [x] An icon per spell: `Ability.Glyph` + `vfx/spell_glyph.gd`, eleven vector shapes drawn
+      in a unit box and scaled at draw time. On the spell buttons and on every menu row, and
+      Fireball shown once on the menu as the spell you do not choose
+- [x] `--loadout-test` asserts no two spells in the roster share a shape
+- [x] Fix: the spell button only redrew when its cooldown moved, so applying a loadout to the
+      same AbilityComponent left the previous spell's glyph on the button until the next cast
+- [x] Fix: the flame drawn as one shape read as a WATER droplet at button size. Two convex
+      shapes stacked - concave is the honest silhouette and `draw_colored_polygon`
+      triangulates it wrong without complaining
 - [x] Sixteen suites green
 
 ### Still open

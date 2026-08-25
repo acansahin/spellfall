@@ -57,6 +57,10 @@ signal cast_released(slot: int)
 ## without looking away from their wizard.
 @export var aim_nub := Color(1, 1, 1, 0.85)
 
+## How much of the button's radius the spell's glyph takes up. Small enough that the cooldown
+## wedge sweeping over it still reads, large enough to tell apart under a thumb.
+@export_range(0.2, 0.9, 0.01) var glyph_scale := 0.52
+
 ## Read-only view of the caster's spellbook, assigned by the level. Null is fine - the
 ## button then draws itself as an empty slot rather than crashing.
 var source: AbilityComponent = null:
@@ -77,6 +81,12 @@ var _drag := Vector2.ZERO
 var _centre := Vector2.ZERO
 var _last_fraction := -1.0
 
+## The spell this button drew last time. Watched because a loadout can be applied to the SAME
+## AbilityComponent - the `source` setter never fires - and the button only redraws when its
+## cooldown moves. Without this it keeps showing the previous spell's glyph until the player
+## casts something, which reads as a button that did not take the choice they just made.
+var _last_ability: Ability = null
+
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -95,8 +105,10 @@ func _process(_delta: float) -> void:
 	# Redraw only when the sweep actually moves. A radial cooldown redrawn every frame for
 	# no reason is exactly the kind of idle cost a mid-range phone cannot spare.
 	var f := _fraction()
-	if not is_equal_approx(f, _last_fraction):
+	var showing := source.ability_in(slot) if source != null else null
+	if not is_equal_approx(f, _last_fraction) or showing != _last_ability:
 		_last_fraction = f
+		_last_ability = showing
 		queue_redraw()
 
 
@@ -189,6 +201,13 @@ func _draw() -> void:
 	if _touch_index != -1:
 		draw_circle(_centre, radius, press_flash)
 	draw_arc(_centre, radius, 0.0, TAU, 40, idle_ring, 3.0, true)
+
+	# Before the wedge, deliberately: a recharging spell should have its own icon greyed out
+	# by the veil rather than sitting bright on top of it, so "not yet" is one reading and not
+	# two. Lifted well clear of the disc's own 30% tint, or the shape disappears into it.
+	if ability != null:
+		SpellGlyph.draw_into(self, ability.glyph, _centre, radius * glyph_scale,
+			tint.lightened(0.35), maxf(radius * 0.055, 2.5))
 
 	var fraction := _fraction()
 	if fraction > 0.0:

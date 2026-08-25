@@ -8,6 +8,7 @@ id = &"arcane_shield"
 display_name = "Arcane Shield"
 blurb = "Most of the next hit does not land."
 colour = Color(0.6, 1, 0.847059, 1)
+glyph = 8
 cast_type = 3
 cooldown = 8.0
 charges = 1
