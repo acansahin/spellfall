@@ -259,6 +259,23 @@ point forward, Loopshot a flat bar spinning as it goes, and Warp Bolt a hoop lyi
 spell HITS with is still the same sphere for all five — the shape is what it looks like, never
 what it catches you with.
 
+## Two a side
+
+The loadout screen offers **1v1** or **2v2**, and 2v2 gives you a bot ally against two bots. The
+ring, the lava, the shrink clock and every spell are the same; what changes is that a round ends
+when a SIDE is gone rather than when one wizard is, and the score is kept by side.
+
+**Friendly fire is off, and off means your ally is not in the way at all** — spells pass
+through them and reach whoever is standing behind. The alternative was tried on paper and
+rejected for this phase: a bot ally will shove you into the lava by accident, and Phase 1 is
+trying to answer "is the combat fun", where that is noise rather than signal. It is one field
+away from being switched on when there are humans on the other end of it.
+
+Sides are read by colour: **cool is a friend, warm is a foe.** You are blue and your ally teal;
+the opposition is pink and orange. The ally was briefly cyan, which is more obviously "your
+colour" and made the screenshot come back with two blue wizards and no way to tell which was
+you — reading your side matters, and finding yourself matters more.
+
 **The bot brings a random loadout every match.** Not for difficulty: it is the cheapest way to
 make sure a spell you never chose is still a spell you have had used against you.
 

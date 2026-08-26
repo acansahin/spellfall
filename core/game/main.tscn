@@ -32,6 +32,7 @@ tonemap_mode = 2
 script = ExtResource("1_main")
 knockback_rules = ExtResource("10_rules")
 catalogue = ExtResource("19_catalogue")
+bot_scene = ExtResource("9_bot")
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="."]
 environment = SubResource("Environment_main")

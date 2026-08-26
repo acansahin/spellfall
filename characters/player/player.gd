@@ -78,6 +78,16 @@ extends CharacterBody3D
 ## terrible; this leaves enough to angle a recovery without cancelling the hit.
 @export_range(0.0, 1.0, 0.05) var hitstun_control := 0.2
 
+## Which side this fighter is on. Everyone is on their own side in a 1v1, where the numbers
+## are simply 0 and 1 and nothing ever compares them.
+##
+## An int on the FIGHTER rather than a physics layer per team, which was the other candidate.
+## A layer would let the engine filter allies for free - and would break the one thing every
+## query in this project relies on: that "players" is one layer. `KillZone` masks it, `ConeCast`
+## masks it, a seeker's look-ahead masks it. Four of those would have to learn about teams to
+## save one comparison.
+@export var team: int = 0
+
 ## Set by the level once, so the character does not reach out and find its own input.
 var input_controller: PlayerInputController = null
 
@@ -288,6 +298,20 @@ func _service_casting() -> void:
 		return
 	# A zero aim means "no direction given"; AbilityComponent falls back to facing.
 	_abilities.try_cast(slot, aim)
+
+
+## True if `other` fights on the same side. False for null, and false for THIS fighter - you
+## are not your own ally, which is what lets a caster be excluded by one rule instead of two.
+##
+## Asked at hit time by the level, by the cone and by a projectile deciding whether to stop.
+## Friendly fire is off, so an ally is not merely unhurt: a spell passes through them as if
+## they were not standing there. Anything less makes a teammate into cover, and a teammate you
+## have to walk around is worse than no teammate at all.
+func is_ally_of(other: Node3D) -> bool:
+	var them := other as Player
+	if them == null or them == self:
+		return false
+	return them.team == team
 
 
 ## The wizard's spellbook, or null. Exposed so the level can wire casts to the projectile

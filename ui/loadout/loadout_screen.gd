@@ -17,8 +17,13 @@ extends CanvasLayer
 ## Sizes are canvas units against the 1280x720 design resolution, like every other UI value in
 ## this project - see mobile_controls.gd on why they are not fractions of the viewport.
 
-## The player is done choosing. `picks[i]` is the chosen index within `columns[i]`.
-signal confirmed(picks: PackedInt32Array)
+## The player is done choosing. `picks[i]` is the chosen index within `columns[i]`, and
+## `team_match` says whether they want two a side.
+##
+## The mode rides on the same signal rather than getting its own, because it is answered by the
+## same press: there is exactly one moment the player is finished with this screen, and two
+## signals would let a level act on half an answer.
+signal confirmed(picks: PackedInt32Array, team_match: bool)
 
 ## Height of one option's tap target. Comfortably past the ~48dp minimum a thumb wants, and
 ## sized so the longest column - four options - still leaves room for the title and the button
@@ -34,12 +39,23 @@ const IDLE_FILL := Color(1, 1, 1, 0.06)
 const IDLE_EDGE := Color(1, 1, 1, 0.16)
 const DIM_TEXT := Color(0.72, 0.72, 0.80)
 
+## The mode row has no spell to take a colour from, so it gets its own. Deliberately not one
+## of the eleven spell tints - it is a different KIND of choice and should not read as a
+## twelfth spell sitting under the columns.
+const MODE_TINT := Color(1.0, 0.86, 0.45)
+
 ## Side of the square each option's glyph sits in. Matched to the two lines of text beside it,
 ## so the icon reads as the row's own mark rather than as a picture stuck next to one.
 const ICON_SIDE := 46.0
 
 var _catalogue: SpellCatalogue = null
 var _picks := PackedInt32Array()
+
+## Two a side. Held here while the screen is open, and reported once on confirm.
+var _team_match := false
+
+## The two mode panels, so picking one can restyle both.
+var _mode_panels: Array = []
 
 ## The option panels, per column, so a selection can restyle its own row without rebuilding
 ## the screen. Parallel to `_catalogue.columns`.
@@ -60,8 +76,10 @@ func _ready() -> void:
 ## Building here and not in `_ready()` because the catalogue arrives from the level - the same
 ## hand-it-its-dependencies rule the stick, the bot and the HUD already follow. A screen that
 ## loaded its own catalogue would be a second place the roster is named.
-func open(catalogue: SpellCatalogue, picks: PackedInt32Array) -> void:
+func open(catalogue: SpellCatalogue, picks: PackedInt32Array,
+		team_match: bool = false) -> void:
 	_catalogue = catalogue
+	_team_match = team_match
 	_picks = picks.duplicate()
 	while _picks.size() < catalogue.columns.size():
 		_picks.append(0)
@@ -104,7 +122,10 @@ func _build() -> void:
 	page.offset_right = -40.0
 	page.offset_top = 24.0
 	page.offset_bottom = -24.0
-	page.add_theme_constant_override("separation", 14)
+	# Six children now that the mode row exists, and at 14 the FIGHT button touched the bottom
+	# margin. Counted rather than eyeballed: title, subtitle, the fixed spell, the columns, the
+	# modes, the button.
+	page.add_theme_constant_override("separation", 10)
 	page.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(page)
 
@@ -122,6 +143,8 @@ func _build() -> void:
 
 	for index in _catalogue.columns.size():
 		row.add_child(_build_column(index))
+
+	page.add_child(_build_mode_row())
 
 	var start := Button.new()
 	start.text = "FIGHT"
@@ -159,6 +182,67 @@ func _build_fixed(spell: Ability) -> Control:
 	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	row.add_child(label)
 	return row
+
+
+## The two modes, as a pair of the same panels the spells use.
+##
+## Below the columns and above FIGHT, which is where it belongs in the reading order: you pick
+## what you are carrying, then who you are carrying it against, then you go. Put above the
+## columns it read as the more important choice, and it is not.
+func _build_mode_row() -> Control:
+	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 14)
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_mode_panels.clear()
+	_mode_panels.append(_build_mode(row, false, "1 v 1", "You against one bot."))
+	_mode_panels.append(_build_mode(row, true, "2 v 2", "You and a bot ally, against two."))
+	_restyle_modes()
+	return row
+
+
+func _build_mode(row: HBoxContainer, team_match: bool, title: String,
+		note: String) -> PanelContainer:
+	var panel := PanelContainer.new()
+	panel.custom_minimum_size = Vector2(268.0, 50.0)
+	panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	panel.gui_input.connect(_on_mode_input.bind(team_match))
+
+	var lines := VBoxContainer.new()
+	lines.add_theme_constant_override("separation", 0)
+	lines.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	panel.add_child(lines)
+
+	var name_label := _heading(title, 18, Color(1, 1, 1))
+	lines.add_child(name_label)
+	lines.add_child(_heading(note, 12, DIM_TEXT))
+	row.add_child(panel)
+	return panel
+
+
+func _on_mode_input(event: InputEvent, team_match: bool) -> void:
+	if not _pressed(event):
+		return
+	select_mode(team_match)
+
+
+## Picks a mode. Public for the same reason `select` is: a suite drives this screen through its
+## own surface rather than by inventing a touch on a panel whose position it would have to know.
+func select_mode(team_match: bool) -> void:
+	_team_match = team_match
+	_restyle_modes()
+
+
+func _restyle_modes() -> void:
+	for index in _mode_panels.size():
+		var panel: PanelContainer = _mode_panels[index]
+		var chosen := (index == 1) == _team_match
+		panel.add_theme_stylebox_override("panel", _panel_style(MODE_TINT, chosen))
+
+
+## Which mode is currently selected. For the harness and for the level, which saves it.
+func team_match() -> bool:
+	return _team_match
 
 
 func _heading(text: String, font_size: int, tint: Color) -> Label:
@@ -253,15 +337,24 @@ func _build_option(spell: Ability, column_index: int, choice: int) -> PanelConta
 ## touches and a desktop dev build sends mouse buttons, and the screen has to work on both -
 ## the same reason `MobileControls.AUTO` keys off touch emulation.
 func _on_option_input(event: InputEvent, column_index: int, choice: int) -> void:
-	var pressed := false
-	if event is InputEventScreenTouch:
-		pressed = (event as InputEventScreenTouch).pressed
-	elif event is InputEventMouseButton:
-		var mouse := event as InputEventMouseButton
-		pressed = mouse.pressed and mouse.button_index == MOUSE_BUTTON_LEFT
-	if not pressed:
+	if not _pressed(event):
 		return
 	select(column_index, choice)
+
+
+## True if `event` is a finger or a left button going DOWN.
+##
+## Both types are handled because a phone sends touches and a desktop dev build sends
+## mouse buttons, and the screen has to work on both - the same reason
+## `MobileControls.AUTO` keys off touch emulation. One copy, because the spell rows and
+## the mode row must not be able to disagree about what counts as a tap.
+func _pressed(event: InputEvent) -> bool:
+	if event is InputEventScreenTouch:
+		return (event as InputEventScreenTouch).pressed
+	if event is InputEventMouseButton:
+		var mouse := event as InputEventMouseButton
+		return mouse.pressed and mouse.button_index == MOUSE_BUTTON_LEFT
+	return false
 
 
 ## Takes option `choice` in column `column_index`. Public so a harness can drive the screen
@@ -282,17 +375,22 @@ func _restyle(column_index: int) -> void:
 		var panel: PanelContainer = panels[choice]
 		var spell: Ability = column.spells[choice]
 		var chosen := choice == _picks[column_index]
-		var box := StyleBoxFlat.new()
-		box.bg_color = Color(spell.colour.r, spell.colour.g, spell.colour.b, 0.22) \
-			if chosen else IDLE_FILL
-		box.border_color = spell.colour if chosen else IDLE_EDGE
-		box.set_border_width_all(3 if chosen else 1)
-		box.set_corner_radius_all(10)
-		box.content_margin_left = 14.0
-		box.content_margin_right = 14.0
-		box.content_margin_top = 8.0
-		box.content_margin_bottom = 8.0
-		panel.add_theme_stylebox_override("panel", box)
+		panel.add_theme_stylebox_override("panel", _panel_style(spell.colour, chosen))
+
+
+## How a selectable panel is painted. Shared by the spell rows and the mode row, so "this one
+## is picked" looks like one thing on this screen and not two.
+func _panel_style(tint: Color, chosen: bool) -> StyleBoxFlat:
+	var box := StyleBoxFlat.new()
+	box.bg_color = Color(tint.r, tint.g, tint.b, 0.22) if chosen else IDLE_FILL
+	box.border_color = tint if chosen else IDLE_EDGE
+	box.set_border_width_all(3 if chosen else 1)
+	box.set_corner_radius_all(10)
+	box.content_margin_left = 14.0
+	box.content_margin_right = 14.0
+	box.content_margin_top = 8.0
+	box.content_margin_bottom = 8.0
+	return box
 
 
 func _on_start() -> void:
@@ -306,7 +404,7 @@ func _on_start() -> void:
 ## only be a way of not testing the thing under test.
 func confirm() -> void:
 	close()
-	confirmed.emit(_picks.duplicate())
+	confirmed.emit(_picks.duplicate(), _team_match)
 
 
 ## What is currently selected. For the harness and for the level, which saves it.

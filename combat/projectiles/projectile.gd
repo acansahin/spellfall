@@ -243,6 +243,11 @@ func _nearest_target() -> Node3D:
 		var body := found.get("collider") as Node3D
 		if body == null or body == _shooter:
 			continue
+		# A seeker that locked onto a teammate would curve away from the fight and then fly
+		# straight through them, which looks exactly like a broken spell.
+		var thrower := _shooter as Player
+		if thrower != null and thrower.is_ally_of(body):
+			continue
 		var gap := global_position.distance_squared_to(body.global_position)
 		if gap < best_gap:
 			best_gap = gap
@@ -375,6 +380,12 @@ func launch(ability: Ability, from: Vector3, direction: Vector3, shooter: Node3D
 ## and then break it, which is the same argument ConeCast makes about line of sight.
 func _on_body_entered(body: Node3D) -> void:
 	if not _active or body == _shooter:
+		return
+	# An ally is not merely unhurt, they are not IN THE WAY. Stopping here and doing no damage
+	# would turn every teammate into a moving wall, and a teammate you have to walk around is
+	# worse than no teammate at all.
+	var shooter := _shooter as Player
+	if shooter != null and shooter.is_ally_of(body):
 		return
 	var fighter := body as Player
 	if fighter != null and _caught.has(body):

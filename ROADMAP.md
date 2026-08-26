@@ -33,6 +33,7 @@ progression, no shop, no cosmetics. If that rule gets bent, the project is off t
 | 10 | One simple bot opponent | **done** |
 | 11 | Game feel pass: hit pause, camera shake, particles, audio, haptics | **done** |
 | 12 | Eleven spells, and a loadout chosen before the match | **done** (Session 16) |
+| 13 | 2v2 against bots, chosen on the same screen | **done** (Session 17) |
 
 **Gate to Phase 2 — now the only thing standing between here and Phase 2.** Every question in
 `GAME_DESIGN.md` under "What Phase 1 must prove" answers yes. Specifically — movement feels good, aiming feels good on a touchscreen,
@@ -51,6 +52,9 @@ Only once Phase 1 is fun.
 - Between-round upgrades: pick 1 of 3, aiming for interesting build combinations.
 - Bot difficulty levels.
 - A second arena shape, to prove the arena is data and not hardcoded.
+- Friendly fire as an option, once there is a human on the other end of the ally.
+- A four-player free-for-all. `RoundManager` counts sides already, so this is spawn points and
+  a menu row rather than a system.
 
 **Gate to Phase 3:** upgrades produce genuinely different builds rather than flat stat bumps.
 

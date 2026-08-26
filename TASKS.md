@@ -598,3 +598,39 @@ a loadout screen, and it is the shape this session built.
 - [ ] The bot never casts Warp Bolt - it scores zero on a ranking made of damage, which is
       honest but means one spell is never used against the player.
 
+---
+
+## Session 17 - Two a side
+
+- [x] `Player.team` - an int on the fighter, not a physics layer per side. Four queries mask the
+      one "players" layer and all four would have to learn about teams to save one comparison
+- [x] `RoundManager` counts SIDES: a round ends when one is gone, score is kept per side, and
+      `wins_for()` answers for a side's name or any fighter on it. A duel is two sides of one
+      and reads exactly as before
+- [x] Friendly fire OFF, and off means an ally is NOT THERE - the projectile flies on, the
+      seeker will not lock onto them, the fan skips them and catches the enemy behind. Three
+      places, one rule, asserted rather than assumed
+- [x] The bot picks the nearest living enemy and re-picks on its own reaction clock; a target
+      that leaves the round is dropped immediately, because reaction time is a handicap on
+      noticing and not a licence to keep fighting a body that has gone
+- [x] `_begin_match()` - the squad is formed AFTER the mode is known. Everything that depends
+      on how many wizards there are moved out of `_ready`
+- [x] 1v1 / 2v2 row on the loadout screen, remembered in `user://loadout.cfg` with the picks
+- [x] Every bot gets its own random loadout, drawn one after another from one seeded stream
+- [x] `--2v2` and `--team-test` (15 assertions)
+- [x] Fix: `--bot:off` and `--bot-skill:` reached only the scene's bot. Both now cover every
+      brain, in whichever order the squad happens to be formed
+- [x] Fix: driving the loadout screen a second time re-registered the whole roster - two HUD
+      rows per fighter and two of each body in the round system, which never ends
+- [x] Sixteen suites green
+
+### Still open
+
+- [ ] **Four wizards on a ring that closes to 4.5m.** The shrink numbers were tuned for two
+      bodies. Judge whether a 2v2 needs a wider floor, a slower clock, or neither.
+- [ ] **The ally is not a teammate yet, it is a second bot facing the same way.** It does not
+      cover, does not focus what you are shooting, and does not stay out of your line. Whether
+      any of that is worth building is a question to answer by playing, not by listing.
+- [ ] Cover is placed point-symmetrically for TWO spawns. With four it is no longer obviously
+      fair to every start.
+

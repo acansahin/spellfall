@@ -577,6 +577,40 @@ is decoration. See `HealthComponent`'s own doc for the arithmetic.
 a projectile arriving and a cone catching someone go through it. A second path would be a
 second place the escalation rule lived.
 
+### Sides
+
+A fighter carries `Player.team`, an int. Everyone is on their own side in a duel, where the
+numbers are 0 and 1 and nothing ever compares them; a team match puts two on each.
+
+**A team is an int on the fighter, not a physics layer.** A layer per side would let the engine
+filter allies for free — and would break the one thing every query here relies on, that
+"players" is ONE layer. `KillZone` masks it, `ConeCast` masks it, a seeker's look-ahead masks
+it. Four of those would have to learn about sides to save one comparison.
+
+**Friendly fire is off, and "off" means an ally is not there.** Not unhurt — *absent*. Three
+places implement it and `--team-test` is what proves they agree:
+
+| Where | What it does |
+|---|---|
+| `Projectile._on_body_entered` | returns before the hit AND before `_finish()`, so the spell flies on |
+| `Projectile._nearest_target` | a seeker will not lock onto a teammate |
+| `ConeCast.targets` | a fan skips an ally and still catches the enemy behind them |
+
+A spell that stopped on a teammate without hurting them would turn every ally into cover, and
+an ally you have to walk around is worse than no ally at all.
+
+**`RoundManager` counts SIDES, not bodies.** A round ends when one side is left; a duel is two
+sides of one and reads exactly as it always did. Score is per side for the same reason — "YOU 2
+RED 1" is a statement about teams, and two rows saying the same thing is not a scoreboard.
+`wins_for()` accepts either a side's name or any fighter's, so a caller that only knows "YOU"
+gets the right answer in both modes.
+
+**The squad is formed AFTER the mode is known.** `_begin_match()` exists because how many
+wizards are on the stone is chosen on a screen that has not been shown when `_ready` finishes.
+Wiring the spellbooks, the HUD rows and the round roster for two and then discovering there are
+four is how a fighter ends up registered twice — standing, unhittable, and preventing the round
+from ever ending. `_squad_formed` guards the second call a suite makes.
+
 ### The loadout
 
 Which spells a wizard carries is decided in `main.gd` and nowhere else. Three pieces:
@@ -1046,6 +1080,8 @@ argument-gated harness. Everything after a bare `--` reaches `OS.get_cmdline_use
 | `--lava-test` | Asserts the lava burns, stone only stops it, a Fireball drains health directly, a dunk is survivable, you can climb back, and burning out ends the round |
 | `--shrink-test` | Asserts the ring holds through the grace, closes at its rate, stops at the floor, and drags the lava rule, the bot, the camera and the cover with it |
 | `--burn-pose` | Parks the player in the lava, so a delayed shot catches the burn bar part-way down |
+| `--2v2` | Two a side: you and a bot ally against two bots |
+| `--team-test` | Asserts the sides, friendly fire, re-targeting and what ends a round. Implies `--2v2` |
 | `--bolt-pose` | Fires every projectile spell down parallel lanes, over and over, so one delayed shot compares all five flight shapes from the same angle |
 | `--loadout-test` | Asserts the catalogue, the picks, the screen end to end, and each added spell's own rule |
 | `--loadout:on` | Opens the spell-picking screen even though other harness args were given, for a screenshot of it |

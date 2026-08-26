@@ -22,6 +22,9 @@ extends Node3D
 ##   --bot-skill:S     play against calm|steady|sharp instead of the scene's setting
 ##   --spells-test     assert Force Wave, Blink and Arcane Shield do what they claim
 ##   --loadout-test    assert the catalogue, the picks, the screen, and each added spell's rule
+##   --2v2             two a side: you and a bot ally against two bots
+##   --team-test       assert the sides, friendly fire, re-targeting, and what ends a round
+##                     (implies --2v2; it has nothing to measure in a duel)
 ##   --loadout:on      open the spell-picking screen even though other harness args were given
 ##   --loadout:off     skip it (the default whenever ANY user arg is passed)
 ##   --loadout:a,b,c   arm the player with these spell ids
@@ -64,6 +67,11 @@ extends Node3D
 ## level runnable with the catalogue unassigned.
 @export var catalogue: SpellCatalogue = null
 
+## The wizard a team match spawns for the ally and the second opponent. The scene's own
+## BotWizard is not reused as a template: instancing a PackedScene is the one way to get a
+## fighter with its own components, and duplicating a live node copies its current state too.
+@export var bot_scene: PackedScene = null
+
 @onready var _player: Player = $Player
 @onready var _input: PlayerInputController = $PlayerInputController
 @onready var _mobile: MobileControls = $MobileControls
@@ -88,6 +96,44 @@ var _picks := PackedInt32Array()
 ## Whether this run opens the spell-picking screen. False for every harness run: a dozen suites
 ## begin by awaiting a live round, and a menu waiting on a human would hang all of them.
 var _show_loadout := false
+
+## Two a side instead of one. Chosen on the loadout screen, or forced with `--2v2`.
+var _team_match := false
+
+## True once the roster has been registered. The screen can be driven a second time by a suite,
+## and a second registration is silent, permanent and fatal to the round loop.
+var _squad_formed := false
+
+## Every wizard on the stone, in registration order: the player first, then their ally if
+## there is one, then the opposition. Built by `_form_squad` and read by everything that used
+## to say `[_player, _bot]` - the lava, the combat wiring, the round roster.
+var _fighters: Array[Player] = []
+
+## One per bot fighter, parallel to the bots in `_fighters`. The scene's own `_brain` is the
+## first of them; the rest are made at runtime.
+var _brains: Array[BotController] = []
+
+## Where each fighter starts and what the HUD calls them, keyed by the fighter. Dictionaries
+## rather than two more parallel arrays: every reader here already holds the Player and wants
+## one fact about it, and a parallel array is a second list to keep in step.
+var _spawns: Dictionary = {}
+var _titles: Dictionary = {}
+
+## Metres either side of a spawn point that teammates stand, in a team match. Wide enough that
+## a Force Wave aimed at one does not automatically catch the other on the opening exchange.
+const TEAM_SPREAD := 2.6
+
+## Body colours, so four wizards are two readable sides. The player keeps `player.tscn`'s blue
+## and the scene bot keeps its pink; these are the two that are made at runtime.
+## COOL IS A FRIEND, WARM IS A FOE - the whole rule, and it has to survive a glance at four
+## capsules from this camera's height.
+##
+## The ally is a green-teal and NOT the cyan that was tried second. Cyan is the same family as
+## the player's blue, which is exactly what the rule asks for and exactly one step too far: the
+## screenshot came back with two blue wizards and no way to tell which one was me. Reading your
+## own side matters, and finding yourself matters more.
+const ALLY_TINT := Color(0.36, 0.82, 0.62)
+const SECOND_FOE_TINT := Color(0.95, 0.42, 0.20)
 
 ## The platform's radius, measured once in _ready. Blink clamps against it and the bot is
 ## handed it; nothing else in the level needs to know the arena has a size.
@@ -124,12 +170,6 @@ func _ready() -> void:
 	# stick reusable and keeps PlayerInputController unaware that a UI exists - the same
 	# hand-it-its-dependencies pattern already used for the character above.
 	_mobile.joystick.vector_changed.connect(_input.set_touch_vector)
-	_wire_combat()
-	# The HUD reads instability and nothing else. It is handed its sources here rather than
-	# hunting for them, so a second fighter is one more line and not a rewrite.
-	_hud.add_readout("YOU", _player.instability(), _player.health())
-	_hud.add_readout("BOT", _bot.instability(), _bot.health())
-	_wire_rounds()
 	# A run with ANY user argument starts from the DEFAULT loadout, never the stored one. A suite
 	# that inherited whatever the last play session picked would measure a different wizard every
 	# day - and it did: `--aim-test` went looking for a cone slot, found a stored loadout that had
@@ -137,12 +177,16 @@ func _ready() -> void:
 	# launches with no arguments at all.
 	_show_loadout = OS.get_cmdline_user_args().is_empty()
 	_picks = LoadoutStore.load_picks(catalogue) if _show_loadout else _default_picks()
+	_team_match = LoadoutStore.load_mode() if _show_loadout else false
 	_arm_fighters(false)
 	_parse_harness_args()
 	if _show_loadout:
+		# The squad is NOT formed yet. How many wizards stand on the stone is a thing the
+		# player is about to choose, and every wiring step below - the spellbooks, the HUD
+		# rows, the round system's roster - depends on the answer.
 		_open_loadout()
 	else:
-		_rounds.start_match()
+		_begin_match(_team_match)
 
 
 func _process(_delta: float) -> void:
@@ -171,8 +215,7 @@ func _physics_process(delta: float) -> void:
 func _tick_lava(delta: float) -> void:
 	if not _rounds.is_live():
 		return
-	var fighters: Array[Player] = [_player, _bot]
-	for fighter in fighters:
+	for fighter in _fighters:
 		if fighter == null or fighter.is_eliminated():
 			continue
 		var hp := fighter.health()
@@ -235,6 +278,11 @@ func _parse_harness_args() -> void:
 			# this is for is the NEXT plain launch, which must open the menu with nothing chosen.
 			LoadoutStore.clear()
 			print("[harness] stored loadout forgotten")
+		elif arg == "--2v2" or arg == "--team-test":
+			# The suite implies the mode. Asked for in the settings pass, which runs BEFORE the
+			# suites start, so the squad is already four by the time one awaits a live round.
+			_team_match = true
+			print("[harness] two a side")
 		elif arg == "--loadout:on":
 			_show_loadout = true
 		elif arg == "--loadout:off":
@@ -286,6 +334,8 @@ func _parse_harness_args() -> void:
 			_run_spell_tests()
 		elif arg == "--loadout-test":
 			_run_loadout_tests()
+		elif arg == "--team-test":
+			_run_team_tests()
 		elif arg == "--button-test":
 			_run_button_tests()
 		elif arg == "--aim-test":
@@ -333,7 +383,12 @@ func _parse_harness_args() -> void:
 ## opponent that dodges breaks all three for entirely correct reasons, which is the most
 ## expensive kind of test failure. They park it; --bot-test is where it gets to play.
 func _freeze_bot() -> void:
+	# The scene's brain first, because it is the one `_add_bot` copies `enabled` from - so a
+	# `--bot:off` parsed before the squad exists still reaches the two bots made later. The loop
+	# is for the other order: a suite freezing them after the match has begun.
 	_brain.enabled = false
+	for brain in _brains:
+		brain.enabled = false
 
 
 ## Turns the game feel off for a suite that measures.
@@ -390,6 +445,11 @@ func _set_bot_skill(level: String) -> void:
 		_:
 			push_warning("unknown bot skill '%s'; leaving it alone" % level)
 			return
+	# Every opponent, not merely the one in the scene. `_add_bot` copies this off `_brain`, so
+	# ordering is covered either way - but a difficulty that reached one of three bots would be
+	# a difficulty setting that quietly did a third of what it said.
+	for brain in _brains:
+		brain.skill = _brain.skill
 	print("[harness] bot skill = %s" % level.to_upper())
 
 
@@ -686,8 +746,7 @@ func _wire_combat() -> void:
 	# Every fighter's spellbook arrives at the same handler, so the bot's Fireball IS the
 	# player's Fireball: same pool, same flight, same hit resolution, same knockback. A
 	# separate path for the opponent would be a second set of rules to keep in step.
-	var fighters: Array[Player] = [_player, _bot]
-	for fighter in fighters:
+	for fighter in _fighters:
 		var spellbook := fighter.abilities()
 		if spellbook == null:
 			push_warning("%s has no AbilityComponent; it will never cast" % fighter.name)
@@ -728,6 +787,146 @@ func _default_picks() -> PackedInt32Array:
 	return catalogue.default_picks() if catalogue != null else PackedInt32Array()
 
 
+## Forms the squad, wires it, and starts the match.
+##
+## Everything here used to sit in `_ready`, and moved out for one reason: how many wizards are
+## on the stone is chosen on a screen that has not been shown yet. The spellbooks, the HUD rows
+## and the round roster all depend on the answer, and wiring them for two and then discovering
+## there are four is how a fighter ends up invisible to the round system - standing, unhittable,
+## and preventing the round from ever ending.
+func _begin_match(team_match: bool) -> void:
+	if _squad_formed:
+		# A suite drove the loadout screen after the match had already started. Re-arm and
+		# restart; registering the same roster twice would give every fighter a second HUD row
+		# and the round system two of each body, and the round would never end.
+		_arm_fighters(false)
+		_rounds.start_match()
+		return
+	_squad_formed = true
+	_team_match = team_match
+	_form_squad(team_match)
+	_wire_combat()
+	# The HUD reads instability and nothing else. It is handed its sources here rather than
+	# hunting for them, which is what makes a third and fourth fighter a loop rather than a
+	# rewrite - the list it draws was built for exactly this.
+	for fighter in _readout_order():
+		_hud.add_readout(_title_of(fighter), fighter.instability(), fighter.health())
+	_wire_rounds()
+	_arm_fighters(_show_loadout)
+	_rounds.start_match()
+
+
+## The fighters grouped by side, the player's own first.
+##
+## `_fighters` is in the order the squad was BUILT - player, scene bot, then the two made at
+## runtime - which puts an opponent between the player and their ally in the readout. Nobody
+## reads four interleaved rows as two teams.
+func _readout_order() -> Array[Player]:
+	var mine: Array[Player] = []
+	var theirs: Array[Player] = []
+	for fighter in _fighters:
+		if fighter.team == _player.team:
+			mine.append(fighter)
+		else:
+			theirs.append(fighter)
+	return mine + theirs
+
+
+## Puts the fighters on the stone: two in a duel, four in a team match.
+##
+## The scene's own Player and BotWizard are always the first of their sides, whichever mode
+## this is. That is not tidiness - a dozen suites hold `_player` and `_bot` and measure them,
+## and a mode that rebuilt the pair from scratch would be a mode none of those suites describe.
+func _form_squad(team_match: bool) -> void:
+	_fighters = [_player, _bot]
+	_brains = [_brain]
+	_spawns = {_player: spawn_point, _bot: bot_spawn}
+	_titles = {_player: "YOU", _bot: "BOT"}
+	if not team_match:
+		_brain.enemies = [_player]
+		return
+
+	# Point-symmetric, so neither side opens nearer an edge and every wizard has an opposite
+	# number directly across the ring.
+	var side := Vector3(TEAM_SPREAD, 0.0, 0.0)
+	_spawns[_player] = spawn_point - side
+	_spawns[_bot] = bot_spawn + side
+	_titles[_bot] = "RED 1"
+
+	var ally := _add_bot("ALLY", _player.team, spawn_point + side, ALLY_TINT)
+	var foe := _add_bot("RED 2", _bot.team, bot_spawn - side, SECOND_FOE_TINT)
+
+	# Handed the whole opposing side rather than one name, so a bot that loses its target
+	# turns to the other one instead of standing still for the rest of the round.
+	var blue: Array[Player] = [_player, ally]
+	var red: Array[Player] = [_bot, foe]
+	for brain in _brains:
+		brain.enemies = red if brain.body.team == _player.team else blue
+
+
+## Builds one bot fighter and its controller, and adds both to the scene.
+##
+## The controller is a sibling node rather than a child of the wizard, matching how the scene
+## already does it: a brain that lived inside the body it drives could not be swapped for a
+## human's controller, which is the whole point of `Player.input_controller`.
+func _add_bot(title: String, team: int, at: Vector3, tint: Color) -> Player:
+	var fighter: Player = bot_scene.instantiate()
+	fighter.name = title.replace(" ", "")
+	fighter.team = team
+	add_child(fighter)
+	fighter.global_position = at
+	_tint_fighter(fighter, tint)
+
+	var brain := BotController.new()
+	brain.name = "%sBrain" % fighter.name
+	# Copied off the scene's bot so a difficulty picked with `--bot-skill` reaches every
+	# opponent, not just the one that happens to be in the .tscn.
+	brain.skill = _brain.skill
+	brain.arena_radius = _brain.arena_radius
+	brain.enabled = _brain.enabled
+	add_child(brain)
+	brain.body = fighter
+	fighter.input_controller = brain
+
+	_fighters.append(fighter)
+	_brains.append(brain)
+	_spawns[fighter] = at
+	_titles[fighter] = title
+	return fighter
+
+
+## Recolours a wizard's body. Four capsules in two shades of the same colour would be a fight
+## nobody can read, and the tint is the only thing telling them apart while everything is
+## untextured primitives.
+func _tint_fighter(fighter: Player, tint: Color) -> void:
+	var body := fighter.get_node_or_null(^"Visual/Body") as MeshInstance3D
+	if body == null:
+		return
+	# A fresh material rather than an edit of the scene's, which every instance of
+	# `bot_wizard.tscn` shares - recolouring it would recolour the opposition too.
+	var material := StandardMaterial3D.new()
+	material.albedo_color = tint
+	material.roughness = 0.55
+	body.set_surface_override_material(0, material)
+
+
+## What the SCORE calls a side. The player's side is "YOU" in both modes, so a caller that
+## only knows that word - and several suites only know that word - gets the right answer
+## whether it is one wizard or two.
+func _side_name(team: int) -> String:
+	if team == _player.team:
+		return "YOU"
+	return "RED" if _team_match else "BOT"
+
+
+func _title_of(fighter: Player) -> String:
+	return _titles.get(fighter, fighter.name)
+
+
+func _spawn_of(fighter: Player) -> Vector3:
+	return _spawns.get(fighter, Vector3.ZERO)
+
+
 func _open_loadout() -> void:
 	# Guarded because the suite opens the screen too, and a second connection would arm the
 	# wizards twice and start two matches off one button.
@@ -747,19 +946,18 @@ func _open_loadout() -> void:
 	var waiting: Array[Player] = [_player, _bot]
 	for fighter in waiting:
 		fighter.accepts_input = false
-	_loadout.open(catalogue, _picks)
+	_loadout.open(catalogue, _picks, _team_match)
 
 
-func _on_loadout_confirmed(picks: PackedInt32Array) -> void:
+func _on_loadout_confirmed(picks: PackedInt32Array, team_match: bool) -> void:
 	_picks = picks
 	# Saving BEFORE the match, not after it. A player who chose a loadout and then closed the
 	# game mid-round still chose it, and losing the pick because the round did not finish would
 	# be the kind of small betrayal nobody reports and everybody notices.
-	LoadoutStore.save_picks(catalogue, _picks)
-	_arm_fighters(true)
+	LoadoutStore.save_picks(catalogue, _picks, team_match)
 	_mobile.visible = true
 	_hud.visible = true
-	_rounds.start_match()
+	_begin_match(team_match)
 
 
 ## Hands both wizards their spellbooks.
@@ -780,18 +978,24 @@ func _arm_fighters(randomise_bot: bool) -> void:
 		mine.abilities = catalogue.spellbook(_picks)
 	if not randomise_bot:
 		return
-	var theirs := _bot.abilities()
-	if theirs == null:
-		return
 	var rng := RandomNumberGenerator.new()
 	if _brain.rng_seed == 0:
 		rng.randomize()
 	else:
 		rng.seed = _brain.rng_seed
-	var picks := catalogue.random_picks(rng)
-	theirs.abilities = catalogue.spellbook(picks)
-	print("[loadout] you %s | bot %s" % [
-		str(catalogue.ids_from_picks(_picks)), str(catalogue.ids_from_picks(picks))])
+	print("[loadout] you %s" % str(catalogue.ids_from_picks(_picks)))
+	for fighter in _fighters:
+		if fighter == _player:
+			continue
+		var theirs := fighter.abilities()
+		if theirs == null:
+			continue
+		# Drawn one after another from the same stream, so a seeded run replays every wizard's
+		# loadout and not merely the first one's.
+		var picks := catalogue.random_picks(rng)
+		theirs.abilities = catalogue.spellbook(picks)
+		print("[loadout] %s %s" % [
+			_title_of(fighter), str(catalogue.ids_from_picks(picks))])
 
 
 func _on_cast_requested(ability: Ability, origin: Vector3, direction: Vector3, caster: Node3D) -> void:
@@ -1102,8 +1306,9 @@ func _distance_to_rim(from: Vector3, aim: Vector3) -> float:
 # ---------------------------------------------------------------------------------------
 
 func _wire_rounds() -> void:
-	_rounds.add_fighter(_player, spawn_point, "YOU")
-	_rounds.add_fighter(_bot, bot_spawn, "BOT")
+	for fighter in _fighters:
+		_rounds.add_fighter(fighter, _spawn_of(fighter), _title_of(fighter),
+			fighter.team, _side_name(fighter.team))
 	# A body that leaves the world entirely still counts - a hit hard enough to clear a 60m
 	# lava field has earned it - but on a flat arena nothing reaches this any more. It is a
 	# backstop now, not the rule.
@@ -1111,8 +1316,7 @@ func _wire_rounds() -> void:
 
 	# Burning to nothing goes through the same door a fall does. The round system never learns
 	# that lava exists, exactly as it never learned what a KillZone was.
-	var burners: Array[Player] = [_player, _bot]
-	for fighter in burners:
+	for fighter in _fighters:
 		var hp := fighter.health()
 		if hp != null:
 			hp.emptied.connect(_rounds.report_out.bind(fighter))
@@ -3447,3 +3651,162 @@ func _instability_after(seconds: float) -> float:
 	var before := _instability_of(_bot)
 	await _wait(seconds)
 	return _instability_of(_bot) - before
+
+
+## Two a side: the roster, the sides, friendly fire, and what a round ends on.
+##
+## The one rule worth stating up front, because three separate pieces of code implement it and
+## a suite is the only thing that can prove they agree: an ALLY IS NOT THERE. A spell does not
+## hurt them, and it does not stop on them either - it passes through and reaches whoever is
+## behind. Anything less turns a teammate into cover, and a teammate you have to walk around is
+## worse than no teammate at all.
+func _run_team_tests() -> void:
+	await _settle()
+	_quiet_feel()
+	_clear_cover()
+	_freeze_arena()
+	_freeze_bot()
+	_input.set_override_vector(Vector2.ZERO, true)
+	await _wait_for_live()
+
+	_expect("the match was formed two a side", _team_match and _fighters.size() == 4,
+		"%d fighters, team match=%s" % [_fighters.size(), _team_match])
+	if _fighters.size() < 4:
+		print("[teams] FAILURES (%d failure(s))" % maxi(_touch_failures, 1))
+		get_tree().quit(1)
+		return
+
+	var ally: Player = _fighters[2]
+	var foe: Player = _fighters[3]
+	print("[teams] %s+%s (side %d) vs %s+%s (side %d)" % [
+		_title_of(_player), _title_of(ally), _player.team,
+		_title_of(_bot), _title_of(foe), _bot.team])
+
+	# --- the sides ---------------------------------------------------------------------------
+	_expect("the player has an ally on their own side",
+		ally.team == _player.team and ally != _player,
+		"%s is on side %d, you are on %d" % [_title_of(ally), ally.team, _player.team])
+	_expect("and two opponents on the other",
+		_bot.team == foe.team and _bot.team != _player.team,
+		"sides %d and %d against %d" % [_bot.team, foe.team, _player.team])
+	_expect("everyone is registered with the round system",
+		_rounds.alive_count() == 4 and _rounds.teams_standing() == 2,
+		"%d standing across %d sides" % [_rounds.alive_count(), _rounds.teams_standing()])
+	_expect("the score is kept by side, not by body", _rounds.scores().size() == 2,
+		"score reads %s" % str(_rounds.scores()))
+	_expect("teammates know each other",
+		_player.is_ally_of(ally) and ally.is_ally_of(_player)
+			and not _player.is_ally_of(_bot),
+		"you/ally=%s you/bot=%s" % [_player.is_ally_of(ally), _player.is_ally_of(_bot)])
+	_expect("and nobody is their own ally", not _player.is_ally_of(_player),
+		"a caster is excluded by one rule, not two")
+
+	# --- a projectile passes THROUGH an ally and reaches the enemy behind them ------------------
+	# Three wizards on one line: the caster, their teammate in the way, and the target beyond.
+	var book := _player.abilities()
+	var fireball := book.ability_in(0)
+	var reach := fireball.effective_range()
+	await _line_up({
+		_player: Vector3(0.0, 1.2, 0.0),
+		ally: Vector3(reach * 0.35, 1.2, 0.0),
+		_bot: Vector3(reach * 0.7, 1.2, 0.0),
+		foe: Vector3(0.0, 1.2, 40.0),
+	}, 0.4)
+	var ally_before := _instability_of(ally)
+	var foe_before := _instability_of(_bot)
+	book.reset()
+	book.try_cast(0, Vector3(1, 0, 0))
+	await _pin_while({
+		_player: Vector3(0.0, 1.2, 0.0),
+		ally: Vector3(reach * 0.35, 1.2, 0.0),
+	}, fireball.lifetime + 0.2)
+	_expect("a spell does not hurt a teammate standing in its way",
+		is_equal_approx(_instability_of(ally), ally_before),
+		"%s at %.0f%%, was %.0f%%" % [_title_of(ally), _instability_of(ally), ally_before])
+	_expect("and does not stop on them either - it reaches the enemy behind",
+		_instability_of(_bot) - foe_before >= fireball.instability - 0.01,
+		"%s rose %.0f, spell adds %.0f" % [
+			_title_of(_bot), _instability_of(_bot) - foe_before, fireball.instability])
+
+	# --- and neither does a cone ----------------------------------------------------------------
+	await _equip(&"force_wave", &"blink", &"arcane_shield")
+	var wave := _spell(&"force_wave")
+	await _line_up({
+		_player: Vector3(0.0, 1.2, 0.0),
+		ally: Vector3(wave.area * 0.4, 1.2, 0.0),
+		_bot: Vector3(wave.area * 0.75, 1.2, 0.0),
+		foe: Vector3(0.0, 1.2, 40.0),
+	}, 0.4)
+	ally_before = _instability_of(ally)
+	foe_before = _instability_of(_bot)
+	book.reset()
+	book.try_cast(1, Vector3(1, 0, 0))
+	await get_tree().physics_frame
+	_expect("a wave skips the teammate inside its fan",
+		is_equal_approx(_instability_of(ally), ally_before),
+		"%s at %.0f%%" % [_title_of(ally), _instability_of(ally)])
+	_expect("and catches the enemy in the same fan",
+		_instability_of(_bot) - foe_before >= wave.instability - 0.01,
+		"%s rose %.0f" % [_title_of(_bot), _instability_of(_bot) - foe_before])
+
+	# --- one down is not one side down ------------------------------------------------------------
+	ally.eliminate()
+	_rounds.report_out(ally)
+	await get_tree().physics_frame
+	_expect("losing a teammate does not end the round",
+		_rounds.is_live() and _rounds.teams_standing() == 2,
+		"live=%s, %d sides up, %d bodies" % [
+			_rounds.is_live(), _rounds.teams_standing(), _rounds.alive_count()])
+
+	# --- a bot whose target falls turns to the other one ---------------------------------------------
+	var brain: BotController = _brains[0]
+	brain.enabled = true
+	brain.target = _player
+	brain.enemies = [_player, ally]
+	# The ally is already out, so the only enemy left standing is the player. One glance and it
+	# should have noticed - reaction time is a handicap on noticing, never a licence to keep
+	# fighting a body that has left the round.
+	await _wait(0.6)
+	_expect("a bot re-targets when its enemy leaves the round",
+		brain.target == _player and not brain.target.is_eliminated(),
+		"it is now fighting %s" % _title_of(brain.target))
+	brain.enabled = false
+
+	# --- a whole side down ends it -------------------------------------------------------------------
+	var wins_before := _rounds.wins_for("YOU")
+	_bot.eliminate()
+	_rounds.report_out(_bot)
+	await get_tree().physics_frame
+	foe.eliminate()
+	_rounds.report_out(foe)
+	await get_tree().physics_frame
+	_expect("clearing a whole side ends the round", not _rounds.is_live(),
+		"state=%d, %d sides up" % [_rounds.state, _rounds.teams_standing()])
+	_expect("and the side that survived takes it, not the survivor",
+		_rounds.wins_for("YOU") == wins_before + 1,
+		"YOU %d -> %d, score %s" % [
+			wins_before, _rounds.wins_for("YOU"), str(_rounds.scores())])
+
+	print("[teams] %s (%d failure(s))" % [
+		"ALL PASS" if _touch_failures == 0 else "FAILURES", _touch_failures])
+	get_tree().quit(1 if _touch_failures > 0 else 0)
+
+
+## Puts each fighter where the dictionary says and holds them there for `seconds`.
+##
+## `_place_fighters` only knows about two bodies, and by writing `global_position` rather than
+## calling `respawn_at` this keeps the instability the next assertion is about to read. See
+## ARCHITECTURE.md on the suite that measured the lava burning 0.4 points in a second.
+func _line_up(spots: Dictionary, seconds: float) -> void:
+	await _pin_while(spots, seconds)
+
+
+func _pin_while(spots: Dictionary, seconds: float) -> void:
+	var held := 0.0
+	while held < seconds:
+		for fighter in spots:
+			var body := fighter as Player
+			if is_instance_valid(body) and not body.is_eliminated():
+				body.global_position = spots[fighter]
+		await get_tree().physics_frame
+		held += 1.0 / 60.0

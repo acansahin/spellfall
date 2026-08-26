@@ -94,8 +94,18 @@ const PROFILES: Dictionary = {
 ## never reaches into the scene to find its own body or its own enemy.
 var body: Player = null
 
-## Who it is fighting.
+## Who it is fighting RIGHT NOW. In a 1v1 this is set once and never changes.
 var target: Player = null
+
+## Everyone it is allowed to fight. Set by the level, like the body and the target.
+##
+## Left empty means "whatever `target` says", which is what keeps a 1v1 - and every suite
+## written against one - on exactly the path it was on before teams existed.
+##
+## Re-picked on the REACTION clock rather than every frame, so switching targets costs a bot
+## the same beat that noticing anything else costs it. A bot that re-chose per tick would flick
+## between two enemies standing at nearly equal range and never commit to either.
+var enemies: Array[Player] = []
 
 var _rng := RandomNumberGenerator.new()
 
@@ -138,7 +148,14 @@ func _process(_delta: float) -> void:
 
 
 func _physics_process(delta: float) -> void:
-	if not enabled or not is_instance_valid(body) or not is_instance_valid(target):
+	if not enabled or not is_instance_valid(body):
+		_stand_still()
+		return
+	# BEFORE the eliminated check below, not after. A bot whose target has just gone down still
+	# has a fight to be in if anyone else is left, and checking in the other order parks it for
+	# the rest of the round staring at where somebody used to be.
+	_drop_dead_target()
+	if not is_instance_valid(target):
 		_stand_still()
 		return
 	# Frozen by the round system: a countdown, or a round that is already decided. Think
@@ -170,12 +187,50 @@ func _perceive(delta: float) -> void:
 		return
 	_look_timer = _num("reaction")
 	_has_seen = true
+	_pick_target()
 	_seen_pos = target.global_position
 	_seen_vel = target.velocity
 	# Re-rolled on the same clock as the glance, deliberately. A fresh error every frame
 	# would twitch the wizard's head, and would average out to a perfect shot over the flight
 	# of a projectile. One error per glance is an aim that is WRONG, not merely noisy.
 	_aim_error = deg_to_rad(_rng.randf_range(-1.0, 1.0) * _num("aim_error"))
+
+
+## Switches to the nearest enemy still standing.
+##
+## NEAREST, and nothing cleverer. "Focus the one on lower health" is the obvious next idea and
+## it is the wrong one here: this game is won by shoving somebody over an edge, so the enemy
+## worth attacking is the one you can reach - and a bot that walks past a wizard in its face to
+## reach a wounded one across the ring reads as a bot that has not noticed you.
+func _pick_target() -> void:
+	if enemies.is_empty():
+		return
+	var here := _flat(body.global_position)
+	var best: Player = null
+	var best_gap := INF
+	for foe in enemies:
+		if not is_instance_valid(foe) or foe.is_eliminated():
+			continue
+		var gap := here.distance_squared_to(_flat(foe.global_position))
+		if gap < best_gap:
+			best_gap = gap
+			best = foe
+	if best != null and best != target:
+		target = best
+		# What it believed about the last one says nothing about this one. Without the reset it
+		# would open on a fresh enemy by shooting at where the PREVIOUS one was standing.
+		_has_seen = false
+
+
+## Immediately abandons a target that is gone, whatever the reaction clock says.
+##
+## Reaction time is a handicap on NOTICING things; it is not a licence to keep fighting a body
+## that has left the round. That distinction is what stops a 2v2 turning into two bots standing
+## still for half a second every time somebody falls.
+func _drop_dead_target() -> void:
+	if is_instance_valid(target) and not target.is_eliminated():
+		return
+	_pick_target()
 
 
 ## Where it wants to walk: hold the preferred range, and circle rather than stand.

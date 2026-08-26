@@ -19,6 +19,7 @@ extends RefCounted
 const PATH := "user://loadout.cfg"
 const SECTION := "loadout"
 const KEY := "spells"
+const MODE_KEY := "team_match"
 
 
 ## The stored picks, or the catalogue's defaults.
@@ -34,14 +35,25 @@ static func load_picks(catalogue: SpellCatalogue) -> PackedInt32Array:
 	return catalogue.picks_from_ids(ids)
 
 
-## Writes the picks. Returns false if it could not, which nothing is expected to act on -
-## losing a preference is not worth interrupting a match for.
-static func save_picks(catalogue: SpellCatalogue, picks: PackedInt32Array) -> bool:
+## Writes the picks and the mode. Returns false if it could not, which nothing is expected to
+## act on - losing a preference is not worth interrupting a match for.
+static func save_picks(catalogue: SpellCatalogue, picks: PackedInt32Array,
+		team_match: bool = false) -> bool:
 	if catalogue == null:
 		return false
 	var config := ConfigFile.new()
 	config.set_value(SECTION, KEY, catalogue.ids_from_picks(picks))
+	config.set_value(SECTION, MODE_KEY, team_match)
 	return config.save(PATH) == OK
+
+
+## Whether the last match was two a side. False on anything unreadable, so a corrupt file opens
+## the game in the mode that needs the fewest wizards to work.
+static func load_mode() -> bool:
+	var config := ConfigFile.new()
+	if config.load(PATH) != OK:
+		return false
+	return bool(config.get_value(SECTION, MODE_KEY, false))
 
 
 ## Forgets the stored loadout. For the harness, which must be able to prove the DEFAULT path
