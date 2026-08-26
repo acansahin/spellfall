@@ -205,11 +205,20 @@ All eleven are **built**. Numbers are placeholders to be tuned in playtesting, a
 `data/abilities/*.tres` — one file each, no scripts. The roster is
 `data/spell_catalogue.tres`; adding a spell is a file and a line, never a code change.
 
+**Spell damage is a chip, and there is a hard floor under it: no spell may empty a full health
+bar in under ten clean hits.** Five spells drain health at all; the other six do nothing to it.
+This is the one balance number in the game that is a rule rather than a taste, because it
+decides what the game IS. Fireball shipped at five hits for a session and that was long enough
+to see the problem: at five, the fastest way to win is to stand still and shoot, the ring stops
+mattering, and the instability curve that is supposed to be the escalation never gets used. The
+comparison that keeps it honest — **a trip into the lava empties a bar in 4.5 seconds; the
+fastest spell needs 9 seconds of perfect uptime to do the same.** `--loadout-test` asserts both.
+
 ### Always with you
 
 | Spell | Type | Inst | Knock | Role |
 |---|---|---|---|---|
-| **Fireball** | Aimed projectile, dies on hit | 12 | 6 | Your main damage, and the only spell that is a habit rather than a decision. 0.9s. |
+| **Fireball** | Aimed projectile, dies on hit | 12 | 6 | Your main threat, and the only spell that is a habit rather than a decision. Ten clean hits to empty a bar. 0.9s. |
 
 ### STRIKE — your second way to land one
 

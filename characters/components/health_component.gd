@@ -5,13 +5,22 @@ extends Node
 ##
 ## This used to be lava-only, on the rule that no spell may ever touch it - keeping combat
 ## entirely in instability and knockback, so the fight stayed a positioning game and not a
-## damage race. That rule is gone: Fireball now drains it directly (see `Ability.health_damage`
-## and `_apply_hit()` in main.gd), on top of everything instability still does. Two ways to
-## lose are live at once - destabilise someone into the lava, or simply outshoot them - and the
-## level decides which spells get to use the second one.
+## damage race. Spells may chip it now (`Ability.health_damage`, applied in `_apply_hit()`),
+## but the rule behind that original decision is intact and is the one to defend:
+## **THIS BAR IS THE LAVA'S CURRENCY.**
+##
+## A trip into the lava empties a full bar in about four and a half seconds. The fastest spell
+## in the game needs nine seconds of PERFECT uptime - every cast landing, nobody dodging, nobody
+## walking away - to do the same, and a real fight is nothing like that. So a spell hit is worth
+## a fraction of a second in the lava, which is exactly what it should be worth: a mark left
+## between exchanges, never a way to win without ever using the edge.
+##
+## Fireball spent a session at five hits to a full bar, and at five it was a damage race with a
+## knockback theme - the ring stopped mattering. `--loadout-test` now asserts both halves: ten
+## clean hits minimum for any spell, and the lava faster than all of them.
 ##
 ## What has NOT changed is that standing on stone no longer heals it. A trip into the lava, or
-## a Fireball taken to the face, costs something for the rest of the round - `reset()` between
+## a spell taken to the face, costs something for the rest of the round - `reset()` between
 ## rounds is the only way back to full. So the total is a budget as much as a health bar: how
 ## many hits, and how many seconds in the lava, before this fighter is out.
 ##

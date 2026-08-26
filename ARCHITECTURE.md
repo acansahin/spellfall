@@ -567,6 +567,12 @@ Four details are load-bearing:
   formula answers "how hard was that hit"; the shield answers "how much of it landed on *me*",
   and only the recipient knows that. Hitstun then falls out of the reduced speed for free.
 
+**Spell damage has a floor and the harness holds it.** `Ability.health_damage` may never empty
+a full bar in under ten clean hits, and the lava must stay the fastest way to empty one. Both
+are asserted by `--loadout-test` rather than left to whoever edits a `.tres` next: a spell tuned
+past that line does not make the game harder, it makes it a different game — one where the edge
+is decoration. See `HealthComponent`'s own doc for the arithmetic.
+
 **One door for every hit.** `_apply_hit()` raises instability and hands out knockback, and both
 a projectile arriving and a cone catching someone go through it. A second path would be a
 second place the escalation rule lived.

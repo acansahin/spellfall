@@ -3119,6 +3119,35 @@ func _run_loadout_tests() -> void:
 		bolts[spell.bolt] = true
 	_expect("every projectile flies as a different shape", bolts.size() == hurled.size(),
 		"%d shapes for %d projectile spells" % [bolts.size(), hurled.size()])
+
+	# THE POINT OF THE GAME IS THE EDGE, NOT THE BAR. Spell damage is a chip that shortens your
+	# next trip into the lava; it is not a way to win on its own. Ten clean hits was the number
+	# picked for that - Fireball at five was a damage race with a knockback theme, and the whole
+	# arena stopped mattering. Pinned here because it is a design rule, not a taste: a spell
+	# retuned past it changes what the game IS, and that should take an argument rather than a
+	# decimal point.
+	var bar := _player.health()
+	var full := bar.maximum if bar != null else 100.0
+	var quickest := INF
+	var quickest_name := ""
+	# Seconds a spell needs to empty a bar with PERFECT uptime - every cast landing, nothing
+	# dodged, nobody walking away. Nothing like a real fight, which is the point: it is the
+	# floor, and even the floor has to be slower than the lava.
+	var fastest_seconds := INF
+	for spell in all:
+		if spell.health_damage <= 0.0:
+			continue
+		var hits := full / spell.health_damage
+		if hits < quickest:
+			quickest = hits
+			quickest_name = spell.display_name
+		fastest_seconds = minf(fastest_seconds, hits * spell.cooldown)
+	var lava_seconds := full / _player.health().burn_per_second
+	_expect("no spell empties a full bar in under ten clean hits", quickest >= 9.99,
+		"%s is the fastest at %.1f hits of %.0f" % [quickest_name, quickest, full])
+	_expect("and the lava is still the quickest way to empty one",
+		lava_seconds < fastest_seconds,
+		"lava %.1fs, best spell %.1fs at perfect uptime" % [lava_seconds, fastest_seconds])
 	_expect("the primary is Fireball", catalogue.primary != null
 		and catalogue.primary.id == &"fireball", "primary=%s" % catalogue.primary)
 	var primary_in_column := false

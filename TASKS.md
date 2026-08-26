@@ -575,8 +575,18 @@ a loadout screen, and it is the shape this session built.
 - [x] Fix: a ring stood across the flight path is a vertical sliver from this camera. Laid flat
 - [x] Sixteen suites green
 
+- [x] **Spell damage halved across the board.** Fireball 20 -> 10, Arc Lance 16 -> 8, Seeker
+      18 -> 9, Lunge 14 -> 7, Loopshot 12 -> 6. Five Fireballs killed; ten do now. At five the
+      fastest way to win was to stand still and shoot, which is not this game
+- [x] The floor is a RULE now, not a number in a file: no spell empties a full bar in under ten
+      clean hits, and the lava stays the quickest way to empty one (4.5s against the best
+      spell's 9s at perfect uptime). `--loadout-test` asserts both
+
 ### Still open
 
+- [ ] **Does the round now drag?** Damage was the thing finishing fights, and it has just been
+      halved. If rounds run long, the dial to turn is `instability` per hit - the escalation
+      curve - and NOT the damage back up. Judge it on a phone before touching either.
 - [ ] **Four of the map's seven columns are not built.** Meteor / Splitter / WindWalk,
       Drain / Fire Spray / Bouncer, Entangle / Gravity / Link, and the self-centred novas
       (Scourge / Cataclysm / Pious). Each needs a runtime this game does not have yet -

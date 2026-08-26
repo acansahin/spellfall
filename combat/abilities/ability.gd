@@ -117,10 +117,21 @@ enum Bolt {
 ## Base knockback, before the target's instability multiplier is applied. Session 4.
 @export var knockback: float = 0.0
 
-## Health points this drains outright, bypassing instability and knockback entirely. 0.0 for
-## every spell but Fireball - most of the game's violence still routes through instability and
-## a fall into the lava, not a bar ticking down on its own. See HealthComponent for why this
-## field exists at all despite that rule.
+## Health points this drains outright, bypassing instability and knockback entirely.
+##
+## A CHIP, never a win condition. The game is won at the EDGE: you destabilise somebody until a
+## hit throws them into the lava, and what this field does is shorten the trip they survive
+## afterwards. It exists so that a fight leaves a mark between exchanges, not so that a fight
+## can be won without ever using the arena.
+##
+## The rule that keeps it honest, and it is a rule rather than a taste: **no spell may empty a
+## full bar in under ten clean hits.** Fireball sat at five, which made it a damage race with a
+## knockback theme - the whole ring stopped mattering, and so did the instability curve that is
+## supposed to be the escalation. `--loadout-test` asserts the ten, so retuning past it takes an
+## argument rather than a decimal point.
+##
+## Zero for every spell that is not meant to threaten at all - the two motion spells, all three
+## guards, and Warp Bolt, whose entire payload is the ground it takes from you.
 @export var health_damage: float = 0.0
 
 @export_group("Projectile")
