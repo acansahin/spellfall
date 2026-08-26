@@ -178,6 +178,7 @@ func _ready() -> void:
 	# none, and crashed on a null. The stored picks are for the player, and the player is who
 	# launches with no arguments at all.
 	_show_loadout = OS.get_cmdline_user_args().is_empty()
+	_report_input_mode()
 	_picks = LoadoutStore.load_picks(catalogue) if _show_loadout else _default_picks()
 	_team_match = LoadoutStore.load_mode() if _show_loadout else false
 	_arm_fighters(false)
@@ -1238,6 +1239,25 @@ func _wire_feel() -> void:
 # already gives the joystick.
 # ---------------------------------------------------------------------------------------
 
+## Prints what the input layer decided, once, at startup.
+##
+## Because the thing that decides it cannot be seen. A web build renders into a canvas nobody
+## here can photograph, so "the mouse does not work" arrives as a sentence rather than as a
+## screenshot - and the difference between "the cursor is gated off" and "the cursor is aiming
+## at the wrong place" is two minutes with this line and a guess without it.
+func _report_input_mode() -> void:
+	var tags := PackedStringArray()
+	for tag in ["mobile", "web", "web_android", "web_ios", "pc", "android"]:
+		if OS.has_feature(tag):
+			tags.append(tag)
+	print("[input] %s | thumb controls=%s -> %s" % [
+		OS.get_name(), _mobile.visible,
+		"CURSOR AIMS" if not _mobile.visible else "THUMB DRIVES"])
+	print("[input] features=[%s] | touchscreen flag=%s (not consulted) | emulating touch=%s" % [
+		", ".join(tags), DisplayServer.is_touchscreen_available(),
+		Input.is_emulating_touch_from_mouse()])
+
+
 func _feed_pointer_aim() -> void:
 	_input.set_pointer_aim(_cursor_direction(), _pointing_is_live())
 
@@ -1252,12 +1272,19 @@ func _feed_pointer_aim() -> void:
 ## It also goes quiet while the menu is up: the cursor is choosing a spell then, and a wizard
 ## turning to follow it behind the backdrop is motion nobody asked for.
 func _pointing_is_live() -> bool:
-	# THE THUMB CONTROLS BEING UP IS THE ANSWER. If a stick and four buttons are drawn, this is
-	# a touch run - a phone, or a desktop run that asked for them with `--touch-ui:on` - and a
-	# cursor aiming underneath would silently outrank every drag the thumb makes. Four suites
-	# found this the hard way: they force the controls visible and then measure drag-to-aim,
-	# and the mouse sitting wherever it happened to be was answering instead.
-	if _mobile.visible or DisplayServer.is_touchscreen_available():
+	# THE THUMB CONTROLS BEING UP IS THE ONLY ANSWER. If a stick and four buttons are drawn,
+	# this is a touch run - a phone, or a desktop run that asked for them with `--touch-ui:on` -
+	# and a cursor aiming underneath would silently outrank every drag the thumb makes. Four
+	# suites found that the hard way: they force the controls visible and then measure
+	# drag-to-aim, and the mouse sitting wherever it happened to be was answering instead.
+	#
+	# This line also read `DisplayServer.is_touchscreen_available()` for one release, which is
+	# the trap ARCHITECTURE.md describes and which is documented three files away from here.
+	# In a browser that call answers about `ontouchstart in window`, which desktop Chrome
+	# defines - so the first published build had a working WASD and a dead mouse. The
+	# capability flag is not consulted anywhere any more; `_mobile.visible` already carries
+	# the answer, because it is set by a finger actually arriving.
+	if _mobile.visible:
 		return false
 	if _loadout != null and _loadout.is_open():
 		return false
@@ -3934,6 +3961,16 @@ func _run_pc_tests() -> void:
 		not _mobile.visible and not OS.has_feature("mobile"),
 		"controls visible=%s, mobile=%s" % [_mobile.visible, OS.has_feature("mobile")])
 	_mobile.visibility_mode = MobileControls.Visibility.HIDDEN
+	await _settle()
+	_expect("with no controls drawn, the cursor is what aims", _pointing_is_live(),
+		"pointing live=%s (the touchscreen flag says %s, and is not consulted)" % [
+			_pointing_is_live(), DisplayServer.is_touchscreen_available()])
+	_mobile.visibility_mode = MobileControls.Visibility.ALWAYS
+	await _settle()
+	_expect("and with them drawn, it is not", not _pointing_is_live(),
+		"a thumb outranks a cursor, never the other way round")
+	_mobile.visibility_mode = MobileControls.Visibility.HIDDEN
+	await _settle()
 
 	# --- the cursor aims -------------------------------------------------------------------
 	# A known world point, projected to the screen, and the mouse put there. If the maths is
