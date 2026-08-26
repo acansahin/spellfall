@@ -57,6 +57,14 @@ var _team_match := false
 ## The two mode panels, so picking one can restyle both.
 var _mode_panels: Array = []
 
+## One line naming the keys, or the empty string on a device that has no keys.
+##
+## The level works out which - it is the only thing that knows whether the thumb controls came
+## up - and this screen only draws it. It is the ONLY place a desktop player is ever told that
+## Q, Space and E are their three spells, and it doubles as the answer to "why is my mouse not
+## doing anything": if this line is missing, the game thinks a thumb is driving.
+var _controls := ""
+
 ## The option panels, per column, so a selection can restyle its own row without rebuilding
 ## the screen. Parallel to `_catalogue.columns`.
 var _panels: Array = []
@@ -77,9 +85,10 @@ func _ready() -> void:
 ## hand-it-its-dependencies rule the stick, the bot and the HUD already follow. A screen that
 ## loaded its own catalogue would be a second place the roster is named.
 func open(catalogue: SpellCatalogue, picks: PackedInt32Array,
-		team_match: bool = false) -> void:
+		team_match: bool = false, controls: String = "") -> void:
 	_catalogue = catalogue
 	_team_match = team_match
+	_controls = controls
 	_picks = picks.duplicate()
 	while _picks.size() < catalogue.columns.size():
 		_picks.append(0)
@@ -145,6 +154,8 @@ func _build() -> void:
 		row.add_child(_build_column(index))
 
 	page.add_child(_build_mode_row())
+	if _controls != "":
+		page.add_child(_heading(_controls, 13, DIM_TEXT))
 
 	var start := Button.new()
 	start.text = "FIGHT"

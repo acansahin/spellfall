@@ -957,7 +957,7 @@ func _open_loadout() -> void:
 	var waiting: Array[Player] = [_player, _bot]
 	for fighter in waiting:
 		fighter.accepts_input = false
-	_loadout.open(catalogue, _picks, _team_match)
+	_loadout.open(catalogue, _picks, _team_match, _control_hint())
 
 
 func _on_loadout_confirmed(picks: PackedInt32Array, team_match: bool) -> void:
@@ -1238,6 +1238,18 @@ func _wire_feel() -> void:
 # So the level works it out and hands over the answer - the same single line of meaning it
 # already gives the joystick.
 # ---------------------------------------------------------------------------------------
+
+## The one line telling a desk player which keys are theirs, or "" for a thumb.
+##
+## Read off the same state the aim is: if the thumb controls came up, this is a touch device and
+## naming keys at it would be noise. It is deliberately shown on the loadout screen and nowhere
+## else - it is needed once, before the first fight, and a permanent key legend over a game is
+## clutter the second time you read it.
+func _control_hint() -> String:
+	if _mobile.visible:
+		return ""
+	return "WASD move  ·  mouse aims  ·  left click Fireball  ·  Q strike  ·  Space motion  ·  E guard"
+
 
 ## Prints what the input layer decided, once, at startup.
 ##

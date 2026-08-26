@@ -669,10 +669,20 @@ a loadout screen, and it is the shape this session built.
 
 ### Still open
 
+- [x] Fix: `_pointing_is_live()` still read `DisplayServer.is_touchscreen_available()` after
+      `MobileControls` had stopped. In a browser that answers about `ontouchstart in window`,
+      and a true there gates the cursor off while leaving WASD alone - the exact report from
+      the first published build. Nothing reads the flag now
+- [x] The loadout screen names the keys on a device that has them. It is the only place a desk
+      player is told Q/Space/E, and it doubles as a diagnostic: no line means the game thinks a
+      thumb is driving
+
 - [ ] **The web build has not been SEEN.** The engine boots in a browser - WebGL2, pack
       loaded, no errors - but the preview pane never composited a frame, so the canvas was
-      0x0 and nothing could be screenshotted or clicked. Keyboard focus on the canvas and the
-      first-touch rule are both unverified in an actual browser.
+      0x0 and nothing could be screenshotted or clicked - and because a hidden canvas never
+      gets a `requestAnimationFrame`, the game's own `_ready()` never runs either, so not one
+      line of its output reaches the console. Verification of the web build has to come from
+      somebody with the page open.
 - [ ] No aim lane is drawn for a cursor. On a phone the drag shows the spell's reach; at a
       desk there is nothing telling you a Fireball stops at 6.6m.
 - [ ] The mouse is not captured, so a click outside the canvas leaves the game. Fine for a
