@@ -47,8 +47,12 @@ jobs:
           # to a fresh shell - which cost three rounds of "is this even the build you are
           # looking at?". And the game reads it back and shows it, so a bug report says which
           # build it came from.
-          sed -i "s/__BUILD__/${GITHUB_SHA::7}/g" build/web/index.html
-          grep -q "${GITHUB_SHA::7}" build/web/index.html
+          # `cut`, not bash's ${VAR::7}: this step runs inside the godot-ci container, whose
+          # /bin/sh is not bash, and the substring form is a syntax error there rather than a
+          # wrong answer - the job failed outright the first time.
+          SHORT=$(echo "$GITHUB_SHA" | cut -c1-7)
+          sed -i "s/__BUILD__/$SHORT/g" build/web/index.html
+          grep -q "$SHORT" build/web/index.html
 
       - name: Check the export actually produced a game
         run: |
