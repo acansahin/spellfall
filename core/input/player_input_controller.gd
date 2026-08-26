@@ -65,15 +65,45 @@ var _latched_has_aim := false
 var _pointer_aim := Vector2.ZERO
 var _pointer_active := false
 
+## The slot waiting for a place to go, or -1.
+##
+## This is the whole of the Warcraft III casting model the map this game follows uses: a key
+## ARMS a spell, and the next left click says WHERE. Nothing is cast on the key press, so a
+## mis-typed key costs a cooldown of nothing and can be taken back with a right click.
+##
+## Spells that need no place - the wards - are not armed at all; the level fires those the
+## moment they are armed, because it is the only thing that knows what kind of spell a slot
+## holds. See `main.gd _release_instant_casts`.
+var _armed_slot := -1
+
+## A walk order given by right-clicking the ground, as a WORLD direction refreshed every frame
+## by the level. Same split as the aim: the level owns the ground plane, this owns the intent.
+var _click_move := Vector2.ZERO
+var _click_move_active := false
+
+## A right click the level has not yet turned into a walk order. Held for exactly one frame.
+##
+## The click is READ here, because this node is the only place allowed to know a mouse exists,
+## and it is INTERPRETED there, because turning a cursor into a patch of ground needs a camera.
+var _move_click_pending := false
+
 
 func _process(_delta: float) -> void:
 	_poll_ability_keys()
 	var raw := _read_raw()
 	var world := _screen_to_world(raw)
+	if world != Vector2.ZERO:
+		# A key beats a standing walk order, and cancels it. Resuming a click order the moment
+		# a key is released would send the wizard back off toward somewhere they had already
+		# decided against.
+		_click_move_active = false
+	elif _click_move_active:
+		# Already world space - it came from the ground, not from a stick.
+		world = _click_move
 	command.move_dir = world
 	command.has_move_input = world.length_squared() > 0.0
 	_publish_aim(world)
-	command.aiming_slot = _aim_slot
+	command.aiming_slot = _aim_slot if _aim_slot != -1 else _armed_slot
 	command.ability_pressed = _pending_ability
 	command_updated.emit(command)
 
@@ -90,7 +120,10 @@ func _publish_aim(world_move: Vector2) -> void:
 		command.aim_dir = _screen_to_world(_aim_vector)
 		command.has_aim = true
 		return
-	if _pointer_active and _pointer_aim != Vector2.ZERO:
+	# ONLY WHILE A SPELL IS ARMED. A wizard whose head follows the cursor all round the arena
+	# looks like a twin-stick shooter, and this is not one: the map this follows faces you where
+	# you are walking until you actually point at something.
+	if _armed_slot != -1 and _pointer_active and _pointer_aim != Vector2.ZERO:
 		command.aim_dir = _pointer_aim
 		command.has_aim = true
 		return
@@ -109,22 +142,95 @@ func _publish_aim(world_move: Vector2) -> void:
 ## constructor call rather than a constant expression and does not compile.
 const SLOT_KEYS: Array = ["cast_1", "cast_2", "cast_3", "cast_4"]
 
-## The left mouse button, which casts slot 0 - but ONLY while a cursor is actually driving.
+## The left mouse button: it says WHERE an armed spell goes, and does nothing otherwise.
 ##
-## It is not simply a second event on `cast_1`, and the reason is a real bug rather than
-## tidiness. `emulate_mouse_from_touch` is on by default and turns every finger into a left
-## click, so a left button bound to the action meant that TAPPING ANYWHERE ON A PHONE cast a
-## Fireball - including on the menu. Gating it on `_pointer_active` is the same rule the aim
-## already follows: if a thumb is driving, the cursor is not.
+## It is deliberately not a second event on `cast_1`. `emulate_mouse_from_touch` is on by
+## default and turns every finger into a left click, so a left button bound to a cast action
+## meant that TAPPING ANYWHERE ON A PHONE cast a spell - the menu included. Here it only ever
+## fires something already armed, and nothing on a phone ever arms.
 const PRIMARY_CLICK := "cast_primary"
 
+## Right click: walk there, or take back the spell you were about to cast.
+const MOVE_CLICK := "move_command"
 
+
+## The whole desk control scheme, in one place: a key arms, a left click sends, a right click
+## either takes it back or walks you somewhere.
 func _poll_ability_keys() -> void:
 	for slot in SLOT_KEYS.size():
-		if Input.is_action_just_pressed(String(SLOT_KEYS[slot])):
-			request_ability(slot)
-	if _pointer_active and Input.is_action_just_pressed(PRIMARY_CLICK):
-		request_ability(0)
+		if not Input.is_action_just_pressed(String(SLOT_KEYS[slot])):
+			continue
+		# The same key again puts it away. A player who armed the wrong spell should be able to
+		# undo it with the key they already have a finger on.
+		if _armed_slot == slot:
+			disarm()
+		else:
+			arm(slot)
+
+	if Input.is_action_just_pressed(MOVE_CLICK):
+		if _armed_slot != -1:
+			# Right click CANCELS an armed spell and issues no walk order. Two meanings on one
+			# button, and the map this follows resolves them the same way: whatever you were
+			# about to do, you are not doing it now.
+			disarm()
+		else:
+			_move_click_pending = true
+
+	if _armed_slot != -1 and Input.is_action_just_pressed(PRIMARY_CLICK):
+		_send_armed()
+
+
+## Casts the armed spell at wherever the cursor is pointing.
+##
+## The aim is LATCHED, exactly as a lifted thumb latches one, and for the same reason: the
+## character consumes the cast on the next physics tick, and between now and then `_process`
+## would otherwise overwrite the direction with wherever the wizard happens to be walking.
+func _send_armed() -> void:
+	var slot := _armed_slot
+	disarm()
+	if _pointer_aim != Vector2.ZERO:
+		_latched_aim = _pointer_aim
+		_latched_has_aim = true
+		command.aim_dir = _latched_aim
+		command.has_aim = true
+	request_ability(slot)
+
+
+## Holds a spell, waiting for a place to put it.
+func arm(slot: int) -> void:
+	_armed_slot = slot
+	command.aiming_slot = slot
+
+
+func disarm() -> void:
+	_armed_slot = -1
+	if _aim_slot == -1:
+		command.aiming_slot = -1
+
+
+## The slot waiting for a target, or -1. The level reads it to fire the spells that need no
+## target, and the aim indicator reads it to draw the one that does.
+func armed_slot() -> int:
+	return _armed_slot
+
+
+## Takes a pending right-click, if there is one. The level turns it into a patch of ground.
+func consume_move_click() -> bool:
+	var clicked := _move_click_pending
+	_move_click_pending = false
+	return clicked
+
+
+## Called by the level every frame while a walk order stands. `direction` is WORLD space and
+## points at the destination from wherever the wizard now is.
+func set_click_move(direction: Vector2, active: bool) -> void:
+	_click_move = direction
+	_click_move_active = active
+
+
+## True while a right-click walk order is being followed.
+func is_click_moving() -> bool:
+	return _click_move_active
 
 
 ## Called by the virtual joystick once it exists. `vector` is in screen space with
@@ -234,6 +340,16 @@ func aim_vector() -> Vector2:
 ## Consuming the cast also releases the aim latched with it: that direction was held only to
 ## survive the gap between the lift and this tick, and holding it any longer would pin the
 ## wizard's facing to the last thing they cast.
+## Drops a standing walk order and anything armed. The level calls this when a round resets:
+## a wizard respawned at their spawn point must not immediately set off toward wherever they
+## had clicked in the round before.
+func clear_orders() -> void:
+	_click_move_active = false
+	_click_move = Vector2.ZERO
+	_move_click_pending = false
+	disarm()
+
+
 func consume_ability() -> int:
 	var slot := _pending_ability
 	_pending_ability = -1

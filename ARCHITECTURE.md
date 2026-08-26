@@ -247,9 +247,26 @@ picks between four sources in priority order:
 | Priority | Source | When |
 |---|---|---|
 | 1 | a live thumb drag off a spell button | a finger is down and past the deadzone |
-| 2 | the **cursor** | a mouse is driving (see below) |
+| 2 | the **cursor** | a mouse is driving AND a spell is armed |
 | 3 | the latched aim of a released cast | between the lift and the tick that consumes it |
 | 4 | the movement direction | nothing else is speaking — what tapping always did |
+
+**A key ARMS, a left click SENDS.** `PlayerInputController` holds `_armed_slot`; nothing is
+cast on the key press. The left button latches the cursor's direction and requests the cast;
+a right click, or the same key again, puts it away. This is the model the Warcraft III arena
+map uses and it was read out of that map: each of its abilities is built on a base ability that
+says whether it takes a point, and the ones that do not are exactly its three wards.
+
+**Which spells skip the click is decided by the LEVEL, not the controller.** A slot's cast type
+is a gameplay fact and the input layer is not allowed to know one, so `_release_instant_casts()`
+fires an armed `BUFF` immediately. Everything else waits for a place to go.
+
+**Right click is two meanings on one button.** Armed, it cancels; unarmed, it is a walk order.
+The controller reads the button — it is the only thing allowed to know a mouse exists — and
+reports the click; the level turns it into a patch of ground, because that needs a camera. The
+direction to the destination is then recomputed EVERY FRAME rather than latched once: the wizard
+is being shoved around while it walks, and a latched direction would march it confidently past
+the place it was sent.
 
 **The cursor is turned into an aim by the LEVEL, not by the controller.** `main.gd` intersects
 the mouse ray with the horizontal plane at the wizard's own height and hands the result to
@@ -1216,6 +1233,20 @@ Each of these cost real time in the first session.
   button to the `cast_1` ACTION made TAPPING ANYWHERE ON A PHONE cast a Fireball, menu
   included. The click lives on its own `cast_primary` action, polled only while a cursor is
   actually driving.
+- **A right click in a browser opens the context menu.** With right click as the movement
+  control that is not a nuisance, it is the control not working. Suppressed on the canvas by a
+  three-line script in the Web preset's `html/head_include` - which is also the only place a
+  web build can be given page-level behaviour, since nothing else in the export touches the
+  surrounding HTML.
+- **A press and a release in the same frame is not reliably a press.** A right click needs
+  three hops to become a walk order — the controller reads the button, the level turns it into
+  ground, the character walks — and one `_settle()` straddles two of them. Both failures looked
+  like a dead mouse button. `_click()` presses, settles, releases, settles.
+- **A suite that casts must wait for a live round IMMEDIATELY BEFORE casting.**
+  `_place_fighters()` waits for one and then pins for three quarters of a second, and the round
+  can turn over inside that window — the bot has been shot at for twenty seconds by the time a
+  long suite reaches its last section. `--pc-test` pins `accepts_input` across the window it
+  measures, the same way the other suites pin a position.
 - **Adding a parameter to a signal silently breaks every lambda already listening.** The
   projectile's `hit` grew a `shooter` argument, and two harness listeners written as
   `func(b, _d, _a)` stopped receiving anything at all. Godot refuses the call at emit time, so

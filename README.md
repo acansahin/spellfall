@@ -9,11 +9,15 @@ Godot 4.7, mobile-first, and playable in a desktop browser with a mouse and keyb
 
 | Desk | Phone |
 |---|---|
-| **WASD** walk | left thumb on the stick |
-| **Mouse** aims — you always face the cursor | drag off a spell button to aim it |
-| **Left click** Fireball | tap the big button |
-| **Q** strike · **Space** motion · **E** guard | the three satellite buttons |
-| **1 2 3 4** reach the same four slots | |
+| **Right click** the ground to walk there | left thumb on the stick |
+| **Q W E R** arms a spell | drag off a spell button to aim it |
+| **Left click** sends it where you clicked | lift to cast |
+| Right click, or the key again, puts it away | — |
+| Wards (guard slot) fire on the key, no click | — |
+| Arrow keys walk, if you prefer a keyboard | — |
+
+The desk scheme is the one the Warcraft III arena map this game follows uses — a key arms, a
+click says where — and which spells skip the click was read out of that map rather than chosen.
 
 The same build serves both. It shows the thumb controls the first time a real finger touches
 the screen and never from a capability flag — see ARCHITECTURE.md on why that distinction is

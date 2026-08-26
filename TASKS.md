@@ -688,3 +688,46 @@ a loadout screen, and it is the shape this session built.
 - [ ] The mouse is not captured, so a click outside the canvas leaves the game. Fine for a
       prototype, worth revisiting if anyone plays it seriously.
 
+---
+
+## Session 19 - The map's own controls
+
+Read the control model out of `Warlock097.w3x` rather than guessing it. `war3map.w3a` gives
+every ability a hotkey (`ahky`) and a base ability, and the base ability is what says whether it
+needs a target: Blizzard, Far Sight, Mass Teleport and Flame Strike take a point; Thunder Clap,
+Replenish and Wind Walk do not. The map's own hotkeys are **G** plus **D E R T Y C F**.
+
+- [x] **A key arms, a left click sends.** `_armed_slot` on the controller; nothing casts on the
+      key press. Right click or the same key again puts it away
+- [x] **A ward fires on the key**, because it is not pointed at anything. Decided by the LEVEL
+      from the slot's cast type - the input layer may not know what a spell is. Our three
+      wards are the map's three wards
+- [x] **Right click walks you there.** The controller reads the button, the level turns it into
+      ground, and the direction is recomputed every frame - a latched one marches the wizard
+      past the spot after the first shove
+- [x] Q W E R for the four slots; arrow keys still walk. **WASD is gone** - W, E and R are
+      spells, and the map has no keyboard movement at all
+- [x] The cursor only turns the wizard's head while a spell is armed. Following it all round
+      the arena is a twin-stick game, and this is not one
+- [x] A round reset drops a standing walk order and anything armed
+- [x] `--pc-test` rewritten: 20 assertions. `--key-test` moved onto the arrow keys
+- [x] Seventeen suites green
+
+### Traps, in ARCHITECTURE.md
+
+- [x] A press and a release in the same frame is not reliably a press, and a right click needs
+      three hops to become a walk order. Both read as a dead mouse button
+- [x] A suite that casts must wait for a live round IMMEDIATELY before casting, not merely at
+      the top of the section - `_place_fighters` pins for 0.75s and the round turns over inside
+      that window
+
+### Still open
+
+- [ ] **None of this has been played in a browser.** The same limit as last session: the
+      preview pane never composites, so the game's own `_ready()` never runs and nothing can
+      be clicked or seen.
+- [x] Right click raises a browser context menu, which would have killed the primary movement
+      control outright. Suppressed on the canvas through the preset's `html/head_include`
+- [ ] No ground marker where you right-clicked, and no lane for the armed spell's reach. The
+      aim indicator comes up on arming, but there is nothing showing the walk destination.
+

@@ -261,27 +261,33 @@ what it catches you with.
 
 ## Playing at a desk
 
-The same build plays on a phone and in a desktop browser, and it decides which by waiting for a
-finger: no touch, no thumb controls.
+The desk controls are the ones the Warcraft III arena map this game follows uses, and they were
+read out of the map rather than guessed at: `war3map.w3a` gives each spell a hotkey and a base
+ability, and the base ability says whether it needs a place to go.
 
 | | |
 |---|---|
-| **WASD** / arrows | walk |
-| **Mouse** | aim — the wizard always faces the cursor |
-| **Left click** | Fireball |
-| **Q** | your STRIKE spell |
-| **Space** | your MOTION spell |
-| **E** | your GUARD spell |
-| **1 2 3 4** | the same four slots, for anyone who prefers a number row |
+| **Right click** the ground | walk there |
+| **Q W E R** | arm a spell — nothing is cast yet |
+| **Left click** | send the armed spell where you clicked |
+| **Right click** / the same key again | put it away |
+| **arrow keys** | walk, for anyone who wants a keyboard |
 
-The three chosen keys are picked for a left hand resting on WASD. **Q** is the shortest reach
-from the index finger and takes the spell you press most after Fireball. **Space** takes the
-escape, because the panic button should be the biggest key on the board and the thumb is
-already over it. **E** takes the guard, which is a read rather than a reflex and can afford the
-extra distance.
+**A key arms, a click sends.** Pressing Q does not throw a Fireball; it picks one up. That is
+the map's own model, and it costs a mis-typed key nothing — a wrong spell is put back with the
+key you already have a finger on.
 
-What a cursor buys over a thumb is that it can say two things at once: you walk one way and aim
-another. That is the first input in this game that could.
+**A ward needs no click.** Arcane Shield, Rewind and Momentum fire the instant you press their
+key, because they are not pointed at anything. That is not a convenience anybody invented: the
+map's own three wards — Shield, Time Shift, Rush — are exactly the abilities there that take no
+target either, and the split falls out of a field this game already had.
+
+**WASD is gone.** W, E and R are spells now. The map has no keyboard movement at all, and a key
+cannot be both the second spell and "walk forward".
+
+The map's own hotkeys are **G** for its main spell and **D E R T Y C F** for its seven columns —
+it has eight columns to place and a whole keyboard to place them on. Four slots compress to
+QWER.
 
 ## Two a side
 

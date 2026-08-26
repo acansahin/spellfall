@@ -23,8 +23,8 @@ extends Node3D
 ##   --spells-test     assert Force Wave, Blink and Arcane Shield do what they claim
 ##   --loadout-test    assert the catalogue, the picks, the screen, and each added spell's rule
 ##   --2v2             two a side: you and a bot ally against two bots
-##   --pc-test         assert the desk controls: the bindings, the cursor aim, and that a
-##                     click meaning "confirm" never becomes a spell. Needs a real window
+##   --pc-test         assert the desk controls: right click to walk, Q W E R to arm, left
+##                     click to send, and a ward that needs no click. Needs a real window
 ##   --team-test       assert the sides, friendly fire, re-targeting, and what ends a round
 ##                     (implies --2v2; it has nothing to measure in a duel)
 ##   --loadout:on      open the spell-picking screen even though other harness args were given
@@ -124,6 +124,14 @@ var _titles: Dictionary = {}
 ## Metres either side of a spawn point that teammates stand, in a team match. Wide enough that
 ## a Force Wave aimed at one does not automatically catch the other on the opening exchange.
 const TEAM_SPREAD := 2.6
+
+## Metres from a walk order at which it counts as reached. Roughly a body's width: closer than
+## this and the wizard shuffles on the spot, because the ramp cannot stop it that precisely.
+const ARRIVAL_RADIUS := 0.45
+
+## Where a right click sent the wizard, and whether one stands.
+var _move_target := Vector3.ZERO
+var _move_target_set := false
 
 ## Body colours, so four wizards are two readable sides. The player keeps `player.tscn`'s blue
 ## and the scene bot keeps its pink; these are the two that are made at runtime.
@@ -659,41 +667,43 @@ func _emit_key(physical_keycode: Key, pressed: bool) -> void:
 ## Both feed the same InputCommand, so a regression here would mean the touch branch had
 ## started swallowing input that no finger was actually producing.
 func _run_key_tests() -> void:
+	# ARROW keys, not WASD. W, E and R are spell slots since the desk controls became the ones
+	# the map this game follows uses, and the arrows are what is left bound to walking.
 	# It holds the stick to prove touch outranks a held key, and a hidden stick claims nothing.
 	_mobile.visibility_mode = MobileControls.Visibility.ALWAYS
 	await _settle()
 	print("[key-test] keyboard through the same InputCommand pipeline")
 
-	_emit_key(KEY_D, true)
+	_emit_key(KEY_RIGHT, true)
 	await _settle()
 	var right: Vector2 = _input.command.move_dir
 	_expect("D -> world +X (screen-right)", right.x > 0.9 and absf(right.y) < 0.05,
 		"move_dir=%s" % right)
-	_emit_key(KEY_D, false)
+	_emit_key(KEY_RIGHT, false)
 	await _settle()
 
-	_emit_key(KEY_W, true)
+	_emit_key(KEY_UP, true)
 	await _settle()
 	var fwd: Vector2 = _input.command.move_dir
 	_expect("W -> world -Z (up the screen)", fwd.y < -0.9 and absf(fwd.x) < 0.05,
 		"move_dir=%s" % fwd)
 
 	# Diagonal on the keyboard must obey the same circular clamp the stick does.
-	_emit_key(KEY_D, true)
+	_emit_key(KEY_RIGHT, true)
 	await _settle()
 	var diag: float = _input.command.move_dir.length()
 	_expect("W+D diagonal is not faster", absf(diag - right.length()) < 0.02,
 		"diagonal=%.4f cardinal=%.4f" % [diag, right.length()])
 
-	_emit_key(KEY_W, false)
-	_emit_key(KEY_D, false)
+	_emit_key(KEY_UP, false)
+	_emit_key(KEY_RIGHT, false)
 	await _settle()
 	_expect("releasing keys stops the wizard", _input.command.move_dir.length() < 0.0001,
 		"move_dir=%s" % _input.command.move_dir)
 
 	# A finger on the stick must take priority over a held key, not fight it.
 	var centre := _mobile.joystick.get_global_rect().get_center()
-	_emit_key(KEY_A, true)
+	_emit_key(KEY_LEFT, true)
 	await _settle()
 	_emit_touch(0, centre, true)
 	_emit_drag(0, centre + Vector2(_mobile.joystick.base_radius, 0.0))
@@ -707,7 +717,7 @@ func _run_key_tests() -> void:
 	var after: Vector2 = _input.command.move_dir
 	_expect("keyboard resumes when the finger lifts", after.x < -0.9,
 		"A still held -> move_dir=%s" % after)
-	_emit_key(KEY_A, false)
+	_emit_key(KEY_LEFT, false)
 	await _settle()
 
 	print("[key-test] %s (%d failure(s))" % [
@@ -1248,7 +1258,7 @@ func _wire_feel() -> void:
 func _control_hint() -> String:
 	if _mobile.visible:
 		return ""
-	return "WASD move  ·  mouse aims  ·  left click Fireball  ·  Q strike  ·  Space motion  ·  E guard"
+	return "RIGHT CLICK to move  ·  Q W E R arms a spell  ·  LEFT CLICK sends it  ·  wards cast at once"
 
 
 ## Prints what the input layer decided, once, at startup.
@@ -1271,7 +1281,87 @@ func _report_input_mode() -> void:
 
 
 func _feed_pointer_aim() -> void:
-	_input.set_pointer_aim(_cursor_direction(), _pointing_is_live())
+	var live := _pointing_is_live()
+	_input.set_pointer_aim(_cursor_direction(), live)
+	if not live:
+		_move_target_set = false
+		_input.set_click_move(Vector2.ZERO, false)
+		return
+	_take_move_click()
+	_follow_move_target()
+	_release_instant_casts()
+
+
+## Turns a right click into a patch of ground.
+##
+## The controller read the button - it is the only thing allowed to know a mouse exists - and
+## this works out what was under it, because that needs a camera and a ground plane.
+func _take_move_click() -> void:
+	if not _input.consume_move_click():
+		return
+	var spot := _cursor_ground_point()
+	if spot == Vector3.INF:
+		return
+	_move_target = spot
+	_move_target_set = true
+
+
+## Walks toward a standing order, and forgets it on arrival.
+##
+## The direction is recomputed EVERY FRAME rather than stored once, because the wizard is being
+## shoved around while it walks: a direction latched at click time would have it marching
+## confidently past the place it was sent, having been knocked three metres sideways on the way.
+func _follow_move_target() -> void:
+	if not _move_target_set:
+		_input.set_click_move(Vector2.ZERO, false)
+		return
+	var here := _player.global_position
+	var away := Vector2(_move_target.x - here.x, _move_target.z - here.z)
+	if away.length() <= ARRIVAL_RADIUS:
+		_move_target_set = false
+		_input.set_click_move(Vector2.ZERO, false)
+		return
+	_input.set_click_move(away.normalized(), true)
+
+
+## Fires an armed spell that has nowhere to be aimed.
+##
+## A ward is not pointed at anything, so holding it and waiting for a click would be asking the
+## player for information the spell does not use. This is the level's call because a slot's
+## cast type is a gameplay fact, and the input layer is not allowed to know one.
+##
+## Straight out of the map this follows: its own wards - Shield, Time Shift, Rush - are the
+## three abilities there that take no target either.
+func _release_instant_casts() -> void:
+	var slot := _input.armed_slot()
+	if slot < 0:
+		return
+	var book := _player.abilities()
+	if book == null:
+		return
+	var ability := book.ability_in(slot)
+	if ability != null and ability.cast_type == Ability.CastType.BUFF:
+		_input.disarm()
+		_input.request_ability(slot)
+
+
+## Where the cursor meets the ground, or `Vector3.INF`.
+##
+## The FLOOR here, not the wizard's chest height the aim uses. A walk order is about a place to
+## stand, and standing happens on the floor.
+func _cursor_ground_point() -> Vector3:
+	var cam := get_viewport().get_camera_3d()
+	if cam == null:
+		return Vector3.INF
+	var mouse := get_viewport().get_mouse_position()
+	var from := cam.project_ray_origin(mouse)
+	var ray := cam.project_ray_normal(mouse)
+	if absf(ray.y) < 0.0001:
+		return Vector3.INF
+	var distance := -from.y / ray.y
+	if distance <= 0.0:
+		return Vector3.INF
+	return from + ray * distance
 
 
 ## Whether a cursor should be steering the aim at all.
@@ -1440,6 +1530,10 @@ func _wire_rounds() -> void:
 
 
 func _on_round_started(number: int) -> void:
+	# A wizard put back on their spawn point must not set off toward wherever they had clicked
+	# in the round before, nor open the round holding a spell they armed while dying in it.
+	_move_target_set = false
+	_input.clear_orders()
 	_arena.reset()
 	_feel.stopped_burning()
 	_kill_zone.clear()
@@ -3932,13 +4026,13 @@ func _pin_while(spots: Dictionary, seconds: float) -> void:
 		held += 1.0 / 60.0
 
 
-## Playing at a desk: WASD, a cursor that aims, and a left button that casts.
+## Playing at a desk, the way the map this game follows plays: right click to walk, a key to
+## arm a spell, a left click to say where it goes.
 ##
-## Needs a REAL WINDOW, like every other input suite. `Input.warp_mouse` does nothing under
-## `--headless`, and `DisplayServer.is_touchscreen_available()` answers about the display
-## driver rather than about the machine - so a headless run would report failures that say
-## nothing at all about the code.
+## Needs a REAL WINDOW. `Input.warp_mouse` and parsed mouse buttons do nothing under
+## `--headless`, so a headless run reports failures that say nothing about the code.
 func _run_pc_tests() -> void:
+	_mobile.visibility_mode = MobileControls.Visibility.HIDDEN
 	await _settle()
 	_quiet_feel()
 	_clear_cover()
@@ -3946,100 +4040,187 @@ func _run_pc_tests() -> void:
 	_freeze_bot()
 	await _wait_for_live()
 
-	# --- the bindings ---------------------------------------------------------------------
-	_expect("the left mouse button casts your primary spell",
+	# --- the bindings ------------------------------------------------------------------------
+	_expect("Q W E R are the four spell slots",
+		_action_has_key("cast_1", KEY_Q) and _action_has_key("cast_2", KEY_W)
+			and _action_has_key("cast_3", KEY_E) and _action_has_key("cast_4", KEY_R),
+		"%s | %s | %s | %s" % [_keys_of("cast_1"), _keys_of("cast_2"),
+			_keys_of("cast_3"), _keys_of("cast_4")])
+	_expect("the left button sends an armed spell",
 		_action_has_mouse(PlayerInputController.PRIMARY_CLICK, MOUSE_BUTTON_LEFT),
 		_keys_of(PlayerInputController.PRIMARY_CLICK))
-	_expect("and it is NOT a second binding on cast_1 - a tap on a phone would cast",
-		not _action_has_mouse("cast_1", MOUSE_BUTTON_LEFT), _keys_of("cast_1"))
-	_expect("Q is the strike slot", _action_has_key("cast_2", KEY_Q), _keys_of("cast_2"))
-	_expect("Space is the motion slot - the panic key is the big one",
-		_action_has_key("cast_3", KEY_SPACE), _keys_of("cast_3"))
-	_expect("E is the guard slot", _action_has_key("cast_4", KEY_E), _keys_of("cast_4"))
-	_expect("and 1-4 still reach all four", _action_has_key("cast_1", KEY_1)
-		and _action_has_key("cast_2", KEY_2) and _action_has_key("cast_3", KEY_3)
-		and _action_has_key("cast_4", KEY_4), "the numbers are the fallback row")
-	_expect("WASD still walks", _action_has_key("move_forward", KEY_W)
-		and _action_has_key("move_left", KEY_A) and _action_has_key("move_back", KEY_S)
-		and _action_has_key("move_right", KEY_D), "unchanged from the first session")
-	_expect("Space no longer casts the primary as well as moving you",
-		not _action_has_key("cast_1", KEY_SPACE),
-		"one key, one slot - it moved to the motion slot")
-
-	# --- the thumb controls stay off a machine with no thumb -----------------------------
-	_mobile.visibility_mode = MobileControls.Visibility.AUTO
-	await _settle()
+	_expect("the right button walks you there",
+		_action_has_mouse(PlayerInputController.MOVE_CLICK, MOUSE_BUTTON_RIGHT),
+		_keys_of(PlayerInputController.MOVE_CLICK))
+	_expect("W no longer walks - it is a spell now",
+		not _action_has_key("move_forward", KEY_W), _keys_of("move_forward"))
+	_expect("and the arrow keys still do, because nothing else wants them",
+		_action_has_key("move_forward", KEY_UP) and _action_has_key("move_left", KEY_LEFT)
+			and _action_has_key("move_back", KEY_DOWN)
+			and _action_has_key("move_right", KEY_RIGHT), _keys_of("move_forward"))
 	_expect("a desktop gets no thumbstick drawn over its game",
 		not _mobile.visible and not OS.has_feature("mobile"),
 		"controls visible=%s, mobile=%s" % [_mobile.visible, OS.has_feature("mobile")])
-	_mobile.visibility_mode = MobileControls.Visibility.HIDDEN
-	await _settle()
-	_expect("with no controls drawn, the cursor is what aims", _pointing_is_live(),
-		"pointing live=%s (the touchscreen flag says %s, and is not consulted)" % [
-			_pointing_is_live(), DisplayServer.is_touchscreen_available()])
-	_mobile.visibility_mode = MobileControls.Visibility.ALWAYS
-	await _settle()
-	_expect("and with them drawn, it is not", not _pointing_is_live(),
-		"a thumb outranks a cursor, never the other way round")
-	_mobile.visibility_mode = MobileControls.Visibility.HIDDEN
-	await _settle()
+	_expect("with no controls drawn, the cursor is live", _pointing_is_live(),
+		"the touchscreen flag says %s and is not consulted"
+			% DisplayServer.is_touchscreen_available())
 
-	# --- the cursor aims -------------------------------------------------------------------
-	# A known world point, projected to the screen, and the mouse put there. If the maths is
-	# right the wizard aims at exactly the spot the cursor is over.
-	await _place_fighters(Vector3(0.0, 1.2, -9.0), Vector3(0.0, 1.2, 0.0))
-	var cam := get_viewport().get_camera_3d()
-	for probe in [Vector2(1, 0), Vector2(0, -1), Vector2(-0.7, 0.7)]:
-		var flat: Vector2 = (probe as Vector2).normalized()
-		var spot := _player.global_position + Vector3(flat.x, 0.0, flat.y) * 4.0
-		Input.warp_mouse(cam.unproject_position(spot))
-		Input.flush_buffered_events()
-		await _settle()
-		var aim := _input.command.aim_dir
-		_expect("the wizard aims where the cursor is (%.0f, %.0f)" % [flat.x, flat.y],
-			_input.command.has_aim and aim.distance_to(flat) < 0.08,
-			"cursor asks %s, aim reads %s" % [flat, aim])
-
-	# --- ...and a click casts THERE, not where you are walking ------------------------------
-	# Walking one way while pointing another is the whole reason a cursor beats a thumb: it is
-	# the first input in this game that can say two things at once.
-	Input.warp_mouse(cam.unproject_position(_player.global_position + Vector3(4.0, 0.0, 0.0)))
-	Input.flush_buffered_events()
-	_input.set_override_vector(Vector2(0.0, 1.0), true)
-	await _settle()
+	# --- a key ARMS, and casts nothing -----------------------------------------------------
+	await _place_fighters(Vector3(6.0, 1.2, 0.0), Vector3(0.0, 1.2, 0.0))
+	_input.set_override_vector(Vector2.ZERO, true)
 	var book := _player.abilities()
 	book.reset()
-	_input.request_ability(0)
-	await get_tree().physics_frame
+	await _equip(&"force_wave", &"blink", &"arcane_shield")
+	_emit_key(KEY_Q, true)
+	_emit_key(KEY_Q, false)
+	await _settle()
+	_expect("a key arms a spell and casts nothing", _input.armed_slot() == 0
+		and _pool.in_flight().is_empty() and book.is_ready(0),
+		"armed=%d, %d in flight" % [_input.armed_slot(), _pool.in_flight().size()])
+	_expect("and the indicator comes up for it", _input.command.aiming_slot == 0,
+		"aiming_slot=%d" % _input.command.aiming_slot)
+
+	# --- the cursor only aims while something is armed ---------------------------------------
+	var cam := get_viewport().get_camera_3d()
+	Input.warp_mouse(cam.unproject_position(_player.global_position + Vector3(4.0, 0.0, 0.0)))
+	Input.flush_buffered_events()
+	await _settle()
+	_expect("an armed spell follows the cursor",
+		_input.command.has_aim
+			and _input.command.aim_dir.distance_to(Vector2(1, 0)) < 0.1,
+		"aim reads %s" % _input.command.aim_dir)
+
+	# --- a left click sends it THERE -----------------------------------------------------------
+	await _click(MOUSE_BUTTON_LEFT)
 	await get_tree().physics_frame
 	var flying := _pool.in_flight()
-	_expect("a click casts at the cursor", flying.size() == 1
-		and Vector2(flying[0].direction().x, flying[0].direction().z).distance_to(
-			Vector2(1, 0)) < 0.12,
-		"%d in flight, heading %s while walking north" % [
-			flying.size(), flying[0].direction() if flying.size() == 1 else Vector3.ZERO])
+	_expect("a left click sends the armed spell at the cursor", flying.size() == 1
+		and Vector2(flying[0].direction().x, flying[0].direction().z)
+			.distance_to(Vector2(1, 0)) < 0.12,
+		"%d in flight, heading %s" % [flying.size(),
+			flying[0].direction() if flying.size() == 1 else Vector3.ZERO])
+	_expect("and puts the spell away again", _input.armed_slot() == -1
+		and _input.command.aiming_slot == -1,
+		"armed=%d" % _input.armed_slot())
+
+	# --- ...and with nothing armed, the wizard faces where it walks -----------------------------
+	_input.set_override_vector(Vector2(0.0, 1.0), true)
+	await _settle()
+	_expect("with nothing armed the cursor does not turn your head",
+		_input.command.aim_dir.distance_to(_input.command.move_dir) < 0.01,
+		"aim %s vs move %s, cursor is off to the right" % [
+			_input.command.aim_dir, _input.command.move_dir])
 	_input.set_override_vector(Vector2.ZERO, true)
 
-	# --- a click that meant "confirm" must not become a spell -------------------------------
-	# The FIGHT button and the primary spell are now the same button. A press while nobody may
-	# act has to be dropped, not banked: banked, it comes out on the first live tick as a spell
-	# the player never aimed.
-	await _place_fighters(Vector3(0.0, 1.2, -9.0), Vector3(0.0, 1.2, 0.0))
+	# --- the same key, or a right click, takes it back --------------------------------------------
 	book.reset()
-	_player.accepts_input = false
-	_input.request_ability(0)
-	await get_tree().physics_frame
-	await get_tree().physics_frame
-	_player.accepts_input = true
-	await _wait(0.3)
-	_expect("a press made while nobody may act is dropped, not banked",
-		book.is_ready(0) and _input.command.ability_pressed < 0,
-		"slot ready=%s, still latched=%d" % [book.is_ready(0),
-			_input.command.ability_pressed])
+	_emit_key(KEY_Q, true)
+	_emit_key(KEY_Q, false)
+	await _settle()
+	_emit_key(KEY_Q, true)
+	_emit_key(KEY_Q, false)
+	await _settle()
+	_expect("the same key again puts the spell away", _input.armed_slot() == -1,
+		"armed=%d" % _input.armed_slot())
+	_emit_key(KEY_Q, true)
+	_emit_key(KEY_Q, false)
+	await _settle()
+	await _click(MOUSE_BUTTON_RIGHT)
+	_expect("a right click cancels it rather than walking you off",
+		_input.armed_slot() == -1 and not _input.is_click_moving(),
+		"armed=%d, walking=%s" % [_input.armed_slot(), _input.is_click_moving()])
+	_expect("and nothing was cast by any of that", book.is_ready(0),
+		"slot ready=%s" % book.is_ready(0))
+
+	# --- a ward needs no place, so it goes at once ---------------------------------------------------
+	# Placed first, and `_place_fighters` waits for a LIVE round. The suite had been casting
+	# straight on from the previous section while the round turned over underneath it:
+	# `accepts_input` was false, the cast was dropped, and it read as a ward that does not work.
+	# The rule is in ARCHITECTURE.md and this suite was ignoring it.
+	await _place_fighters(Vector3(6.0, 1.2, 0.0), Vector3(0.0, 1.2, 0.0))
+	# And again HERE, not only inside `_place_fighters`. That waits for a live round before it
+	# starts pinning, and the round can turn over during the three quarters of a second it then
+	# spends pinning - which is exactly what happened: the bot had been shoved into the lava by
+	# the casts above, round 2 opened mid-pin, and the ward was cast into a countdown.
+	await _wait_for_live()
+	book.reset()
+	_emit_key(KEY_R, true)
+	_emit_key(KEY_R, false)
+	# `accepts_input` is PINNED across the window, the way the other suites pin a position.
+	# What is under test is a rule about arming, and the round loop keeps turning over
+	# underneath this suite - the bot has been shot at for twenty seconds by now - which drops
+	# the cast into a countdown and reads as a ward that does not fire. Pinning the one piece
+	# of state the test is not about is the same trick `_place_fighters` uses, and for the same
+	# reason. See ARCHITECTURE.md on suites that measure a fighter correctly told to stand still.
+	var held := 0.0
+	while held < 0.3:
+		_player.accepts_input = true
+		await get_tree().physics_frame
+		held += 1.0 / 60.0
+	_expect("a ward fires on the key, with no click to place it",
+		_player.is_shielded() and _input.armed_slot() == -1,
+		"shielded=%s, armed=%d, round live=%s, accepts input=%s, slot 3 ready=%s" % [
+			_player.is_shielded(), _input.armed_slot(), _rounds.is_live(),
+			_player.accepts_input, book.is_ready(3)])
+
+	# --- right click walks you there, and stops when you arrive ---------------------------------------
+	await _place_fighters(Vector3(0.0, 1.2, 9.0), Vector3(0.0, 1.2, 0.0))
+	await _wait_for_live()
+	_input.set_override_vector(Vector2.ZERO, false)
+	var spot := Vector3(4.5, 0.0, 0.0)
+	Input.warp_mouse(cam.unproject_position(spot))
+	Input.flush_buffered_events()
+	await _click(MOUSE_BUTTON_RIGHT)
+	_expect("a right click on the ground gives a walk order", _input.is_click_moving(),
+		"walking=%s" % _input.is_click_moving())
+	var walked := 0.0
+	while walked < 4.0 and _input.is_click_moving():
+		await get_tree().physics_frame
+		walked += 1.0 / 60.0
+	var gap := Vector2(_player.global_position.x - spot.x, _player.global_position.z - spot.z)
+	_expect("the wizard walks to it and stops", gap.length() < 1.0
+		and not _input.is_click_moving(),
+		"stopped %.2fm away after %.1fs" % [gap.length(), walked])
+
+	# --- and a new round does not resume last round's order ---------------------------------------------
+	Input.warp_mouse(cam.unproject_position(Vector3(-6.0, 0.0, 0.0)))
+	Input.flush_buffered_events()
+	await _click(MOUSE_BUTTON_RIGHT)
+	_on_round_started(99)
+	await _settle()
+	_expect("a round reset drops the standing walk order",
+		not _input.is_click_moving() and _input.armed_slot() == -1,
+		"walking=%s, armed=%d" % [_input.is_click_moving(), _input.armed_slot()])
 
 	print("[pc] %s (%d failure(s))" % [
 		"ALL PASS" if _touch_failures == 0 else "FAILURES", _touch_failures])
 	get_tree().quit(1 if _touch_failures > 0 else 0)
+
+
+## Injects a mouse button, the way `_emit_key` injects a key.
+##
+## Flushed immediately: a parsed event alone sits in the queue for an unpredictable number of
+## frames, which is the trap ARCHITECTURE.md records against every other injected input here.
+func _emit_click(button: MouseButton, pressed: bool) -> void:
+	var event := InputEventMouseButton.new()
+	event.button_index = button
+	event.pressed = pressed
+	event.position = get_viewport().get_mouse_position()
+	event.global_position = event.position
+	_dispatch(event)
+
+
+## A whole click, with the pipeline given time to turn over on each half.
+##
+## A right click takes THREE hops to become a walk order - the controller reads the button, the
+## level turns it into a patch of ground, the character walks toward it - and one `_settle()`
+## straddles two of them. Every failure that produced looked like a dead mouse button.
+func _click(button: MouseButton) -> void:
+	_emit_click(button, true)
+	await _settle()
+	_emit_click(button, false)
+	await _settle()
+	await _settle()
 
 
 func _action_has_key(action: String, code: Key) -> bool:
@@ -4064,4 +4245,4 @@ func _keys_of(action: String) -> String:
 	var parts := PackedStringArray()
 	for event in InputMap.action_get_events(action):
 		parts.append(event.as_text())
-	return "bound to %s" % ", ".join(parts)
+	return "%s: %s" % [action, ", ".join(parts)]
