@@ -259,6 +259,30 @@ point forward, Loopshot a flat bar spinning as it goes, and Warp Bolt a hoop lyi
 spell HITS with is still the same sphere for all five — the shape is what it looks like, never
 what it catches you with.
 
+## Playing at a desk
+
+The same build plays on a phone and in a desktop browser, and it decides which by waiting for a
+finger: no touch, no thumb controls.
+
+| | |
+|---|---|
+| **WASD** / arrows | walk |
+| **Mouse** | aim — the wizard always faces the cursor |
+| **Left click** | Fireball |
+| **Q** | your STRIKE spell |
+| **Space** | your MOTION spell |
+| **E** | your GUARD spell |
+| **1 2 3 4** | the same four slots, for anyone who prefers a number row |
+
+The three chosen keys are picked for a left hand resting on WASD. **Q** is the shortest reach
+from the index finger and takes the spell you press most after Fireball. **Space** takes the
+escape, because the panic button should be the biggest key on the board and the thumb is
+already over it. **E** takes the guard, which is a read rather than a reflex and can afford the
+extra distance.
+
+What a cursor buys over a thumb is that it can say two things at once: you walk one way and aim
+another. That is the first input in this game that could.
+
 ## Two a side
 
 The loadout screen offers **1v1** or **2v2**, and 2v2 gives you a bot ally against two bots. The

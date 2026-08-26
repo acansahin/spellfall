@@ -287,7 +287,15 @@ func respawn_at(point: Vector3) -> void:
 ## was latched with the cast, and reading the two in the wrong order would work today only
 ## because of exactly how the controller happens to clear it.
 func _service_casting() -> void:
-	if input_controller == null or _abilities == null or not accepts_input:
+	if input_controller == null or _abilities == null:
+		return
+	if not accepts_input:
+		# Drop anything latched while nobody may act. A press during the countdown - or a
+		# click on the FIGHT button, now that the left mouse button casts - would otherwise
+		# sit in the latch and come out on the first live tick, as a spell the player never
+		# aimed. BotController has always done this; the human's fighter had not needed to
+		# until a mouse button existed that also means "confirm".
+		input_controller.consume_ability()
 		return
 	var command := input_controller.command
 	var aim := Vector3.ZERO

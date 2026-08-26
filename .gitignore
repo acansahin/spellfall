@@ -14,6 +14,8 @@
 
 # Editor / OS noise
 .import/
-export_presets.cfg
+# export_presets.cfg is NOT ignored. It holds no secrets - the Android keystore is an
+# editor setting rather than a preset field - and the Pages workflow cannot export the
+# web build without it.
 .DS_Store
 Thumbs.db

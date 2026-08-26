@@ -634,3 +634,47 @@ a loadout screen, and it is the shape this session built.
 - [ ] Cover is placed point-symmetrically for TWO spawns. With four it is no longer obviously
       fair to every start.
 
+---
+
+## Session 18 - Playing at a desk, and a web build
+
+- [x] Mouse aim: the level intersects the cursor ray with the plane at the WIZARD'S height and
+      hands the direction to `PlayerInputController.set_pointer_aim()` - the same one line of
+      meaning the joystick already gets. The controller still knows nothing about cameras
+- [x] Bindings: left click = Fireball, **Q** strike, **Space** motion, **E** guard, 1-4 as a
+      fallback row. WASD unchanged
+- [x] `MobileControls.AUTO` now starts HIDDEN and latches on at the first real
+      `InputEventScreenTouch`, so one build serves a phone browser and a desktop one
+- [x] Web export preset (single-threaded, so Pages needs no COOP/COEP headers) and
+      `.github/workflows/pages.yml`
+- [x] `export_presets.cfg` un-ignored: it holds no secrets and CI cannot export without it
+- [x] README, which is also what the repository page will show
+- [x] `--pc-test` (14 assertions) and `.claude/launch.json` to serve the web build locally
+- [x] Seventeen suites green
+
+### Traps found, all written up in ARCHITECTURE.md
+
+- [x] **`DisplayServer.is_touchscreen_available()` is true whenever mouse-to-touch emulation
+      is on.** A desktop and a phone gave the same answer, which is why `AUTO` had ORed the
+      two flags - they were one flag. Emulation is off now, and the controls wait for a finger
+- [x] **`emulate_mouse_from_touch` turns every finger into a left click.** Binding the left
+      button to the `cast_1` ACTION meant tapping anywhere on a phone cast a Fireball, menu
+      included. It lives on its own `cast_primary`, polled only while a cursor is driving
+- [x] **The cursor was outranking the thumb.** Four suites force the controls visible and then
+      measure drag-to-aim; the physical mouse was answering instead. The controls being
+      visible now decides whether the cursor aims at all
+- [x] A press latched while nobody may act came out on the first live tick. `BotController`
+      had always dropped one; the human's fighter had not needed to until a mouse button
+      existed that also means "confirm"
+
+### Still open
+
+- [ ] **The web build has not been SEEN.** The engine boots in a browser - WebGL2, pack
+      loaded, no errors - but the preview pane never composited a frame, so the canvas was
+      0x0 and nothing could be screenshotted or clicked. Keyboard focus on the canvas and the
+      first-touch rule are both unverified in an actual browser.
+- [ ] No aim lane is drawn for a cursor. On a phone the drag shows the spell's reach; at a
+      desk there is nothing telling you a Fireball stops at 6.6m.
+- [ ] The mouse is not captured, so a click outside the canvas leaves the game. Fine for a
+      prototype, worth revisiting if anyone plays it seriously.
+

@@ -54,6 +54,7 @@ res://
     spawn/         (planned)
   data/            abilities/*.tres (eleven spells), spell_catalogue.tres, knockback_rules.tres
   network/         (planned) Phase C onward
+  .github/workflows/  pages.yml - exports the Web preset and publishes it to GitHub Pages
   vfx/             spell_glyph.gd - the eleven icons, as vector shapes in a unit box;
                    ground_shapes.gd - flat meshes; spell_flash.gd - the fan Force Wave
                    draws; aim_indicator.gd - what a spell will do, before it does it;
@@ -237,6 +238,33 @@ A player pushing "up" on a joystick means "away from me on screen", not "world -
 only coincide while the camera has no yaw. `PlayerInputController._screen_to_world()` rotates
 the stick vector using the **active camera's basis**, once, before anyone downstream sees it.
 Doing it there means rotating or tilting the camera later cannot silently invert the controls.
+
+### Two devices, one command
+
+`PlayerInputController` fills the same `InputCommand` whatever is driving, and `_publish_aim`
+picks between four sources in priority order:
+
+| Priority | Source | When |
+|---|---|---|
+| 1 | a live thumb drag off a spell button | a finger is down and past the deadzone |
+| 2 | the **cursor** | a mouse is driving (see below) |
+| 3 | the latched aim of a released cast | between the lift and the tick that consumes it |
+| 4 | the movement direction | nothing else is speaking — what tapping always did |
+
+**The cursor is turned into an aim by the LEVEL, not by the controller.** `main.gd` intersects
+the mouse ray with the horizontal plane at the wizard's own height and hands the result to
+`set_pointer_aim()` — the same single line of meaning it already gives the joystick's vector.
+The controller stays free of cameras, ground planes and wizard positions, all three of which it
+would otherwise have to be handed anyway.
+
+The plane is at the WIZARD'S height and not the floor: the wizard casts from chest height and
+the camera looks down, so aiming at the floor points a stride past the target at the far rim.
+
+**The thumb controls being visible is what decides whether the cursor aims at all.** If a stick
+and four buttons are drawn, this is a touch run and a cursor aiming underneath would silently
+outrank every drag a thumb makes — four suites found exactly that, because they force the
+controls on and then measure drag-to-aim while the physical mouse sat wherever it happened to
+be. One rule, read in one place: `_pointing_is_live()`.
 
 ## Movement and why it is not a RigidBody
 
@@ -1080,6 +1108,7 @@ argument-gated harness. Everything after a bare `--` reaches `OS.get_cmdline_use
 | `--lava-test` | Asserts the lava burns, stone only stops it, a Fireball drains health directly, a dunk is survivable, you can climb back, and burning out ends the round |
 | `--shrink-test` | Asserts the ring holds through the grace, closes at its rate, stops at the floor, and drags the lava rule, the bot, the camera and the cover with it |
 | `--burn-pose` | Parks the player in the lava, so a delayed shot catches the burn bar part-way down |
+| `--pc-test` | Asserts the desk controls: bindings, cursor aim, and that a click meaning "confirm" never becomes a spell. Needs a real window |
 | `--2v2` | Two a side: you and a bot ally against two bots |
 | `--team-test` | Asserts the sides, friendly fire, re-targeting and what ends a round. Implies `--2v2` |
 | `--bolt-pose` | Fires every projectile spell down parallel lanes, over and over, so one delayed shot compares all five flight shapes from the same angle |
@@ -1176,6 +1205,17 @@ Each of these cost real time in the first session.
   `--lava-test` copied the trick and measured the lava burning 0.4 points in a second against
   an advertised 22. Pin by writing `global_position` when the thing under test is state that
   a respawn clears.
+- **`DisplayServer.is_touchscreen_available()` returns TRUE whenever mouse-to-touch emulation
+  is on.** So with `emulate_touch_from_mouse=true` there is no way left to ask "is a finger
+  driving this?" — a desktop and a phone answer identically, which is why `MobileControls.AUTO`
+  originally ORed the two flags: they were the same flag. It matters the moment one build has
+  to serve a phone browser and a desktop one. The controls now start hidden and latch on at the
+  first real `InputEventScreenTouch`, which is the only test a mouse cannot pass.
+- **`emulate_mouse_from_touch` turns every finger into a left click.** It is on by default and
+  it is needed — it is what lets a thumb press the menu. It also meant that binding the left
+  button to the `cast_1` ACTION made TAPPING ANYWHERE ON A PHONE cast a Fireball, menu
+  included. The click lives on its own `cast_primary` action, polled only while a cursor is
+  actually driving.
 - **Adding a parameter to a signal silently breaks every lambda already listening.** The
   projectile's `hit` grew a `shooter` argument, and two harness listeners written as
   `func(b, _d, _a)` stopped receiving anything at all. Godot refuses the call at emit time, so

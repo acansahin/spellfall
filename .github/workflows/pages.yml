@@ -1,0 +1,65 @@
+name: Deploy Spellfall to GitHub Pages
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Export Web build
+    runs-on: ubuntu-latest
+    container:
+      # Same image the sibling tower-defense project builds in. Pinned to the engine
+      # version the project is authored against - a mismatch shows up as a silent
+      # behaviour change rather than as a build failure.
+      image: barichello/godot-ci:4.7
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install export templates
+        run: |
+          mkdir -p ~/.local/share/godot/export_templates
+          mv /root/.local/share/godot/export_templates/* ~/.local/share/godot/export_templates/
+
+      - name: Export "Web" preset
+        run: |
+          mkdir -p build/web
+          # Single-threaded on purpose (variant/thread_support=false in the preset), so the
+          # page needs no COOP/COEP cross-origin-isolation headers - which GitHub Pages
+          # cannot send. A threaded export would load to a blank canvas here.
+          godot --headless --export-release "Web" build/web/index.html
+
+      - name: Check the export actually produced a game
+        run: |
+          test -s build/web/index.html
+          test -s build/web/index.pck
+          test -s build/web/index.wasm
+          ls -la build/web
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/web
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4

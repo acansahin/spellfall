@@ -23,6 +23,8 @@ extends Node3D
 ##   --spells-test     assert Force Wave, Blink and Arcane Shield do what they claim
 ##   --loadout-test    assert the catalogue, the picks, the screen, and each added spell's rule
 ##   --2v2             two a side: you and a bot ally against two bots
+##   --pc-test         assert the desk controls: the bindings, the cursor aim, and that a
+##                     click meaning "confirm" never becomes a spell. Needs a real window
 ##   --team-test       assert the sides, friendly fire, re-targeting, and what ends a round
 ##                     (implies --2v2; it has nothing to measure in a duel)
 ##   --loadout:on      open the spell-picking screen even though other harness args were given
@@ -190,6 +192,7 @@ func _ready() -> void:
 
 
 func _process(_delta: float) -> void:
+	_feed_pointer_aim()
 	if Input.is_action_just_pressed("debug_respawn"):
 		_rounds.begin_round()
 	_update_aim_indicator()
@@ -336,6 +339,8 @@ func _parse_harness_args() -> void:
 			_run_loadout_tests()
 		elif arg == "--team-test":
 			_run_team_tests()
+		elif arg == "--pc-test":
+			_run_pc_tests()
 		elif arg == "--button-test":
 			_run_button_tests()
 		elif arg == "--aim-test":
@@ -539,6 +544,9 @@ func _expect(label: String, passed: bool, detail: String) -> void:
 
 
 func _run_touch_tests() -> void:
+	# This suite is ABOUT the thumb controls, so it asks for them rather than
+	# hoping the device shows them. AUTO now means a real touchscreen.
+	_mobile.visibility_mode = MobileControls.Visibility.ALWAYS
 	await _settle()
 	var stick := _mobile.joystick
 	var centre := stick.get_global_rect().get_center()
@@ -650,6 +658,8 @@ func _emit_key(physical_keycode: Key, pressed: bool) -> void:
 ## Both feed the same InputCommand, so a regression here would mean the touch branch had
 ## started swallowing input that no finger was actually producing.
 func _run_key_tests() -> void:
+	# It holds the stick to prove touch outranks a held key, and a hidden stick claims nothing.
+	_mobile.visibility_mode = MobileControls.Visibility.ALWAYS
 	await _settle()
 	print("[key-test] keyboard through the same InputCommand pipeline")
 
@@ -1219,6 +1229,68 @@ func _wire_feel() -> void:
 
 
 # ---------------------------------------------------------------------------------------
+# Pointing
+#
+# On a phone the aim comes from a thumb dragging off a spell button. On a desktop it comes from
+# the cursor, and turning a cursor into an aim takes three things the input controller
+# deliberately does not know: the camera, the ground plane, and where the wizard is standing.
+# So the level works it out and hands over the answer - the same single line of meaning it
+# already gives the joystick.
+# ---------------------------------------------------------------------------------------
+
+func _feed_pointer_aim() -> void:
+	_input.set_pointer_aim(_cursor_direction(), _pointing_is_live())
+
+
+## Whether a cursor should be steering the aim at all.
+##
+## A REAL touchscreen switches this off, not `Input.is_emulating_touch_from_mouse()`. Emulation
+## is on in every desktop build so the thumb controls can be inspected, and keying off it would
+## hand a phone-shaped answer to somebody sitting at a keyboard - which is exactly the mistake
+## `MobileControls` made until this landed.
+##
+## It also goes quiet while the menu is up: the cursor is choosing a spell then, and a wizard
+## turning to follow it behind the backdrop is motion nobody asked for.
+func _pointing_is_live() -> bool:
+	# THE THUMB CONTROLS BEING UP IS THE ANSWER. If a stick and four buttons are drawn, this is
+	# a touch run - a phone, or a desktop run that asked for them with `--touch-ui:on` - and a
+	# cursor aiming underneath would silently outrank every drag the thumb makes. Four suites
+	# found this the hard way: they force the controls visible and then measure drag-to-aim,
+	# and the mouse sitting wherever it happened to be was answering instead.
+	if _mobile.visible or DisplayServer.is_touchscreen_available():
+		return false
+	if _loadout != null and _loadout.is_open():
+		return false
+	return not _player.is_eliminated()
+
+
+## From the wizard toward the cursor, on the ground plane. Zero when there is no answer.
+##
+## The ray is intersected with the horizontal plane at the WIZARD'S OWN HEIGHT rather than with
+## the floor. Aiming at the floor points slightly past the target - the wizard casts from chest
+## height and the camera looks down, so the two planes are a stride apart at the far rim.
+func _cursor_direction() -> Vector2:
+	var cam := get_viewport().get_camera_3d()
+	if cam == null:
+		return Vector2.ZERO
+	var mouse := get_viewport().get_mouse_position()
+	var from := cam.project_ray_origin(mouse)
+	var ray := cam.project_ray_normal(mouse)
+	if absf(ray.y) < 0.0001:
+		return Vector2.ZERO
+	var distance := (_player.global_position.y - from.y) / ray.y
+	if distance <= 0.0:
+		return Vector2.ZERO
+	var at := from + ray * distance
+	var away := Vector2(at.x - _player.global_position.x, at.z - _player.global_position.z)
+	# Under the wizard's own feet is not a direction. Below this the cursor is inside the body
+	# and the aim would spin with sub-pixel mouse noise.
+	if away.length() < 0.35:
+		return Vector2.ZERO
+	return away.normalized()
+
+
+# ---------------------------------------------------------------------------------------
 # Aim indicator
 #
 # The fighter carries the drawing; the level decides what it says. That split is not tidiness
@@ -1500,6 +1572,9 @@ func _run_cast_tests() -> void:
 ## casts. Two controls, two finger indices, neither aware of the other. If this ever fails,
 ## the game is unplayable on a phone no matter how good everything else is.
 func _run_two_thumb_tests() -> void:
+	# This suite is ABOUT the thumb controls, so it asks for them rather than
+	# hoping the device shows them. AUTO now means a real touchscreen.
+	_mobile.visibility_mode = MobileControls.Visibility.ALWAYS
 	await _settle()
 	_quiet_feel()
 	_clear_cover()
@@ -2333,6 +2408,9 @@ func _run_spell_tests() -> void:
 ## Separate from the suite above because it needs injected touch and therefore a real window,
 ## while everything above is arithmetic and physics that would run anywhere.
 func _run_button_tests() -> void:
+	# This suite is ABOUT the thumb controls, so it asks for them rather than
+	# hoping the device shows them. AUTO now means a real touchscreen.
+	_mobile.visibility_mode = MobileControls.Visibility.ALWAYS
 	await _settle()
 	_quiet_feel()
 	_clear_cover()
@@ -2440,6 +2518,9 @@ func _drag_aim(slot: int, screen_dir: Vector2) -> Vector2:
 
 
 func _run_aim_tests() -> void:
+	# This suite is ABOUT the thumb controls, so it asks for them rather than
+	# hoping the device shows them. AUTO now means a real touchscreen.
+	_mobile.visibility_mode = MobileControls.Visibility.ALWAYS
 	await _settle()
 	_quiet_feel()
 	_clear_cover()
@@ -3810,3 +3891,128 @@ func _pin_while(spots: Dictionary, seconds: float) -> void:
 				body.global_position = spots[fighter]
 		await get_tree().physics_frame
 		held += 1.0 / 60.0
+
+
+## Playing at a desk: WASD, a cursor that aims, and a left button that casts.
+##
+## Needs a REAL WINDOW, like every other input suite. `Input.warp_mouse` does nothing under
+## `--headless`, and `DisplayServer.is_touchscreen_available()` answers about the display
+## driver rather than about the machine - so a headless run would report failures that say
+## nothing at all about the code.
+func _run_pc_tests() -> void:
+	await _settle()
+	_quiet_feel()
+	_clear_cover()
+	_freeze_arena()
+	_freeze_bot()
+	await _wait_for_live()
+
+	# --- the bindings ---------------------------------------------------------------------
+	_expect("the left mouse button casts your primary spell",
+		_action_has_mouse(PlayerInputController.PRIMARY_CLICK, MOUSE_BUTTON_LEFT),
+		_keys_of(PlayerInputController.PRIMARY_CLICK))
+	_expect("and it is NOT a second binding on cast_1 - a tap on a phone would cast",
+		not _action_has_mouse("cast_1", MOUSE_BUTTON_LEFT), _keys_of("cast_1"))
+	_expect("Q is the strike slot", _action_has_key("cast_2", KEY_Q), _keys_of("cast_2"))
+	_expect("Space is the motion slot - the panic key is the big one",
+		_action_has_key("cast_3", KEY_SPACE), _keys_of("cast_3"))
+	_expect("E is the guard slot", _action_has_key("cast_4", KEY_E), _keys_of("cast_4"))
+	_expect("and 1-4 still reach all four", _action_has_key("cast_1", KEY_1)
+		and _action_has_key("cast_2", KEY_2) and _action_has_key("cast_3", KEY_3)
+		and _action_has_key("cast_4", KEY_4), "the numbers are the fallback row")
+	_expect("WASD still walks", _action_has_key("move_forward", KEY_W)
+		and _action_has_key("move_left", KEY_A) and _action_has_key("move_back", KEY_S)
+		and _action_has_key("move_right", KEY_D), "unchanged from the first session")
+	_expect("Space no longer casts the primary as well as moving you",
+		not _action_has_key("cast_1", KEY_SPACE),
+		"one key, one slot - it moved to the motion slot")
+
+	# --- the thumb controls stay off a machine with no thumb -----------------------------
+	_mobile.visibility_mode = MobileControls.Visibility.AUTO
+	await _settle()
+	_expect("a desktop gets no thumbstick drawn over its game",
+		not _mobile.visible and not OS.has_feature("mobile"),
+		"controls visible=%s, mobile=%s" % [_mobile.visible, OS.has_feature("mobile")])
+	_mobile.visibility_mode = MobileControls.Visibility.HIDDEN
+
+	# --- the cursor aims -------------------------------------------------------------------
+	# A known world point, projected to the screen, and the mouse put there. If the maths is
+	# right the wizard aims at exactly the spot the cursor is over.
+	await _place_fighters(Vector3(0.0, 1.2, -9.0), Vector3(0.0, 1.2, 0.0))
+	var cam := get_viewport().get_camera_3d()
+	for probe in [Vector2(1, 0), Vector2(0, -1), Vector2(-0.7, 0.7)]:
+		var flat: Vector2 = (probe as Vector2).normalized()
+		var spot := _player.global_position + Vector3(flat.x, 0.0, flat.y) * 4.0
+		Input.warp_mouse(cam.unproject_position(spot))
+		Input.flush_buffered_events()
+		await _settle()
+		var aim := _input.command.aim_dir
+		_expect("the wizard aims where the cursor is (%.0f, %.0f)" % [flat.x, flat.y],
+			_input.command.has_aim and aim.distance_to(flat) < 0.08,
+			"cursor asks %s, aim reads %s" % [flat, aim])
+
+	# --- ...and a click casts THERE, not where you are walking ------------------------------
+	# Walking one way while pointing another is the whole reason a cursor beats a thumb: it is
+	# the first input in this game that can say two things at once.
+	Input.warp_mouse(cam.unproject_position(_player.global_position + Vector3(4.0, 0.0, 0.0)))
+	Input.flush_buffered_events()
+	_input.set_override_vector(Vector2(0.0, 1.0), true)
+	await _settle()
+	var book := _player.abilities()
+	book.reset()
+	_input.request_ability(0)
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	var flying := _pool.in_flight()
+	_expect("a click casts at the cursor", flying.size() == 1
+		and Vector2(flying[0].direction().x, flying[0].direction().z).distance_to(
+			Vector2(1, 0)) < 0.12,
+		"%d in flight, heading %s while walking north" % [
+			flying.size(), flying[0].direction() if flying.size() == 1 else Vector3.ZERO])
+	_input.set_override_vector(Vector2.ZERO, true)
+
+	# --- a click that meant "confirm" must not become a spell -------------------------------
+	# The FIGHT button and the primary spell are now the same button. A press while nobody may
+	# act has to be dropped, not banked: banked, it comes out on the first live tick as a spell
+	# the player never aimed.
+	await _place_fighters(Vector3(0.0, 1.2, -9.0), Vector3(0.0, 1.2, 0.0))
+	book.reset()
+	_player.accepts_input = false
+	_input.request_ability(0)
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	_player.accepts_input = true
+	await _wait(0.3)
+	_expect("a press made while nobody may act is dropped, not banked",
+		book.is_ready(0) and _input.command.ability_pressed < 0,
+		"slot ready=%s, still latched=%d" % [book.is_ready(0),
+			_input.command.ability_pressed])
+
+	print("[pc] %s (%d failure(s))" % [
+		"ALL PASS" if _touch_failures == 0 else "FAILURES", _touch_failures])
+	get_tree().quit(1 if _touch_failures > 0 else 0)
+
+
+func _action_has_key(action: String, code: Key) -> bool:
+	for event in InputMap.action_get_events(action):
+		var key := event as InputEventKey
+		if key != null and key.physical_keycode == code:
+			return true
+	return false
+
+
+func _action_has_mouse(action: String, button: MouseButton) -> bool:
+	for event in InputMap.action_get_events(action):
+		var click := event as InputEventMouseButton
+		if click != null and click.button_index == button:
+			return true
+	return false
+
+
+## What an action is bound to, for the failure line. A binding assertion that fails without
+## saying what IS bound sends you to the project file to find out.
+func _keys_of(action: String) -> String:
+	var parts := PackedStringArray()
+	for event in InputMap.action_get_events(action):
+		parts.append(event.as_text())
+	return "bound to %s" % ", ".join(parts)

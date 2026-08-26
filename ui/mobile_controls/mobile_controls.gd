@@ -17,8 +17,9 @@ extends CanvasLayer
 ## drift the stick inward as the screen got wider.
 
 enum Visibility {
-	## Show when the device has a touchscreen, or when mouse-to-touch emulation is on so
-	## the controls can be inspected on a desktop dev build. This is the shipping value.
+	## Show when the device has a touchscreen. This is the shipping value, and it is what
+	## makes one build serve both a phone browser and a desktop one: a thumb gets the stick
+	## and the buttons, a mouse gets the cursor and the keyboard.
 	AUTO,
 	## Always draw them, whatever the device. Useful for screenshots.
 	ALWAYS,
@@ -102,6 +103,24 @@ func _apply_visibility() -> void:
 	visible = _should_show()
 
 
+## True once a real finger has touched this device. Latches ON and never off: a phone that has
+## been tapped is a phone for the rest of the session, and a player who picks up a mouse can
+## still ask for the controls with `visibility_mode`.
+var _touch_seen := false
+
+
+## Watches for the first real touch, and nothing else.
+##
+## Only while AUTO is in force, so a suite that has forced the controls on or off is never
+## second-guessed by a stray event - and once the answer is known this stops doing any work.
+func _input(event: InputEvent) -> void:
+	if _touch_seen or visibility_mode != Visibility.AUTO:
+		return
+	if event is InputEventScreenTouch:
+		_touch_seen = true
+		_apply_visibility()
+
+
 func _should_show() -> bool:
 	match visibility_mode:
 		Visibility.ALWAYS:
@@ -109,8 +128,16 @@ func _should_show() -> bool:
 		Visibility.HIDDEN:
 			return false
 		_:
-			return DisplayServer.is_touchscreen_available() \
-				or Input.is_emulating_touch_from_mouse()
+			# Shown on a device that IS a phone, and on any device the moment a real finger
+			# touches it. Never from `DisplayServer.is_touchscreen_available()`, which reports
+			# true whenever mouse-to-touch emulation is on and cannot be checked at all in the
+			# place it matters most - a browser, where the same build has to serve a phone and a
+			# desktop. Starting HIDDEN and waiting for a finger is the version that cannot be
+			# wrong about a desktop: a mouse never produces a touch.
+			#
+			# The cost is that a phone browser draws no controls until the first tap - which lands
+			# on the loadout screen, not on a control, so they are up before the fight starts.
+			return _touch_seen or OS.has_feature("mobile")
 
 
 func _layout() -> void:
