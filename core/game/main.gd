@@ -203,8 +203,6 @@ func _ready() -> void:
 
 func _process(_delta: float) -> void:
 	_feed_pointer_aim()
-	if Input.is_action_just_pressed("debug_respawn"):
-		_rounds.begin_round()
 	_update_aim_indicator()
 
 
@@ -1259,7 +1257,28 @@ func _wire_feel() -> void:
 func _control_hint() -> String:
 	if _mobile.is_touch_driving():
 		return ""
-	return "RIGHT CLICK to move  ·  Q W E R arms a spell  ·  LEFT CLICK sends it  ·  wards cast at once"
+	var line := "RIGHT CLICK or LEFT CLICK the ground to move  ·  Q W E R arms a spell"
+	line += "  ·  LEFT CLICK sends it  ·  wards cast at once"
+	var build := _build_id()
+	if build != "":
+		line += "      build %s" % build
+	return line
+
+
+## Which build this is, on the web, or "" anywhere else.
+##
+## The page stamps its own commit in (see the Web preset's `html/head_include` and the Pages
+## workflow) and the game reads it back out. It exists because a web build is the one build
+## nobody working on it can see: three separate reports turned on the question "is that even
+## the build you are looking at?", and a browser hands back a cached pack next to a fresh
+## shell often enough that guessing was worthless.
+func _build_id() -> String:
+	if not OS.has_feature("web"):
+		return ""
+	var stamp := str(JavaScriptBridge.eval("window.SPELLFALL_BUILD", true))
+	# Un-substituted means somebody served the page without the workflow, which is worth
+	# seeing rather than hiding.
+	return stamp if stamp != "" and stamp != "<null>" else "?"
 
 
 ## Prints what the input layer decided, once, at startup.
@@ -1305,11 +1324,15 @@ func _feed_pointer_aim() -> void:
 ## button redraws when the answer changes and not sixty times a second.
 func _label_spell_bar() -> void:
 	var keyed := not _mobile.is_touch_driving()
+	var armed := _input.armed_slot()
 	for slot in _mobile.buttons.size():
 		var button := _mobile.buttons[slot]
 		var wanted := PlayerInputController.key_label_for(button.slot) if keyed else ""
 		if button.key_label != wanted:
 			button.key_label = wanted
+		var lit := button.slot == armed
+		if button.armed != lit:
+			button.armed = lit
 
 
 ## Turns a right click into a patch of ground.
@@ -4170,6 +4193,22 @@ func _run_pc_tests() -> void:
 	# --- with nothing armed, the LEFT button walks you too ---------------------------------
 	# A fallback, because a browser can swallow a right click before the game sees one. It can
 	# never be ambiguous: armed, the left button sends; empty, it walks.
+	# Arming has to SHOW, and on a desk the button is the only place it can. Q felt like a key
+	# that did nothing until this existed.
+	_input.arm(1)
+	await _settle()
+	_expect("the armed slot lights up on the bar",
+		_mobile.buttons[1].armed and not _mobile.buttons[0].armed,
+		"slot 1 lit=%s, slot 0 lit=%s" % [
+			_mobile.buttons[1].armed, _mobile.buttons[0].armed])
+	_input.disarm()
+	await _settle()
+	_expect("and goes dark when it is put away", not _mobile.buttons[1].armed,
+		"slot 1 lit=%s" % _mobile.buttons[1].armed)
+	_expect("no key is bound twice - R was a spell AND a round restart",
+		not _action_has_key("cast_4", KEY_R) or not InputMap.has_action("debug_respawn"),
+		"debug_respawn exists=%s" % InputMap.has_action("debug_respawn"))
+
 	_expect("the letters on the icons come from the input map, not from a list",
 		PlayerInputController.key_label_for(0) == "Q"
 			and PlayerInputController.key_label_for(1) == "W"

@@ -773,8 +773,26 @@ the previous session's theory outright.
       course walks you off
 - [x] The round turning over mid-suite bit twice more. Both windows now pin `accepts_input`
 
+- [x] **R was bound TWICE** - to `cast_4` and to the session-1 `debug_respawn`, which restarts
+      the round. Pressing the guard slot restarted the game. The debug action is gone; the
+      round system has made it redundant since session 5, and `--pc-test` now asserts no key
+      is claimed by two actions
+- [x] **The armed slot lights up on the spell bar.** A thumb sees its own finger on a button;
+      a keyboard showed nothing at all, so Q/W/E read as keys that did not work
+- [x] Page script cut back to suppressing the context menu only, on the window in capture and
+      on the canvas itself. The `mousedown` preventDefault it also carried was the one thing
+      in there that could plausibly have interfered with the event Godot waits for
+
 ### Still open
 
+- [x] **The page stamps its own commit** and the game prints it on the loadout screen. Every
+      engine file is fetched with it as a cache-buster, so a browser can no longer serve a
+      stale pack beside a fresh shell - which is what made three reports unanswerable
+
+- [ ] **Right click still does not reach the game in a browser, and it DOES in the editor.**
+      Verified the deployed page is current - the suppression script is in it - so this is not
+      a stale build. The code is therefore right and the browser is taking the event.
+      Next: the probe line's `R` digit answers whether Godot sees the button at all.
 - [ ] **Whether right click now reaches the game in a browser is unknown.** The probe line is
       there to answer it in one screenshot. If `R` never lights up, the event is being taken
       above Godot and the fix is in the page, not the game.

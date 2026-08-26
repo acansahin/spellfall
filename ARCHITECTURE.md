@@ -1242,6 +1242,15 @@ Each of these cost real time in the first session.
   stick's own visibility lived in `_layout()`, which only runs on a resize, so a suite that
   switched `visibility_mode` got the layer back with the stick still hidden — eleven assertions
   about a joystick that was not on screen to be pressed.
+- **A browser will hand back a cached `.pck` next to a freshly fetched shell.** Three separate
+  reports turned on "is that even the build you are looking at?", and `curl` says yes while the
+  reporter's browser says no — curl does not have their cache. The page now stamps its commit
+  in (`html/head_include` + a `sed` in the Pages workflow), appends it as a cache-buster to
+  every engine fetch, and the game reads it back and prints it on the loadout screen. A bug
+  report now says which build it came from.
+- **A key can be bound to two actions and nothing warns you.** R was `cast_4` and the
+  session-1 `debug_respawn` at once, so pressing the guard slot restarted the round. Nothing in
+  the editor or at runtime objects; `--pc-test` asserts it instead.
 - **A right click in a browser opens the context menu.** With right click as the movement
   control that is not a nuisance, it is the control not working. Suppressed on the canvas by a
   three-line script in the Web preset's `html/head_include` - which is also the only place a

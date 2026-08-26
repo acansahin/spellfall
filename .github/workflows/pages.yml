@@ -40,6 +40,16 @@ jobs:
           # cannot send. A threaded export would load to a blank canvas here.
           godot --headless --export-release "Web" build/web/index.html
 
+      - name: Stamp the build id into the page
+        run: |
+          # The page carries the commit it was built from, for two jobs. It is the cache
+          # buster on every engine file, so a browser can never hand back a stale pack next
+          # to a fresh shell - which cost three rounds of "is this even the build you are
+          # looking at?". And the game reads it back and shows it, so a bug report says which
+          # build it came from.
+          sed -i "s/__BUILD__/${GITHUB_SHA::7}/g" build/web/index.html
+          grep -q "${GITHUB_SHA::7}" build/web/index.html
+
       - name: Check the export actually produced a game
         run: |
           test -s build/web/index.html

@@ -1,6 +1,10 @@
 ; Engine configuration file.
-; Spellfall — original mobile arena brawler.
-; Generated for Godot 4.7. See docs/ARCHITECTURE.md for why these values are set.
+; It's best edited using the editor UI and not directly,
+; since the parameters that go here are not all obvious.
+;
+; Format:
+;   [section] ; section goes between []
+;   param=value ; assign values to parameters
 
 config_version=5
 
@@ -14,17 +18,10 @@ config/icon="res://icon.svg"
 
 [display]
 
-; Landscape, mobile-first. 1280x720 is the design resolution every UI value is authored against.
 window/size/viewport_width=1280
 window/size/viewport_height=720
-; "expand" (not "keep") so wider phones show more world instead of black bars.
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
-; 4 is SCREEN_SENSOR_LANDSCAPE. It was 1 - which is SCREEN_PORTRAIT - for four sessions,
-; with a comment above it saying "Landscape". Every desktop run looked right because this
-; setting only applies to a handheld, so the first phone build was the first time anyone
-; could see it, and it shipped a portrait game. SENSOR rather than a fixed landscape so the
-; phone can be held either way up.
 window/handheld/orientation=4
 
 [input]
@@ -83,28 +80,6 @@ move_command={
 "events": [Object(InputEventMouseButton,"resource_local_to_scene":false,"resource_name":"","device":-1,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"button_mask":0,"position":Vector2(0, 0),"global_position":Vector2(0, 0),"factor":1.0,"button_index":2,"canceled":false,"pressed":false,"double_click":false,"script":null)
 ]
 }
-debug_respawn={
-"deadzone": 0.2,
-"events": [Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":-1,"window_id":0,"alt_pressed":false,"shift_pressed":false,"ctrl_pressed":false,"meta_pressed":false,"pressed":false,"keycode":0,"physical_keycode":82,"key_label":0,"unicode":0,"location":0,"echo":false,"script":null)
-]
-}
-
-[input_devices]
-
-; OFF, and the reason is load-bearing. `DisplayServer.is_touchscreen_available()` reports
-; TRUE whenever this is on, so with emulation enabled there is no way left to ask "is a finger
-; driving this?" - a desktop and a phone give the same answer. That is fine while the only
-; controls are thumb controls and wrong the moment a build has to serve both: a person at a
-; keyboard got a thumbstick and four thumb buttons drawn over their game.
-;
-; Nothing needed it. The suites that drive the touch controls inject InputEventScreenTouch
-; directly (see main.gd `_emit_touch`), never through a mouse, and the loadout screen reads
-; mouse buttons as well as touches. `--touch-ui:on` is how a desktop run asks to see the
-; thumb controls now.
-;
-; `emulate_mouse_from_touch` is a DIFFERENT setting, is left at its default of on, and is what
-; lets a finger press the menu on a phone.
-pointing/emulate_touch_from_mouse=false
 
 [layer_names]
 
@@ -113,17 +88,9 @@ pointing/emulate_touch_from_mouse=false
 3d_physics/layer_3="projectiles"
 3d_physics/layer_4="killzone"
 
-[physics]
-
-; Fixed 60Hz simulation. Gameplay must never depend on rendered framerate — this is also
-; the tick rate a future server-authoritative build will run at.
-common/physics_ticks_per_second=60
-
 [rendering]
 
 renderer/rendering_method="mobile"
-renderer/rendering_method.mobile="mobile"
-; Required for Android export even before textures exist — omitting it aborts the export.
 textures/vram_compression/import_etc2_astc=true
 lights_and_shadows/directional_shadow/soft_shadow_filter_quality=0
 anti_aliasing/quality/msaa_3d=1

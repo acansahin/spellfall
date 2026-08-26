@@ -68,6 +68,16 @@ var key_label := "":
 		key_label = value
 		queue_redraw()
 
+## True while this slot is the one waiting for a place to go.
+##
+## On a desk this is the ONLY feedback a key press gives. A thumb sees its own finger on the
+## button; a keyboard shows nothing at all, and Q/W/E felt like keys that did not work at all
+## until the button they belong to lit up.
+var armed := false:
+	set(value):
+		armed = value
+		queue_redraw()
+
 ## Read-only view of the caster's spellbook, assigned by the level. Null is fine - the
 ## button then draws itself as an empty slot rather than crashing.
 var source: AbilityComponent = null:
@@ -208,6 +218,11 @@ func _draw() -> void:
 	if _touch_index != -1:
 		draw_circle(_centre, radius, press_flash)
 	draw_arc(_centre, radius, 0.0, TAU, 40, idle_ring, 3.0, true)
+	if armed:
+		# A bright ring in the spell's own colour, drawn OUTSIDE the rim so the cooldown veil
+		# cannot cover it. "Held, waiting for a click" has to read from the corner of an eye.
+		draw_arc(_centre, radius + 5.0, 0.0, TAU, 44, Color(tint.r, tint.g, tint.b, 0.95),
+			4.0, true)
 
 	# Before the wedge, deliberately: a recharging spell should have its own icon greyed out
 	# by the veil rather than sitting bright on top of it, so "not yet" is one reading and not
