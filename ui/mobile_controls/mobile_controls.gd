@@ -101,6 +101,12 @@ func _collect_buttons() -> void:
 
 func _apply_visibility() -> void:
 	visible = _should_show()
+	# The stick's own visibility belongs HERE and not in `_layout`, which only runs on a resize.
+	# Left there, a suite that switched `visibility_mode` got the layer back and the stick still
+	# hidden from whatever the first layout had decided - eleven assertions about a joystick
+	# that was not on screen to be pressed.
+	if joystick != null:
+		joystick.visible = is_touch_driving()
 
 
 ## True once a real finger has touched this device. Latches ON and never off: a phone that has
@@ -117,8 +123,26 @@ func _input(event: InputEvent) -> void:
 	if _touch_seen or visibility_mode != Visibility.AUTO:
 		return
 	if event is InputEventScreenTouch:
+		# A finger has arrived: this is a phone after all. The stick appears, the spell bar
+		# stops naming keys, and the cursor stops aiming.
 		_touch_seen = true
 		_apply_visibility()
+
+
+## Whether a THUMB is driving, as opposed to whether anything is drawn.
+##
+## The two used to be one question and stopped being one when the spell buttons started showing
+## on a desktop as a read-only spell bar. Everything that means "is a finger in charge of this
+## game?" - the cursor aim, the click-to-move, which controls exist - asks THIS. `visible` only
+## says whether pixels are on screen.
+func is_touch_driving() -> bool:
+	match visibility_mode:
+		Visibility.ALWAYS:
+			return true
+		Visibility.HIDDEN:
+			return false
+		_:
+			return _touch_seen or OS.has_feature("mobile")
 
 
 func _should_show() -> bool:
@@ -128,6 +152,12 @@ func _should_show() -> bool:
 		Visibility.HIDDEN:
 			return false
 		_:
+			# Always, now. A thumb gets the stick and four buttons it can press; a desk gets the
+			# same four buttons as a SPELL BAR it cannot - which is where a mouse player reads
+			# their cooldowns and their keys, and there was nowhere else at all.
+			#
+			# The buttons are safe to draw on a desktop because they only ever claim
+			# `InputEventScreenTouch`, and a mouse never produces one.
 			# Shown on a device that IS a phone, and on any device the moment a real finger
 			# touches it. Never from `DisplayServer.is_touchscreen_available()`, which reports
 			# true whenever mouse-to-touch emulation is on and cannot be checked at all in the
@@ -135,9 +165,7 @@ func _should_show() -> bool:
 			# desktop. Starting HIDDEN and waiting for a finger is the version that cannot be
 			# wrong about a desktop: a mouse never produces a touch.
 			#
-			# The cost is that a phone browser draws no controls until the first tap - which lands
-			# on the loadout screen, not on a control, so they are up before the fight starts.
-			return _touch_seen or OS.has_feature("mobile")
+			return true
 
 
 func _layout() -> void:

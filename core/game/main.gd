@@ -88,6 +88,7 @@ extends Node3D
 @onready var _camera_rig: ArenaCamera = $CameraRig
 @onready var _feel: GameFeel = $Feel
 @onready var _loadout: LoadoutScreen = $LoadoutScreen
+@onready var _move_marker: MoveMarker = $MoveMarker
 
 var _trace := false
 
@@ -1256,7 +1257,7 @@ func _wire_feel() -> void:
 ## else - it is needed once, before the first fight, and a permanent key legend over a game is
 ## clutter the second time you read it.
 func _control_hint() -> String:
-	if _mobile.visible:
+	if _mobile.is_touch_driving():
 		return ""
 	return "RIGHT CLICK to move  ·  Q W E R arms a spell  ·  LEFT CLICK sends it  ·  wards cast at once"
 
@@ -1272,9 +1273,9 @@ func _report_input_mode() -> void:
 	for tag in ["mobile", "web", "web_android", "web_ios", "pc", "android"]:
 		if OS.has_feature(tag):
 			tags.append(tag)
-	print("[input] %s | thumb controls=%s -> %s" % [
-		OS.get_name(), _mobile.visible,
-		"CURSOR AIMS" if not _mobile.visible else "THUMB DRIVES"])
+	print("[input] %s | thumb driving=%s -> %s" % [
+		OS.get_name(), _mobile.is_touch_driving(),
+		"THUMB DRIVES" if _mobile.is_touch_driving() else "CURSOR AIMS"])
 	print("[input] features=[%s] | touchscreen flag=%s (not consulted) | emulating touch=%s" % [
 		", ".join(tags), DisplayServer.is_touchscreen_available(),
 		Input.is_emulating_touch_from_mouse()])
@@ -1282,6 +1283,10 @@ func _report_input_mode() -> void:
 
 func _feed_pointer_aim() -> void:
 	var live := _pointing_is_live()
+	# Only where there is a mouse to describe, and only until the desk controls are confirmed
+	# working in a browser. See `Hud.set_probe`.
+	_hud.set_probe(_input.probe_text() if live else "")
+	_label_spell_bar()
 	_input.set_pointer_aim(_cursor_direction(), live)
 	if not live:
 		_move_target_set = false
@@ -1290,6 +1295,21 @@ func _feed_pointer_aim() -> void:
 	_take_move_click()
 	_follow_move_target()
 	_release_instant_casts()
+
+
+## Prints each slot's key on its button, or clears them on a device with no keys.
+##
+## Refreshed every frame rather than set once, because the answer can CHANGE mid-session: a
+## phone browser starts with no controls drawn and turns into a touch device the first time a
+## finger lands. Only ever assigns a value that differs from the one already there, so the
+## button redraws when the answer changes and not sixty times a second.
+func _label_spell_bar() -> void:
+	var keyed := not _mobile.is_touch_driving()
+	for slot in _mobile.buttons.size():
+		var button := _mobile.buttons[slot]
+		var wanted := PlayerInputController.key_label_for(button.slot) if keyed else ""
+		if button.key_label != wanted:
+			button.key_label = wanted
 
 
 ## Turns a right click into a patch of ground.
@@ -1304,6 +1324,10 @@ func _take_move_click() -> void:
 		return
 	_move_target = spot
 	_move_target_set = true
+	# The only feedback a click gets. A key you are holding tells you it worked by the wizard
+	# walking; a click is one instant, and a click the game missed looks exactly like a click
+	# that landed somewhere you did not mean.
+	_move_marker.show_at(spot)
 
 
 ## Walks toward a standing order, and forgets it on arrival.
@@ -1386,7 +1410,7 @@ func _pointing_is_live() -> bool:
 	# defines - so the first published build had a working WASD and a dead mouse. The
 	# capability flag is not consulted anywhere any more; `_mobile.visible` already carries
 	# the answer, because it is set by a finger actually arriving.
-	if _mobile.visible:
+	if _mobile.is_touch_driving():
 		return false
 	if _loadout != null and _loadout.is_open():
 		return false
@@ -4058,9 +4082,17 @@ func _run_pc_tests() -> void:
 		_action_has_key("move_forward", KEY_UP) and _action_has_key("move_left", KEY_LEFT)
 			and _action_has_key("move_back", KEY_DOWN)
 			and _action_has_key("move_right", KEY_RIGHT), _keys_of("move_forward"))
-	_expect("a desktop gets no thumbstick drawn over its game",
-		not _mobile.visible and not OS.has_feature("mobile"),
-		"controls visible=%s, mobile=%s" % [_mobile.visible, OS.has_feature("mobile")])
+	# AUTO for this one assertion: the suite runs with the controls forced HIDDEN, and what is
+	# under test here is precisely what AUTO decides on a machine with no touchscreen.
+	_mobile.visibility_mode = MobileControls.Visibility.AUTO
+	await _settle()
+	_expect("a desktop gets no thumbstick, but does get a spell bar to read",
+		not _mobile.joystick.visible and _mobile.visible
+			and not _mobile.is_touch_driving(),
+		"stick=%s, bar=%s, thumb driving=%s" % [
+			_mobile.joystick.visible, _mobile.visible, _mobile.is_touch_driving()])
+	_mobile.visibility_mode = MobileControls.Visibility.HIDDEN
+	await _settle()
 	_expect("with no controls drawn, the cursor is live", _pointing_is_live(),
 		"the touchscreen flag says %s and is not consulted"
 			% DisplayServer.is_touchscreen_available())
@@ -4122,8 +4154,11 @@ func _run_pc_tests() -> void:
 	await _settle()
 	_expect("the same key again puts the spell away", _input.armed_slot() == -1,
 		"armed=%d" % _input.armed_slot())
-	_emit_key(KEY_Q, true)
-	_emit_key(KEY_Q, false)
+	# Armed through the controller, not through a key. That the KEY arms is proved three
+	# assertions up; what is under test here is what a right click does to something armed, and
+	# an injected key that occasionally misses its frame turns this into a test of nothing -
+	# it silently became "right click with nothing armed", which of course walks you off.
+	_input.arm(0)
 	await _settle()
 	await _click(MOUSE_BUTTON_RIGHT)
 	_expect("a right click cancels it rather than walking you off",
@@ -4131,6 +4166,18 @@ func _run_pc_tests() -> void:
 		"armed=%d, walking=%s" % [_input.armed_slot(), _input.is_click_moving()])
 	_expect("and nothing was cast by any of that", book.is_ready(0),
 		"slot ready=%s" % book.is_ready(0))
+
+	# --- with nothing armed, the LEFT button walks you too ---------------------------------
+	# A fallback, because a browser can swallow a right click before the game sees one. It can
+	# never be ambiguous: armed, the left button sends; empty, it walks.
+	_expect("the letters on the icons come from the input map, not from a list",
+		PlayerInputController.key_label_for(0) == "Q"
+			and PlayerInputController.key_label_for(1) == "W"
+			and PlayerInputController.key_label_for(2) == "E"
+			and PlayerInputController.key_label_for(3) == "R",
+		"%s %s %s %s" % [PlayerInputController.key_label_for(0),
+			PlayerInputController.key_label_for(1), PlayerInputController.key_label_for(2),
+			PlayerInputController.key_label_for(3)])
 
 	# --- a ward needs no place, so it goes at once ---------------------------------------------------
 	# Placed first, and `_place_fighters` waits for a LIVE round. The suite had been casting
@@ -4173,8 +4220,18 @@ func _run_pc_tests() -> void:
 	await _click(MOUSE_BUTTON_RIGHT)
 	_expect("a right click on the ground gives a walk order", _input.is_click_moving(),
 		"walking=%s" % _input.is_click_moving())
+	_expect("and leaves a mark on the ground where it landed",
+		_move_marker.is_showing()
+			and Vector2(_move_marker.global_position.x - spot.x,
+				_move_marker.global_position.z - spot.z).length() < 0.2,
+		"marker showing=%s at %s, clicked %s" % [
+			_move_marker.is_showing(), _move_marker.global_position, spot])
 	var walked := 0.0
 	while walked < 4.0 and _input.is_click_moving():
+		# Pinned, like the ward window above. A fighter whose round has turned over ignores
+		# `move_dir` entirely, so the order stands, the wizard does not move, and it reads as
+		# click-to-move being broken. Same trap, second time in one suite.
+		_player.accepts_input = true
 		await get_tree().physics_frame
 		walked += 1.0 / 60.0
 	var gap := Vector2(_player.global_position.x - spot.x, _player.global_position.z - spot.z)

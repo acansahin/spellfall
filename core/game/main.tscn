@@ -1,4 +1,4 @@
-[gd_scene load_steps=21 format=3]
+[gd_scene load_steps=22 format=3]
 
 [ext_resource type="Script" path="res://core/game/main.gd" id="1_main"]
 [ext_resource type="PackedScene" path="res://arena/arena.tscn" id="2_arena"]
@@ -19,6 +19,7 @@
 [ext_resource type="Script" path="res://vfx/ground_streak.gd" id="17_streak"]
 [ext_resource type="PackedScene" path="res://ui/loadout/loadout_screen.tscn" id="18_loadout"]
 [ext_resource type="Resource" path="res://data/spell_catalogue.tres" id="19_catalogue"]
+[ext_resource type="Script" path="res://vfx/move_marker.gd" id="20_marker"]
 
 [sub_resource type="Environment" id="Environment_main"]
 background_mode = 1
@@ -82,6 +83,9 @@ script = ExtResource("16_sparks")
 
 [node name="Streak" type="MeshInstance3D" parent="."]
 script = ExtResource("17_streak")
+
+[node name="MoveMarker" type="MeshInstance3D" parent="."]
+script = ExtResource("20_marker")
 
 [node name="CameraRig" type="Node3D" parent="."]
 script = ExtResource("5_camera")

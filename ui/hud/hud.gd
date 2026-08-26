@@ -25,6 +25,9 @@ const DANGER := Color(1.0, 0.45, 0.35)
 
 var _labels: Dictionary = {}
 
+## Built on first use by `set_probe`, so a build that never asks for it never makes one.
+var _probe: Label = null
+
 
 ## Adds a readout for one fighter. `title` is what the player sees.
 ##
@@ -99,3 +102,26 @@ func set_score(entries: Array) -> void:
 
 func set_round(number: int) -> void:
 	_round_label.text = "ROUND %d" % number
+
+
+## A dim line of raw input state in the bottom-left corner. Empty text hides it.
+##
+## TEMPORARY, and it should go the moment the desk controls are confirmed working in a
+## browser. It is here because the web build is the one build nobody working on it can see:
+## the preview pane never composites, so the game's own frames never run and nothing can be
+## clicked or photographed from this side. A line the player can read out is the whole
+## debugger.
+func set_probe(text: String) -> void:
+	if _probe == null:
+		_probe = Label.new()
+		_probe.add_theme_font_size_override("font_size", 14)
+		_probe.add_theme_color_override("font_color", Color(0.65, 0.68, 0.78, 0.75))
+		_probe.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.7))
+		_probe.add_theme_constant_override("outline_size", 4)
+		_probe.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+		_probe.offset_left = 18.0
+		_probe.offset_top = -34.0
+		_probe.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		$Root.add_child(_probe)
+	_probe.text = text
+	_probe.visible = text != ""

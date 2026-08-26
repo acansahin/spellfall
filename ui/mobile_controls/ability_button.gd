@@ -61,6 +61,13 @@ signal cast_released(slot: int)
 ## wedge sweeping over it still reads, large enough to tell apart under a thumb.
 @export_range(0.2, 0.9, 0.01) var glyph_scale := 0.52
 
+## The key that casts this slot, printed small in the corner. Empty on a device with no
+## keyboard. Set by the level, which is the only thing that knows which kind of device this is.
+var key_label := "":
+	set(value):
+		key_label = value
+		queue_redraw()
+
 ## Read-only view of the caster's spellbook, assigned by the level. Null is fine - the
 ## button then draws itself as an empty slot rather than crashing.
 var source: AbilityComponent = null:
@@ -208,6 +215,15 @@ func _draw() -> void:
 	if ability != null:
 		SpellGlyph.draw_into(self, ability.glyph, _centre, radius * glyph_scale,
 			tint.lightened(0.35), maxf(radius * 0.055, 2.5))
+		# Only where there are keys to name. On a phone these buttons ARE the input and a
+		# letter over them would be a reminder of a keyboard nobody is holding.
+		if key_label != "":
+			# Placed against the BUTTON's rim rather than the glyph's corner. At the glyph's
+			# size it landed on top of the drawing - the E sat inside Blink's own dot - and a
+			# reminder that obscures the thing it is reminding you of is worth less than
+			# nothing.
+			SpellGlyph.draw_key(self, key_label, _centre, radius * 0.74,
+				tint.lightened(0.5))
 
 	var fraction := _fraction()
 	if fraction > 0.0:

@@ -731,3 +731,54 @@ Replenish and Wind Walk do not. The map's own hotkeys are **G** plus **D E R T Y
 - [ ] No ground marker where you right-clicked, and no lane for the armed spell's reach. The
       aim indicator comes up on arming, but there is nothing showing the walk destination.
 
+---
+
+## Session 20 - The right button, the letters, and a mark on the ground
+
+Reported from the deployed build: "the right button does nothing, the left one aims". That is
+a precise report and it ruled out almost everything - the cursor, the aim, arming and sending
+all worked, so only the right click was missing. The console of the live page confirmed the
+input layer had already decided correctly (`thumb driving=false -> CURSOR AIMS`), which killed
+the previous session's theory outright.
+
+- [x] Context menu suppressed on the whole WINDOW in the capture phase, not just on events
+      whose target happens to be the canvas. `auxclick` and a right-button `mousedown` guard
+      too. With right click as the movement control this is not a nuisance, it is the control
+- [x] **Left click walks you too, when nothing is armed.** A fallback, because a browser can
+      swallow a right click before the game sees one. It cannot be ambiguous: armed, the left
+      button sends; empty, it walks
+- [x] **An on-screen input probe** in the corner - raw button state, armed slot, walk order,
+      mouse position. Temporary, and it exists because the web build is the one build nobody
+      working on it can see: the preview pane never composites, so the game's frames never run
+- [x] **Key letters on the icons**, read out of the InputMap rather than written down, so a
+      rebinding relabels them for free. On the spell buttons and on every menu row
+- [x] **A desktop now gets the spell bar.** The four buttons show as a read-only bar - they
+      only ever claim `InputEventScreenTouch` and a mouse never makes one - so a mouse player
+      can finally see their cooldowns. The stick stays hidden; it is the one control a mouse
+      has no use for
+- [x] `MobileControls.is_touch_driving()` split from `visible`. They were one question until
+      the spell bar started showing on a desk
+- [x] **A green mark where you right-clicked**, four arrows closing on the spot, as the map
+      this game follows draws it
+- [x] Seventeen suites green
+
+### Traps
+
+- [x] `_apply_visibility()` did not refresh the stick - that lived in `_layout()`, which only
+      runs on a resize. A suite that switched `visibility_mode` got the layer back with the
+      stick still hidden: eleven assertions about a joystick that was not on screen
+- [x] An injected key that misses its frame turns an assertion into a test of something else.
+      `--pc-test` arms through the controller where the point is what a right click DOES to
+      something armed - by key, it silently became "right click with nothing armed", which of
+      course walks you off
+- [x] The round turning over mid-suite bit twice more. Both windows now pin `accepts_input`
+
+### Still open
+
+- [ ] **Whether right click now reaches the game in a browser is unknown.** The probe line is
+      there to answer it in one screenshot. If `R` never lights up, the event is being taken
+      above Godot and the fix is in the page, not the game.
+- [ ] The probe line should come out once that is settled.
+- [ ] The spell bar is still laid out for a right thumb - a big button bottom-right with three
+      satellites. For a desk a centred row would be conventional.
+

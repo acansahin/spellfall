@@ -154,6 +154,24 @@ const PRIMARY_CLICK := "cast_primary"
 const MOVE_CLICK := "move_command"
 
 
+## The letter printed on a slot's icon, read out of the INPUT MAP rather than written down.
+##
+## A badge that said "Q" while the map said something else would be worse than no badge, and
+## the two drifted within one session of each other last time keys moved. Asking the map means
+## a rebinding relabels the icons for free.
+##
+## The FIRST key event on the action wins, which is why the letters are listed before the
+## number row in `project.godot`. Empty for a slot with no key at all.
+static func key_label_for(slot: int) -> String:
+	if slot < 0 or slot >= SLOT_KEYS.size():
+		return ""
+	for event in InputMap.action_get_events(String(SLOT_KEYS[slot])):
+		var key := event as InputEventKey
+		if key != null:
+			return OS.get_keycode_string(key.physical_keycode)
+	return ""
+
+
 ## The whole desk control scheme, in one place: a key arms, a left click sends, a right click
 ## either takes it back or walks you somewhere.
 func _poll_ability_keys() -> void:
@@ -176,8 +194,15 @@ func _poll_ability_keys() -> void:
 		else:
 			_move_click_pending = true
 
-	if _armed_slot != -1 and Input.is_action_just_pressed(PRIMARY_CLICK):
-		_send_armed()
+	if Input.is_action_just_pressed(PRIMARY_CLICK):
+		if _armed_slot != -1:
+			_send_armed()
+		else:
+			# FALLBACK, and it is here because a browser can swallow a right click before the
+			# game ever sees one. With nothing armed the left button has no other meaning, so
+			# giving it the walk order costs nothing and cannot be ambiguous: armed, it sends;
+			# empty, it walks. Remove it if right click proves reliable everywhere.
+			_move_click_pending = true
 
 
 ## Casts the armed spell at wherever the cursor is pointing.
@@ -231,6 +256,20 @@ func set_click_move(direction: Vector2, active: bool) -> void:
 ## True while a right-click walk order is being followed.
 func is_click_moving() -> bool:
 	return _click_move_active
+
+
+## One line of raw device state, for a build that cannot be photographed or stepped through.
+##
+## Everything here is read from the Input singleton, which is this node's job and nobody
+## else's. It exists because the web build reached a player before it reached anyone who could
+## put a breakpoint in it, and three rounds of reasoning about which of two mouse buttons was
+## arriving would have been one screenshot of this.
+func probe_text() -> String:
+	return "L%d R%d | armed %d | walk %d | mouse %s" % [
+		1 if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) else 0,
+		1 if Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT) else 0,
+		_armed_slot, 1 if _click_move_active else 0,
+		get_viewport().get_mouse_position().round()]
 
 
 ## Called by the virtual joystick once it exists. `vector` is in screen space with

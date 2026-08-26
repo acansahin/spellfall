@@ -23,6 +23,12 @@ extends Control
 
 @export var line_width := 2.6
 
+## The key that casts whichever slot this spell would occupy, or "" on a device with no keys.
+@export var key_label := "":
+	set(value):
+		key_label = value
+		queue_redraw()
+
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -34,3 +40,7 @@ func _draw() -> void:
 		return
 	var span := minf(size.x, size.y) * 0.5 * fill
 	SpellGlyph.draw_into(self, ability.glyph, size * 0.5, span, ability.colour, line_width)
+	# Pushed out past the glyph's own box, for the same reason the button does it: a letter
+	# sitting on the drawing hides the drawing.
+	SpellGlyph.draw_key(self, key_label, size * 0.5, minf(size.x, size.y) * 0.5,
+		ability.colour)

@@ -181,6 +181,7 @@ func _build_fixed(spell: Ability) -> Control:
 
 	var icon := SpellIcon.new()
 	icon.ability = spell
+	icon.key_label = _key_for_slot(0)
 	icon.custom_minimum_size = Vector2.ONE * (ICON_SIDE * 0.7)
 	icon.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	row.add_child(icon)
@@ -286,6 +287,16 @@ func _build_column(index: int) -> Control:
 	return box
 
 
+## The letter for a slot, or "" where the level said there is no keyboard.
+##
+## Keyed off the same `_controls` line the screen already receives: if the level decided this
+## device has no keys worth naming, the icons say nothing either. One decision, read twice.
+func _key_for_slot(slot: int) -> String:
+	if _controls == "":
+		return ""
+	return PlayerInputController.key_label_for(slot)
+
+
 func _build_option(spell: Ability, column_index: int, choice: int) -> PanelContainer:
 	var panel := PanelContainer.new()
 	panel.custom_minimum_size = Vector2(COLUMN_WIDTH, OPTION_HEIGHT)
@@ -302,6 +313,10 @@ func _build_option(spell: Ability, column_index: int, choice: int) -> PanelConta
 
 	var icon := SpellIcon.new()
 	icon.ability = spell
+	# Column i fills slot i + 1, because slot 0 is the fixed spell. Every option in a column
+	# therefore carries the same letter - which is the point: the letter belongs to the SLOT,
+	# and the choice is which spell sits in it.
+	icon.key_label = _key_for_slot(column_index + 1)
 	icon.custom_minimum_size = Vector2.ONE * ICON_SIDE
 	icon.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	row.add_child(icon)

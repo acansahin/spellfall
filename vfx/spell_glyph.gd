@@ -60,6 +60,30 @@ static func draw_into(canvas: CanvasItem, glyph: Ability.Glyph, centre: Vector2,
 			_surge(canvas, centre, size, tint, width)
 
 
+## Prints a key's letter in the corner of a glyph's box.
+##
+## Bottom-right, small, and dimmer than the glyph. It is a reminder, not a label: the shape is
+## what you recognise mid-fight and the letter is what you need for the first ten minutes.
+##
+## Drawn by the same call that draws the glyph so the two cannot drift apart in size or place,
+## and skipped entirely for an empty string - a phone has no keys to name.
+static func draw_key(canvas: CanvasItem, label: String, centre: Vector2, size: float,
+		tint: Color) -> void:
+	if canvas == null or label.is_empty():
+		return
+	var font := ThemeDB.fallback_font
+	if font == null:
+		return
+	# A third of the box, floored so it stays legible on the small menu icons.
+	var height := clampi(int(size * 0.42), 11, 20)
+	var span := font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1.0, height)
+	# The baseline sits at the bottom-right of the unit box, pulled in by its own descent so a
+	# letter with a tail does not hang outside the icon.
+	var at := centre + Vector2(size, size) - Vector2(span.x, font.get_descent(height))
+	canvas.draw_string(font, at, label, HORIZONTAL_ALIGNMENT_LEFT, -1.0, height,
+		Color(tint.r, tint.g, tint.b, 0.85))
+
+
 # ---------------------------------------------------------------------------------------
 # The shapes
 #

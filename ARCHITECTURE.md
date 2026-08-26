@@ -251,6 +251,11 @@ picks between four sources in priority order:
 | 3 | the latched aim of a released cast | between the lift and the tick that consumes it |
 | 4 | the movement direction | nothing else is speaking — what tapping always did |
 
+**The left button also walks you, when nothing is armed.** A fallback for a browser that
+swallows the right click before the game sees one. It cannot be ambiguous — armed, the left
+button sends; empty, it walks — and it is the difference between a playable page and a dead one
+while the real cause is being found.
+
 **A key ARMS, a left click SENDS.** `PlayerInputController` holds `_armed_slot`; nothing is
 cast on the key press. The left button latches the cursor's direction and requests the cast;
 a right click, or the same key again, puts it away. This is the model the Warcraft III arena
@@ -1233,6 +1238,10 @@ Each of these cost real time in the first session.
   button to the `cast_1` ACTION made TAPPING ANYWHERE ON A PHONE cast a Fireball, menu
   included. The click lives on its own `cast_primary` action, polled only while a cursor is
   actually driving.
+- **`_apply_visibility()` must refresh everything the mode decides, not just the layer.** The
+  stick's own visibility lived in `_layout()`, which only runs on a resize, so a suite that
+  switched `visibility_mode` got the layer back with the stick still hidden — eleven assertions
+  about a joystick that was not on screen to be pressed.
 - **A right click in a browser opens the context menu.** With right click as the movement
   control that is not a nuisance, it is the control not working. Suppressed on the canvas by a
   three-line script in the Web preset's `html/head_include` - which is also the only place a

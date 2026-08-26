@@ -84,6 +84,27 @@ static func ring(radius: float, thickness: float) -> ArrayMesh:
 	return _mesh(verts, indices)
 
 
+## Four flat triangles pointing INWARD at a point - the mark a right click leaves on the
+## ground, drawn the way the arena map this game follows draws it.
+##
+## Inward and not outward, which is the whole of why it reads as "here" rather than as an
+## explosion: four arrows closing on a spot name the spot.
+static func arrows(radius: float, size: float) -> ArrayMesh:
+	var verts := PackedVector3Array()
+	var indices := PackedInt32Array()
+	for step in 4:
+		var angle := TAU * float(step) / 4.0
+		var out := Vector3(cos(angle), 0.0, sin(angle))
+		var side := Vector3(-out.z, 0.0, out.x)
+		var base := out * radius
+		var start := verts.size()
+		verts.append(out * maxf(radius - size, 0.0))
+		verts.append(base + side * size * 0.5)
+		verts.append(base - side * size * 0.5)
+		indices.append_array(PackedInt32Array([start, start + 1, start + 2]))
+	return _mesh(verts, indices)
+
+
 static func _mesh(verts: PackedVector3Array, indices: PackedInt32Array) -> ArrayMesh:
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)
