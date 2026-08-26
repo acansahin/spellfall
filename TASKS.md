@@ -510,3 +510,171 @@ connected and USB debugging on, or copy the APK across and open it.
       centre - half the starting 12m radius - so the two start 12m apart. The first exchange
       of a round now requires closing distance on purpose. Confirm that reads as a choice on
       a phone, not as "my spell doesn't work".
+
+---
+
+## Session 16 - Eleven spells, and a choice before the match
+
+Read the roster out of the Warcraft III arena map this game follows, rather than guessing at
+one. `Warlock097.w3x` -> `war3map.w3a` gives the whole list with its own tooltips, cooldowns
+and column structure: one fixed spell and seven columns of three, pick one per column. That IS
+a loadout screen, and it is the shape this session built.
+
+- [x] Read the map's ability table (the tower-defense repo's `extract_w3x.py` needed MPQ file
+      decryption to get at it - every file in that map is encrypted, and the key is derived
+      from the filename)
+- [x] Seven new spells, all `.tres`, no new cast type and no subclass:
+  - [x] **Arc Lance** - flat and fast, 15m, barely pushes. Pure data, not one line of runtime
+  - [x] **Seeker** - `homing_turn` 220 deg/s toward the nearest fighter. A turn RATE, so
+        walking across its nose still loses it
+  - [x] **Loopshot** - `returns_after` 0.5 of its life, then flies at the caster; `pierces`
+        lets it catch the same wizard going and coming
+  - [x] **Lunge** - `dash_hits`: the corridor is swept and everyone in it goes through
+        `_apply_hit`, the same door a projectile uses
+  - [x] **Warp Bolt** - `swaps_places`. Hurts nobody; takes the ground they were standing on
+  - [x] **Rewind** - position and health recorded at CAST time, restored `duration` later.
+        Instability deliberately NOT restored
+  - [x] **Momentum** - `speed_per_absorbed`: what the ward swallowed comes back as walking
+        speed, capped at +2.5 m/s
+- [x] `SpellCatalogue` + `SpellColumn` as Resources - the roster is `data/spell_catalogue.tres`
+- [x] `LoadoutScreen`, BUILT from the catalogue. A fourth option in a column is one line of
+      data and no node
+- [x] `LoadoutStore` - `user://loadout.cfg`, keyed by spell ID so reordering a column cannot
+      hand a returning player a different spell
+- [x] The bot draws a random loadout every match, so every spell gets used against the player
+- [x] The bot picks the hardest projectile it has ready and in range, and charges with a dash
+      that hits. Without this it would have carried a spell and never thrown it
+- [x] `--loadout-test` (36 assertions), `--loadout:on|off|a,b,c`, `--wipe-loadout`
+- [x] Fix: `Projectile.hit` grew a `shooter` argument and two harness lambdas silently stopped
+      receiving anything - `--cast-test` and `--bot-test` reported a projectile that never
+      arrived. Written up in ARCHITECTURE.md
+- [x] Fix: nothing froze the fighters while the menu was up, so the bot opened fire on a player
+      still reading the spell list. Caught by the first screenshot of the screen
+- [x] Fix: `--wipe-loadout` deleted the file after `_ready` had already read it, so the run
+      still played the loadout it was told to forget
+- [x] GAME_DESIGN.md's Originality section rewritten - spell DESIGNS now come from the map;
+      names, art, sound, text, UI and numbers still do not
+- [x] An icon per spell: `Ability.Glyph` + `vfx/spell_glyph.gd`, eleven vector shapes drawn
+      in a unit box and scaled at draw time. On the spell buttons and on every menu row, and
+      Fireball shown once on the menu as the spell you do not choose
+- [x] `--loadout-test` asserts no two spells in the roster share a shape
+- [x] Fix: the spell button only redrew when its cooldown moved, so applying a loadout to the
+      same AbilityComponent left the previous spell's glyph on the button until the next cast
+- [x] Fix: the flame drawn as one shape read as a WATER droplet at button size. Two convex
+      shapes stacked - concave is the honest silhouette and `draw_colored_polygon`
+      triangulates it wrong without complaining
+- [x] Five flight shapes: `Ability.Bolt` - orb, shard, dart, spinning blade, flat ring. One
+      shared mesh per shape, sized by the node so `projectile_radius` is the only number that
+      decides how big a spell looks. Hitbox stays a sphere for all five
+- [x] Projectile emission 2.2 -> 1.15. At 2.2 every tint blew toward white, which was survivable
+      while all five were identical spheres and is a straight loss now that shape carries the
+      identity
+- [x] `--bolt-pose`: all five down parallel lanes, so one shot compares them from one angle
+- [x] Fix: `Node3D.scale =` keeps the rotation, so a pooled projectile relaunched as a hoop kept
+      the shard's angle from its last flight
+- [x] Fix: a ring stood across the flight path is a vertical sliver from this camera. Laid flat
+- [x] Sixteen suites green
+
+- [x] **Spell damage halved across the board.** Fireball 20 -> 10, Arc Lance 16 -> 8, Seeker
+      18 -> 9, Lunge 14 -> 7, Loopshot 12 -> 6. Five Fireballs killed; ten do now. At five the
+      fastest way to win was to stand still and shoot, which is not this game
+- [x] The floor is a RULE now, not a number in a file: no spell empties a full bar in under ten
+      clean hits, and the lava stays the quickest way to empty one (4.5s against the best
+      spell's 9s at perfect uptime). `--loadout-test` asserts both
+
+### Still open
+
+- [ ] **Does the round now drag?** Damage was the thing finishing fights, and it has just been
+      halved. If rounds run long, the dial to turn is `instability` per hit - the escalation
+      curve - and NOT the damage back up. Judge it on a phone before touching either.
+- [ ] **Four of the map's seven columns are not built.** Meteor / Splitter / WindWalk,
+      Drain / Fire Spray / Bouncer, Entangle / Gravity / Link, and the self-centred novas
+      (Scourge / Cataclysm / Pious). Each needs a runtime this game does not have yet -
+      a ground-targeted cast, a tether, a root, invisibility - and there are only four
+      buttons on the screen, so a fourth column needs the UI to grow first.
+- [ ] Nothing is balanced. The cooldowns are the map's RATIOS mapped onto our Fireball, and
+      the damage numbers are guesses beside it. Judge Seeker's 220 deg/s and Momentum's
+      +2.5 m/s ceiling on a phone before touching anything else.
+- [ ] The bot never casts Warp Bolt - it scores zero on a ranking made of damage, which is
+      honest but means one spell is never used against the player.
+
+---
+
+## Session 17 - Two a side
+
+- [x] `Player.team` - an int on the fighter, not a physics layer per side. Four queries mask the
+      one "players" layer and all four would have to learn about teams to save one comparison
+- [x] `RoundManager` counts SIDES: a round ends when one is gone, score is kept per side, and
+      `wins_for()` answers for a side's name or any fighter on it. A duel is two sides of one
+      and reads exactly as before
+- [x] Friendly fire OFF, and off means an ally is NOT THERE - the projectile flies on, the
+      seeker will not lock onto them, the fan skips them and catches the enemy behind. Three
+      places, one rule, asserted rather than assumed
+- [x] The bot picks the nearest living enemy and re-picks on its own reaction clock; a target
+      that leaves the round is dropped immediately, because reaction time is a handicap on
+      noticing and not a licence to keep fighting a body that has gone
+- [x] `_begin_match()` - the squad is formed AFTER the mode is known. Everything that depends
+      on how many wizards there are moved out of `_ready`
+- [x] 1v1 / 2v2 row on the loadout screen, remembered in `user://loadout.cfg` with the picks
+- [x] Every bot gets its own random loadout, drawn one after another from one seeded stream
+- [x] `--2v2` and `--team-test` (15 assertions)
+- [x] Fix: `--bot:off` and `--bot-skill:` reached only the scene's bot. Both now cover every
+      brain, in whichever order the squad happens to be formed
+- [x] Fix: driving the loadout screen a second time re-registered the whole roster - two HUD
+      rows per fighter and two of each body in the round system, which never ends
+- [x] Sixteen suites green
+
+### Still open
+
+- [ ] **Four wizards on a ring that closes to 4.5m.** The shrink numbers were tuned for two
+      bodies. Judge whether a 2v2 needs a wider floor, a slower clock, or neither.
+- [ ] **The ally is not a teammate yet, it is a second bot facing the same way.** It does not
+      cover, does not focus what you are shooting, and does not stay out of your line. Whether
+      any of that is worth building is a question to answer by playing, not by listing.
+- [ ] Cover is placed point-symmetrically for TWO spawns. With four it is no longer obviously
+      fair to every start.
+
+---
+
+## Session 18 - Playing at a desk, and a web build
+
+- [x] Mouse aim: the level intersects the cursor ray with the plane at the WIZARD'S height and
+      hands the direction to `PlayerInputController.set_pointer_aim()` - the same one line of
+      meaning the joystick already gets. The controller still knows nothing about cameras
+- [x] Bindings: left click = Fireball, **Q** strike, **Space** motion, **E** guard, 1-4 as a
+      fallback row. WASD unchanged
+- [x] `MobileControls.AUTO` now starts HIDDEN and latches on at the first real
+      `InputEventScreenTouch`, so one build serves a phone browser and a desktop one
+- [x] Web export preset (single-threaded, so Pages needs no COOP/COEP headers) and
+      `.github/workflows/pages.yml`
+- [x] `export_presets.cfg` un-ignored: it holds no secrets and CI cannot export without it
+- [x] README, which is also what the repository page will show
+- [x] `--pc-test` (14 assertions) and `.claude/launch.json` to serve the web build locally
+- [x] Seventeen suites green
+
+### Traps found, all written up in ARCHITECTURE.md
+
+- [x] **`DisplayServer.is_touchscreen_available()` is true whenever mouse-to-touch emulation
+      is on.** A desktop and a phone gave the same answer, which is why `AUTO` had ORed the
+      two flags - they were one flag. Emulation is off now, and the controls wait for a finger
+- [x] **`emulate_mouse_from_touch` turns every finger into a left click.** Binding the left
+      button to the `cast_1` ACTION meant tapping anywhere on a phone cast a Fireball, menu
+      included. It lives on its own `cast_primary`, polled only while a cursor is driving
+- [x] **The cursor was outranking the thumb.** Four suites force the controls visible and then
+      measure drag-to-aim; the physical mouse was answering instead. The controls being
+      visible now decides whether the cursor aims at all
+- [x] A press latched while nobody may act came out on the first live tick. `BotController`
+      had always dropped one; the human's fighter had not needed to until a mouse button
+      existed that also means "confirm"
+
+### Still open
+
+- [ ] **The web build has not been SEEN.** The engine boots in a browser - WebGL2, pack
+      loaded, no errors - but the preview pane never composited a frame, so the canvas was
+      0x0 and nothing could be screenshotted or clicked. Keyboard focus on the canvas and the
+      first-touch rule are both unverified in an actual browser.
+- [ ] No aim lane is drawn for a cursor. On a phone the drag shows the spell's reach; at a
+      desk there is nothing telling you a Fireball stops at 6.6m.
+- [ ] The mouse is not captured, so a click outside the canvas leaves the game. Fine for a
+      prototype, worth revisiting if anyone plays it seriously.
+

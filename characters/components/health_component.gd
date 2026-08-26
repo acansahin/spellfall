@@ -5,13 +5,22 @@ extends Node
 ##
 ## This used to be lava-only, on the rule that no spell may ever touch it - keeping combat
 ## entirely in instability and knockback, so the fight stayed a positioning game and not a
-## damage race. That rule is gone: Fireball now drains it directly (see `Ability.health_damage`
-## and `_apply_hit()` in main.gd), on top of everything instability still does. Two ways to
-## lose are live at once - destabilise someone into the lava, or simply outshoot them - and the
-## level decides which spells get to use the second one.
+## damage race. Spells may chip it now (`Ability.health_damage`, applied in `_apply_hit()`),
+## but the rule behind that original decision is intact and is the one to defend:
+## **THIS BAR IS THE LAVA'S CURRENCY.**
+##
+## A trip into the lava empties a full bar in about four and a half seconds. The fastest spell
+## in the game needs nine seconds of PERFECT uptime - every cast landing, nobody dodging, nobody
+## walking away - to do the same, and a real fight is nothing like that. So a spell hit is worth
+## a fraction of a second in the lava, which is exactly what it should be worth: a mark left
+## between exchanges, never a way to win without ever using the edge.
+##
+## Fireball spent a session at five hits to a full bar, and at five it was a damage race with a
+## knockback theme - the ring stopped mattering. `--loadout-test` now asserts both halves: ten
+## clean hits minimum for any spell, and the lava faster than all of them.
 ##
 ## What has NOT changed is that standing on stone no longer heals it. A trip into the lava, or
-## a Fireball taken to the face, costs something for the rest of the round - `reset()` between
+## a spell taken to the face, costs something for the rest of the round - `reset()` between
 ## rounds is the only way back to full. So the total is a budget as much as a health bar: how
 ## many hits, and how many seconds in the lava, before this fighter is out.
 ##
@@ -65,6 +74,21 @@ func damage(amount: float) -> void:
 		changed.emit(current, previous)
 	if current <= 0.0:
 		emptied.emit()
+
+
+## Puts the bar back to a value it held earlier, for a spell that rewinds its caster.
+##
+## Deliberately not `damage(-n)`: healing and un-doing are different claims. Nothing in this
+## game heals - stone does not mend a burn, and a Fireball taken stays taken - but one spell
+## restores the reading a fighter had a few seconds ago, and it has to be able to say so
+## without opening a door that lets any negative number through `damage()`.
+##
+## Clamped to the maximum, so a rewind taken while full cannot bank spare health.
+func restore_to(value: float) -> void:
+	var previous := current
+	current = clampf(value, 0.0, maximum)
+	if current != previous:
+		changed.emit(current, previous)
 
 
 func fraction() -> float:

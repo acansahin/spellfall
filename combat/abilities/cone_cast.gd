@@ -58,6 +58,12 @@ static func targets(space: PhysicsDirectSpaceState3D, from: Vector3, aim: Vector
 		var body := hit.get("collider") as Node3D
 		if body == null or body == caster or found.has(body):
 			continue
+		# Allies are skipped here rather than filtered by the caller, so the fan that is DRAWN
+		# and the fan that HITS still come from one place - and a wave cast through a teammate
+		# reaches the enemy standing behind them.
+		var thrower := caster as Player
+		if thrower != null and thrower.is_ally_of(body):
+			continue
 		var offset := Vector2(body.global_position.x - from.x, body.global_position.z - from.z)
 		if offset.length_squared() < 0.0001:
 			# Standing inside the caster. There is no angle to test and no reading of the

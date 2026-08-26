@@ -1,4 +1,4 @@
-[gd_scene load_steps=19 format=3]
+[gd_scene load_steps=21 format=3]
 
 [ext_resource type="Script" path="res://core/game/main.gd" id="1_main"]
 [ext_resource type="PackedScene" path="res://arena/arena.tscn" id="2_arena"]
@@ -17,6 +17,8 @@
 [ext_resource type="Script" path="res://audio/sound_bank.gd" id="15_sounds"]
 [ext_resource type="Script" path="res://vfx/impact_burst.gd" id="16_sparks"]
 [ext_resource type="Script" path="res://vfx/ground_streak.gd" id="17_streak"]
+[ext_resource type="PackedScene" path="res://ui/loadout/loadout_screen.tscn" id="18_loadout"]
+[ext_resource type="Resource" path="res://data/spell_catalogue.tres" id="19_catalogue"]
 
 [sub_resource type="Environment" id="Environment_main"]
 background_mode = 1
@@ -29,6 +31,8 @@ tonemap_mode = 2
 [node name="Main" type="Node3D"]
 script = ExtResource("1_main")
 knockback_rules = ExtResource("10_rules")
+catalogue = ExtResource("19_catalogue")
+bot_scene = ExtResource("9_bot")
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="."]
 environment = SubResource("Environment_main")
@@ -64,6 +68,8 @@ script = ExtResource("12_rounds")
 [node name="Hud" parent="." instance=ExtResource("11_hud")]
 
 [node name="MobileControls" parent="." instance=ExtResource("6_mobile")]
+
+[node name="LoadoutScreen" parent="." instance=ExtResource("18_loadout")]
 
 [node name="Feel" type="Node" parent="."]
 script = ExtResource("14_feel")

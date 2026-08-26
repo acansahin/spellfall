@@ -4,22 +4,25 @@
 
 [resource]
 script = ExtResource("1_ability")
-id = &"arcane_shield"
-display_name = "Arcane Shield"
-blurb = "Most of the next hit does not land."
-colour = Color(0.6, 1, 0.847059, 1)
-glyph = 8
-cast_type = 3
-cooldown = 8.0
+id = &"lunge"
+display_name = "Lunge"
+blurb = "A charge that hits whoever is in the way."
+colour = Color(1, 0.717647, 0.301961, 1)
+glyph = 6
+cast_type = 2
+cooldown = 5.3
 charges = 1
-instability = 0.0
-knockback = 0.0
+instability = 10.0
+health_damage = 7.0
+knockback = 9.0
 projectile_speed = 0.0
 projectile_radius = 0.0
 lifetime = 0.0
 spawn_offset = 0.0
 area = 0.0
 cone_angle = 45.0
-dash_distance = 0.0
-duration = 1.2
-knockback_resist = 0.35
+dash_distance = 6.0
+dash_hits = true
+dash_width = 0.9
+duration = 0.0
+knockback_resist = 1.0

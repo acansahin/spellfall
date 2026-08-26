@@ -57,6 +57,14 @@ var _aim_vector := Vector2.ZERO
 var _latched_aim := Vector2.ZERO
 var _latched_has_aim := false
 
+## Where a mouse is pointing, WORLD space, and whether one is being used at all.
+##
+## Handed in by the level exactly as the joystick's vector is - see `set_pointer_aim`. This
+## node still knows nothing about cameras, wizards or ground planes; it knows that something
+## upstream has an opinion about where the player is aiming.
+var _pointer_aim := Vector2.ZERO
+var _pointer_active := false
+
 
 func _process(_delta: float) -> void:
 	_poll_ability_keys()
@@ -72,13 +80,18 @@ func _process(_delta: float) -> void:
 
 ## Decides which of the three things speaking gets to fill the aim, in priority order.
 ##
-## A live drag wins: the thumb is pointing right now. Failing that, a cast already released
-## but not yet consumed keeps the direction it was fired with, so the tick that casts it
-## cannot be handed a stale walking direction instead. Failing both, aim mirrors movement,
-## which is what tapping has always done.
+## A live drag wins: the thumb is pointing right now. Failing that, a MOUSE wins, because on a
+## desktop the cursor is a continuous statement of intent and there is nothing stale about it -
+## unlike a latched aim, which exists only to survive the gap between a lift and the next tick.
+## Failing both, a cast already released but not yet consumed keeps the direction it was fired
+## with. Failing all three, aim mirrors movement, which is what tapping has always done.
 func _publish_aim(world_move: Vector2) -> void:
 	if _aim_slot != -1 and _aim_vector != Vector2.ZERO:
 		command.aim_dir = _screen_to_world(_aim_vector)
+		command.has_aim = true
+		return
+	if _pointer_active and _pointer_aim != Vector2.ZERO:
+		command.aim_dir = _pointer_aim
 		command.has_aim = true
 		return
 	if _latched_has_aim:
@@ -96,11 +109,22 @@ func _publish_aim(world_move: Vector2) -> void:
 ## constructor call rather than a constant expression and does not compile.
 const SLOT_KEYS: Array = ["cast_1", "cast_2", "cast_3", "cast_4"]
 
+## The left mouse button, which casts slot 0 - but ONLY while a cursor is actually driving.
+##
+## It is not simply a second event on `cast_1`, and the reason is a real bug rather than
+## tidiness. `emulate_mouse_from_touch` is on by default and turns every finger into a left
+## click, so a left button bound to the action meant that TAPPING ANYWHERE ON A PHONE cast a
+## Fireball - including on the menu. Gating it on `_pointer_active` is the same rule the aim
+## already follows: if a thumb is driving, the cursor is not.
+const PRIMARY_CLICK := "cast_primary"
+
 
 func _poll_ability_keys() -> void:
 	for slot in SLOT_KEYS.size():
 		if Input.is_action_just_pressed(String(SLOT_KEYS[slot])):
 			request_ability(slot)
+	if _pointer_active and Input.is_action_just_pressed(PRIMARY_CLICK):
+		request_ability(0)
 
 
 ## Called by the virtual joystick once it exists. `vector` is in screen space with
@@ -108,6 +132,24 @@ func _poll_ability_keys() -> void:
 func set_touch_vector(vector: Vector2, active: bool) -> void:
 	_touch_vector = vector
 	_touch_active = active
+
+
+## Called by the level every frame on a machine with a mouse. `direction` is already in WORLD
+## space, on the ground plane, pointing from the wizard toward the cursor.
+##
+## The conversion is the LEVEL's job and not this node's, which is the same split the joystick
+## already makes: the stick reports where a thumb is and one line upstream gives it meaning.
+## Turning a cursor into an aim needs the camera, the ground plane AND the wizard's position -
+## three things this node deliberately does not know, and would have to be handed anyway.
+func set_pointer_aim(direction: Vector2, active: bool) -> void:
+	_pointer_aim = direction
+	_pointer_active = active
+
+
+## True while a mouse is driving the aim. The level asks, so the aim indicator can be drawn
+## for a cursor as well as for a thumb.
+func is_pointing() -> bool:
+	return _pointer_active and _pointer_aim != Vector2.ZERO
 
 
 ## Asks for an ability. Called by a touch button, by the keyboard poll above, and by the

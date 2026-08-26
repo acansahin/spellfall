@@ -6,7 +6,9 @@
 script = ExtResource("1_ability")
 id = &"blink"
 display_name = "Blink"
+blurb = "Straight out of trouble. Never off the edge."
 colour = Color(0.756863, 0.552941, 1, 1)
+glyph = 5
 cast_type = 2
 cooldown = 5.0
 charges = 1

@@ -4,13 +4,13 @@
 
 [resource]
 script = ExtResource("1_ability")
-id = &"arcane_shield"
-display_name = "Arcane Shield"
-blurb = "Most of the next hit does not land."
-colour = Color(0.6, 1, 0.847059, 1)
-glyph = 8
+id = &"rewind"
+display_name = "Rewind"
+blurb = "Puts you back where you were, burn and all."
+colour = Color(0.921569, 0.858824, 0.619608, 1)
+glyph = 9
 cast_type = 3
-cooldown = 8.0
+cooldown = 7.0
 charges = 1
 instability = 0.0
 knockback = 0.0
@@ -21,5 +21,6 @@ spawn_offset = 0.0
 area = 0.0
 cone_angle = 45.0
 dash_distance = 0.0
-duration = 1.2
-knockback_resist = 0.35
+duration = 3.2
+knockback_resist = 1.0
+rewind = true

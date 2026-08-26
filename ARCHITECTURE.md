@@ -44,13 +44,19 @@ res://
   ui/
     hud/           hud.gd/.tscn - instability, round number, score, banner
     mobile_controls/ touch_stick, ability_button (press-drag-lift to aim), mobile_controls
+    loadout/       loadout_screen.gd/.tscn - the spell picker, built from the catalogue;
+                   spell_icon.gd - a glyph as a laid-out rectangle
   systems/
     round/         round_manager.gd - countdown, elimination, score, reset
     feel/          game_feel.gd - hitstop, shake, sparks, sound and haptics, in one place
+    loadout/       spell_catalogue.gd + spell_column.gd (the roster, as data) +
+                   loadout_store.gd (user://loadout.cfg, by spell id)
     spawn/         (planned)
-  data/            abilities/fireball.tres, knockback_rules.tres
+  data/            abilities/*.tres (eleven spells), spell_catalogue.tres, knockback_rules.tres
   network/         (planned) Phase C onward
-  vfx/             ground_shapes.gd - flat meshes; spell_flash.gd - the fan Force Wave
+  .github/workflows/  pages.yml - exports the Web preset and publishes it to GitHub Pages
+  vfx/             spell_glyph.gd - the eleven icons, as vector shapes in a unit box;
+                   ground_shapes.gd - flat meshes; spell_flash.gd - the fan Force Wave
                    draws; aim_indicator.gd - what a spell will do, before it does it;
                    impact_burst.gd - sparks; ground_streak.gd - the smear a Blink leaves
   audio/           sound_bank.gd - every sound, synthesized. There are no audio files
@@ -232,6 +238,33 @@ A player pushing "up" on a joystick means "away from me on screen", not "world -
 only coincide while the camera has no yaw. `PlayerInputController._screen_to_world()` rotates
 the stick vector using the **active camera's basis**, once, before anyone downstream sees it.
 Doing it there means rotating or tilting the camera later cannot silently invert the controls.
+
+### Two devices, one command
+
+`PlayerInputController` fills the same `InputCommand` whatever is driving, and `_publish_aim`
+picks between four sources in priority order:
+
+| Priority | Source | When |
+|---|---|---|
+| 1 | a live thumb drag off a spell button | a finger is down and past the deadzone |
+| 2 | the **cursor** | a mouse is driving (see below) |
+| 3 | the latched aim of a released cast | between the lift and the tick that consumes it |
+| 4 | the movement direction | nothing else is speaking — what tapping always did |
+
+**The cursor is turned into an aim by the LEVEL, not by the controller.** `main.gd` intersects
+the mouse ray with the horizontal plane at the wizard's own height and hands the result to
+`set_pointer_aim()` — the same single line of meaning it already gives the joystick's vector.
+The controller stays free of cameras, ground planes and wizard positions, all three of which it
+would otherwise have to be handed anyway.
+
+The plane is at the WIZARD'S height and not the floor: the wizard casts from chest height and
+the camera looks down, so aiming at the floor points a stride past the target at the far rim.
+
+**The thumb controls being visible is what decides whether the cursor aims at all.** If a stick
+and four buttons are drawn, this is a touch run and a cursor aiming underneath would silently
+outrank every drag a thumb makes — four suites found exactly that, because they force the
+controls on and then measure drag-to-aim while the physical mouse sat wherever it happened to
+be. One rule, read in one place: `_pointing_is_live()`.
 
 ## Movement and why it is not a RigidBody
 
@@ -479,20 +512,77 @@ indexing `_cooldowns` crashed once, because the bounds that were tested were not
 that were used; `abilities` now resizes the cooldown array through its setter, so a spellbook
 assigned at runtime cannot desync the two.
 
-### The four spells
+### The eleven spells
 
-All four are `.tres` files in `data/abilities/`. None of them has a script. What differs
+All eleven are `.tres` files in `data/abilities/`. None of them has a script. What differs
 between them is numbers and which **cast type** they select, and each cast type has exactly
 one runtime, in `main.gd`, at the seam where a cast request becomes something in the world.
 
 | Spell | Cast type | Runtime | The rule that makes it that spell |
 |---|---|---|---|
 | Fireball | `PROJECTILE` | `ProjectilePool.fire` | travels, hits the first body, expires |
+| Arc Lance | `PROJECTILE` | the same | no drag and three times the speed — it is Fireball's numbers, nothing more |
+| Seeker | `PROJECTILE` | the same + `Projectile._home` | turns at `homing_turn` deg/s toward the nearest fighter |
+| Loopshot | `PROJECTILE` | the same + `_turn_for_home` | turns at `returns_after` of its life and flies at the caster; `pierces` lets it catch the same wizard twice |
+| Warp Bolt | `PROJECTILE` | the same + `_swap_places` | `swaps_places` — the caster and the target exchange positions |
 | Force Wave | `CONE` | `_cast_cone` → `ConeCast.targets` | thrown **away from the caster**, not along the aim |
 | Blink | `DASH` | `_cast_dash` | landing point **clamped inside the arena** |
+| Lunge | `DASH` | the same + `_dash_targets` | `dash_hits` — the corridor is swept and everyone in it goes through `_apply_hit` |
 | Arcane Shield | `BUFF` | `_cast_buff` → `Player.apply_shield` | a multiplier on incoming knockback, not a block |
+| Momentum | `BUFF` | the same | `speed_per_absorbed` — what the ward swallowed is paid back as walking speed |
+| Rewind | `BUFF` | `_cast_buff` → `Player.begin_rewind` | position and health recorded at CAST time, restored at resolve time |
 
-Three details are load-bearing:
+**Eleven spells need eleven SHAPES, not eleven tints.** `Ability.glyph` picks one of
+`SpellGlyph`'s vector icons, drawn straight into the spell button and into each menu row.
+Four spells were four tinted discs and that read; eleven are eleven tinted discs, three of them
+some shade of blue, under a thumb, mid-fight. The shapes are named for what they look like
+(`FLAME`, `FAN`, `BOLT`, …) rather than for the spell that uses one, so a twelfth spell reaches
+for the closest fit before anybody draws a new one — and `--loadout-test` asserts that no two
+spells in the roster share a shape.
+
+Two details are worth keeping:
+
+- **Every glyph is authored in a UNIT BOX**, -1..1 with y down, and scaled at draw time. One
+  drawing therefore serves a 72px button and a 32px "always with you" row, and a resized button
+  cannot leave its icon behind. Only the line width is in pixels, deliberately: a hairline
+  scaled down disappears.
+- **`Node3D.scale = …` keeps the rotation.** A pooled projectile relaunched as a different
+  shape came back still lying at the previous shape's angle, and only for the shapes that do
+  not re-aim themselves every tick — visible in about one screenshot in ten. Assign the whole
+  basis when a reused node must start clean.
+- **`draw_colored_polygon` triangulates without checking.** A concave outline comes out with
+  chunks missing rather than with an error, which is why the flame is two convex shapes stacked
+  rather than one honest fire silhouette.
+
+**In the air, shape carries the identity too.** `Ability.bolt` picks one of five meshes built
+once and shared by every projectile that ever flies with it: an `ORB` (Fireball), a `SHARD`
+(Arc Lance), a `DART` (Seeker), a spinning `BLADE` (Loopshot) and a flat `RING` (Warp Bolt).
+`--bolt-pose` fires all five down parallel lanes so one screenshot compares them.
+
+Three rules hold it together:
+
+- **The hitbox is ALWAYS a sphere of `projectile_radius`, whatever is drawn.** What a spell
+  catches you with has to be the thing you learned from Fireball; a per-shape collider would
+  make "did that graze me?" a different question for every spell.
+- **A shape may stretch only ALONG the flight.** Its cross-section matches the sphere, so a
+  drawing can never be wider than what hits — the length reads as speed, and nobody judges the
+  exact extent of something crossing at 30 m/s.
+- **Only the MESH is turned, never the Area3D.** Rotating the node would rotate the collider
+  with it, which changes nothing today and is a subtle bug waiting for the day the collider
+  stops being a sphere. `ORB` and `RING` are not aimed at all — a ball has no direction, and a
+  hoop stood across the flight path is a vertical sliver from this camera's angle.
+
+**Seven spells were added in one session and no cast type was.** Four ride on existing runtimes
+with nothing but different numbers; three added a field to `Ability` and a handful of lines
+where that field is read. The test for a new cast type has not changed: different CONTROL FLOW,
+not different numbers — and a swap, a charge and a rewind all still fly, sweep or tick exactly
+the way their neighbours do.
+
+Four details are load-bearing:
+
+- **A rewind restores position and health, never instability.** What the round took out of you
+  stays taken, so the escalation curve survives the spell. `Ability.rewind` says so in its own
+  doc comment, and `--loadout-test` asserts it rather than trusting it.
 
 - **Force Wave pushes outward, not forward.** A wave shoves what it touches, so someone caught
   at the shoulder of the fan is thrown sideways — which near a rim is off it. That is the
@@ -505,9 +595,76 @@ Three details are load-bearing:
   formula answers "how hard was that hit"; the shield answers "how much of it landed on *me*",
   and only the recipient knows that. Hitstun then falls out of the reduced speed for free.
 
+**Spell damage has a floor and the harness holds it.** `Ability.health_damage` may never empty
+a full bar in under ten clean hits, and the lava must stay the fastest way to empty one. Both
+are asserted by `--loadout-test` rather than left to whoever edits a `.tres` next: a spell tuned
+past that line does not make the game harder, it makes it a different game — one where the edge
+is decoration. See `HealthComponent`'s own doc for the arithmetic.
+
 **One door for every hit.** `_apply_hit()` raises instability and hands out knockback, and both
 a projectile arriving and a cone catching someone go through it. A second path would be a
 second place the escalation rule lived.
+
+### Sides
+
+A fighter carries `Player.team`, an int. Everyone is on their own side in a duel, where the
+numbers are 0 and 1 and nothing ever compares them; a team match puts two on each.
+
+**A team is an int on the fighter, not a physics layer.** A layer per side would let the engine
+filter allies for free — and would break the one thing every query here relies on, that
+"players" is ONE layer. `KillZone` masks it, `ConeCast` masks it, a seeker's look-ahead masks
+it. Four of those would have to learn about sides to save one comparison.
+
+**Friendly fire is off, and "off" means an ally is not there.** Not unhurt — *absent*. Three
+places implement it and `--team-test` is what proves they agree:
+
+| Where | What it does |
+|---|---|
+| `Projectile._on_body_entered` | returns before the hit AND before `_finish()`, so the spell flies on |
+| `Projectile._nearest_target` | a seeker will not lock onto a teammate |
+| `ConeCast.targets` | a fan skips an ally and still catches the enemy behind them |
+
+A spell that stopped on a teammate without hurting them would turn every ally into cover, and
+an ally you have to walk around is worse than no ally at all.
+
+**`RoundManager` counts SIDES, not bodies.** A round ends when one side is left; a duel is two
+sides of one and reads exactly as it always did. Score is per side for the same reason — "YOU 2
+RED 1" is a statement about teams, and two rows saying the same thing is not a scoreboard.
+`wins_for()` accepts either a side's name or any fighter's, so a caller that only knows "YOU"
+gets the right answer in both modes.
+
+**The squad is formed AFTER the mode is known.** `_begin_match()` exists because how many
+wizards are on the stone is chosen on a screen that has not been shown when `_ready` finishes.
+Wiring the spellbooks, the HUD rows and the round roster for two and then discovering there are
+four is how a fighter ends up registered twice — standing, unhittable, and preventing the round
+from ever ending. `_squad_formed` guards the second call a suite makes.
+
+### The loadout
+
+Which spells a wizard carries is decided in `main.gd` and nowhere else. Three pieces:
+
+| Piece | Owns |
+|---|---|
+| `SpellCatalogue` (`data/spell_catalogue.tres`) | the roster: one fixed spell, one `SpellColumn` per remaining slot |
+| `LoadoutScreen` (`ui/loadout/`) | drawing the choice and reporting `confirmed(picks)`. Decides nothing |
+| `LoadoutStore` | reading and writing `user://loadout.cfg`, by spell ID |
+
+The same three-step shape the touch controls already use: a widget reports, a rule decides, the
+level performs. `_on_loadout_confirmed` is the only thing that writes an `AbilityComponent`.
+
+Four things are deliberate:
+
+- **The screen is BUILT from the catalogue**, not laid out in a scene. Adding a fourth option
+  to a column is one line in a `.tres` — no node, no index, no label to retype.
+- **Picks are stored as IDS, not indices.** Reordering a column would otherwise silently hand a
+  returning player a different spell. An id the catalogue no longer holds leaves that column on
+  its default rather than failing the whole loadout.
+- **A harness run never sees the menu.** `_show_loadout` starts as "were there no user args at
+  all", because fifteen suites open by awaiting a live round and a menu waiting on a human
+  would hang every one of them. `--loadout:on` is the deliberate exception.
+- **Nothing fights behind it.** `Player.accepts_input` defaults to true and the round system has
+  not started yet, so the screen turns both fighters off and the HUD with them. The first
+  screenshot of the menu caught the bot shooting the player through it.
 
 `ConeCast` runs a physics query rather than walking a list of known fighters, for the same
 reason `KillZone` is an `Area3D`: it finds anything on the players layer, including a fighter
@@ -951,6 +1108,20 @@ argument-gated harness. Everything after a bare `--` reaches `OS.get_cmdline_use
 | `--lava-test` | Asserts the lava burns, stone only stops it, a Fireball drains health directly, a dunk is survivable, you can climb back, and burning out ends the round |
 | `--shrink-test` | Asserts the ring holds through the grace, closes at its rate, stops at the floor, and drags the lava rule, the bot, the camera and the cover with it |
 | `--burn-pose` | Parks the player in the lava, so a delayed shot catches the burn bar part-way down |
+| `--pc-test` | Asserts the desk controls: bindings, cursor aim, and that a click meaning "confirm" never becomes a spell. Needs a real window |
+| `--2v2` | Two a side: you and a bot ally against two bots |
+| `--team-test` | Asserts the sides, friendly fire, re-targeting and what ends a round. Implies `--2v2` |
+| `--bolt-pose` | Fires every projectile spell down parallel lanes, over and over, so one delayed shot compares all five flight shapes from the same angle |
+| `--loadout-test` | Asserts the catalogue, the picks, the screen end to end, and each added spell's own rule |
+| `--loadout:on` | Opens the spell-picking screen even though other harness args were given, for a screenshot of it |
+| `--loadout:off` | Skips it. This is the default whenever ANY user arg is passed |
+| `--loadout:a,b,c` | Arms the player with these spell ids |
+| `--wipe-loadout` | Forgets the stored picks, so the next plain launch opens the menu with nothing chosen |
+
+**Any user argument at all puts the run on the DEFAULT loadout.** The stored one belongs to the
+player. A suite that inherited whatever the last play session picked would measure a different
+wizard every day — and it did, once: `--aim-test` went looking for a cone slot, found a stored
+loadout that had none, and crashed on a null.
 
 **None of these may be run with `--headless`.** `--shot` needs real rendering, and the input
 tests need a real window: the headless display driver does not route injected
@@ -1034,6 +1205,23 @@ Each of these cost real time in the first session.
   `--lava-test` copied the trick and measured the lava burning 0.4 points in a second against
   an advertised 22. Pin by writing `global_position` when the thing under test is state that
   a respawn clears.
+- **`DisplayServer.is_touchscreen_available()` returns TRUE whenever mouse-to-touch emulation
+  is on.** So with `emulate_touch_from_mouse=true` there is no way left to ask "is a finger
+  driving this?" — a desktop and a phone answer identically, which is why `MobileControls.AUTO`
+  originally ORed the two flags: they were the same flag. It matters the moment one build has
+  to serve a phone browser and a desktop one. The controls now start hidden and latch on at the
+  first real `InputEventScreenTouch`, which is the only test a mouse cannot pass.
+- **`emulate_mouse_from_touch` turns every finger into a left click.** It is on by default and
+  it is needed — it is what lets a thumb press the menu. It also meant that binding the left
+  button to the `cast_1` ACTION made TAPPING ANYWHERE ON A PHONE cast a Fireball, menu
+  included. The click lives on its own `cast_primary` action, polled only while a cursor is
+  actually driving.
+- **Adding a parameter to a signal silently breaks every lambda already listening.** The
+  projectile's `hit` grew a `shooter` argument, and two harness listeners written as
+  `func(b, _d, _a)` stopped receiving anything at all. Godot refuses the call at emit time, so
+  what you see is not an arity error - it is a suite reporting `hits=0`, a projectile that
+  "never arrived", and a caster that "was not hit by its own spell". `grep` for every
+  `.connect(` on a signal before changing its shape; the compiler will not.
 - **A signal connected after the event is a race, not a listener.** `--cast-test` connected
   its hit listener four physics ticks after firing, which was fine while the spell was slow
   and became a phantom failure - "the projectile never arrived" - the moment it left at

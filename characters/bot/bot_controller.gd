@@ -94,8 +94,18 @@ const PROFILES: Dictionary = {
 ## never reaches into the scene to find its own body or its own enemy.
 var body: Player = null
 
-## Who it is fighting.
+## Who it is fighting RIGHT NOW. In a 1v1 this is set once and never changes.
 var target: Player = null
+
+## Everyone it is allowed to fight. Set by the level, like the body and the target.
+##
+## Left empty means "whatever `target` says", which is what keeps a 1v1 - and every suite
+## written against one - on exactly the path it was on before teams existed.
+##
+## Re-picked on the REACTION clock rather than every frame, so switching targets costs a bot
+## the same beat that noticing anything else costs it. A bot that re-chose per tick would flick
+## between two enemies standing at nearly equal range and never commit to either.
+var enemies: Array[Player] = []
 
 var _rng := RandomNumberGenerator.new()
 
@@ -138,7 +148,14 @@ func _process(_delta: float) -> void:
 
 
 func _physics_process(delta: float) -> void:
-	if not enabled or not is_instance_valid(body) or not is_instance_valid(target):
+	if not enabled or not is_instance_valid(body):
+		_stand_still()
+		return
+	# BEFORE the eliminated check below, not after. A bot whose target has just gone down still
+	# has a fight to be in if anyone else is left, and checking in the other order parks it for
+	# the rest of the round staring at where somebody used to be.
+	_drop_dead_target()
+	if not is_instance_valid(target):
 		_stand_still()
 		return
 	# Frozen by the round system: a countdown, or a round that is already decided. Think
@@ -170,12 +187,50 @@ func _perceive(delta: float) -> void:
 		return
 	_look_timer = _num("reaction")
 	_has_seen = true
+	_pick_target()
 	_seen_pos = target.global_position
 	_seen_vel = target.velocity
 	# Re-rolled on the same clock as the glance, deliberately. A fresh error every frame
 	# would twitch the wizard's head, and would average out to a perfect shot over the flight
 	# of a projectile. One error per glance is an aim that is WRONG, not merely noisy.
 	_aim_error = deg_to_rad(_rng.randf_range(-1.0, 1.0) * _num("aim_error"))
+
+
+## Switches to the nearest enemy still standing.
+##
+## NEAREST, and nothing cleverer. "Focus the one on lower health" is the obvious next idea and
+## it is the wrong one here: this game is won by shoving somebody over an edge, so the enemy
+## worth attacking is the one you can reach - and a bot that walks past a wizard in its face to
+## reach a wounded one across the ring reads as a bot that has not noticed you.
+func _pick_target() -> void:
+	if enemies.is_empty():
+		return
+	var here := _flat(body.global_position)
+	var best: Player = null
+	var best_gap := INF
+	for foe in enemies:
+		if not is_instance_valid(foe) or foe.is_eliminated():
+			continue
+		var gap := here.distance_squared_to(_flat(foe.global_position))
+		if gap < best_gap:
+			best_gap = gap
+			best = foe
+	if best != null and best != target:
+		target = best
+		# What it believed about the last one says nothing about this one. Without the reset it
+		# would open on a fresh enemy by shooting at where the PREVIOUS one was standing.
+		_has_seen = false
+
+
+## Immediately abandons a target that is gone, whatever the reaction clock says.
+##
+## Reaction time is a handicap on NOTICING things; it is not a licence to keep fighting a body
+## that has left the round. That distinction is what stops a 2v2 turning into two bots standing
+## still for half a second every time somebody falls.
+func _drop_dead_target() -> void:
+	if is_instance_valid(target) and not target.is_eliminated():
+		return
+	_pick_target()
 
 
 ## Where it wants to walk: hold the preferred range, and circle rather than stand.
@@ -265,10 +320,51 @@ func _choose_slot() -> int:
 		if here.distance_to(_flat(_seen_pos)) <= book.ability_in(cone).area * CONE_TRIGGER:
 			return cone
 
+	# A dash that HITS is a second finisher, not an escape, so it is offered here rather than
+	# above with the retreat: charge someone standing inside its reach. A dash that does not
+	# hit is left where it was - as the only way out of trouble it must not be spent on a
+	# shove that never lands.
+	if dash >= 0 and book.is_ready(dash) and book.ability_in(dash).dash_hits:
+		if here.distance_to(_flat(_seen_pos)) <= book.ability_in(dash).dash_distance * CONE_TRIGGER:
+			return dash
+
 	var buff := _slot_of(book, Ability.CastType.BUFF)
 	if buff >= 0 and book.is_ready(buff) and _own_instability() >= shield_above:
 		return buff
 
+	return _best_projectile(book)
+
+
+## The hardest shot it can take right now, or its primary if none of the others is ready.
+##
+## Written when a second projectile became possible: a wizard can now carry a lance, a seeker
+## or a loopshot alongside Fireball, and `_slot_of` returns the FIRST match - which is always
+## slot 0. A bot that used only its primary would have carried the spell it chose and never
+## thrown it, which looks exactly like a spell that does not work.
+##
+## Ranked by what the hit is worth rather than by slot, so a spell added to a column is used
+## on its merits and nothing here learns its name. A spell whose payload is not damage - a
+## warp bolt trades places and hurts nobody - scores zero and is simply never chosen, which is
+## honest: the bot has no plan that a swap would serve.
+func _best_projectile(book: AbilityComponent) -> int:
+	var best := -1
+	var best_worth := -1.0
+	var gap := _flat(body.global_position).distance_to(_flat(_seen_pos))
+	for slot in book.slot_count():
+		var ability := book.ability_in(slot)
+		if ability == null or ability.cast_type != Ability.CastType.PROJECTILE:
+			continue
+		if not book.is_ready(slot) or gap > ability.effective_range() * 0.9:
+			continue
+		var worth := ability.instability + ability.knockback + ability.health_damage
+		if worth > best_worth:
+			best_worth = worth
+			best = slot
+	if best >= 0:
+		return best
+	# Nothing is both ready and in range. Fall back to the primary so the guard in
+	# `_consider_cast` gets to make the same call it always did, rather than this returning -1
+	# and the bot silently deciding it has no spells at all.
 	return _slot_of(book, Ability.CastType.PROJECTILE)
 
 
@@ -300,9 +396,14 @@ func _consider_cast(delta: float, slot: int, aim: Vector2) -> void:
 	if _cast_timer > 0.0:
 		return
 	if ability.cast_type == Ability.CastType.PROJECTILE:
-		# Do not throw a spell that expires before it arrives. Same number `holding_range()`
-		# clamps against, so the bot never stands where it refuses to shoot from.
-		if _flat(body.global_position).distance_to(_flat(_seen_pos)) > cast_reach():
+		# Do not throw a spell that expires before it arrives. Asked of the spell being thrown
+		# and not of the primary: a lance that reaches twice as far as Fireball must be allowed
+		# to be used at twice the distance, or carrying it changes nothing.
+		#
+		# `holding_range()` still clamps against the PRIMARY's reach, and deliberately. Where the
+		# bot stands has to be a distance it can fight from every second, not one it can only use
+		# while its longest cooldown happens to be up.
+		if _flat(body.global_position).distance_to(_flat(_seen_pos)) > _reach_of(ability):
 			return
 	request_ability(slot)
 	_cast_timer = _num("cast_gap")
@@ -338,9 +439,17 @@ func cast_reach() -> float:
 	var slot := _slot_of(book, Ability.CastType.PROJECTILE)
 	if slot < 0:
 		return 0.0
-	# effective_range(), not speed times lifetime: a spell with drag on it does not travel the
-	# product of its two numbers, and the bot would hold a range it cannot reach.
-	return book.ability_in(slot).effective_range() * 0.9
+	return _reach_of(book.ability_in(slot))
+
+
+## How far a shot with THIS spell is allowed to be taken.
+##
+## effective_range(), not speed times lifetime: a spell with drag on it does not travel the
+## product of its two numbers, and a spell that comes back only threatens as far as its turn.
+## The 0.9 keeps clear of the very end of the flight, where a target that steps back is missed
+## by a whisker.
+func _reach_of(ability: Ability) -> float:
+	return ability.effective_range() * 0.9 if ability != null else 0.0
 
 
 ## First slot holding a spell of this type, or -1.

@@ -7,6 +7,7 @@ albedo_color = Color(0.882353, 0.32549, 0.4, 1)
 roughness = 0.55
 
 [node name="BotWizard" instance=ExtResource("1_base")]
+team = 1
 
 [node name="Body" parent="Visual" index="0"]
 surface_material_override/0 = SubResource("Mat_bot")

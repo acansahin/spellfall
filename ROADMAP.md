@@ -6,6 +6,12 @@ genuinely done**, and Phase 1 is judged by whether the game is fun, not by a che
 Current position: **every Phase 1 step is built.** What is left is not a step - it is the
 gate below, and it is answered by playing the game rather than by writing more of it.
 
+Step 12 is a late addition and is worth being honest about: a bigger roster is *depth*, which
+belongs to Phase 2, and it was built because the spell set was the thing that felt thin. It
+does not move the gate. Eleven unbalanced spells answer the question "is the combat fun?" no
+better than four did, and the numbers under them are placeholders picked off the source map's
+ratios rather than off a play session.
+
 ---
 
 ## Phase 1 — Make the combat fun (offline)
@@ -26,6 +32,8 @@ progression, no shop, no cosmetics. If that rule gets bent, the project is off t
 | 9 | Round manager: countdown, spawn, win, reset, score | **done** (landed early with #6) |
 | 10 | One simple bot opponent | **done** |
 | 11 | Game feel pass: hit pause, camera shake, particles, audio, haptics | **done** |
+| 12 | Eleven spells, and a loadout chosen before the match | **done** (Session 16) |
+| 13 | 2v2 against bots, chosen on the same screen | **done** (Session 17) |
 
 **Gate to Phase 2 — now the only thing standing between here and Phase 2.** Every question in
 `GAME_DESIGN.md` under "What Phase 1 must prove" answers yes. Specifically — movement feels good, aiming feels good on a touchscreen,
@@ -44,6 +52,9 @@ Only once Phase 1 is fun.
 - Between-round upgrades: pick 1 of 3, aiming for interesting build combinations.
 - Bot difficulty levels.
 - A second arena shape, to prove the arena is data and not hardcoded.
+- Friendly fire as an option, once there is a human on the other end of the ally.
+- A four-player free-for-all. `RoundManager` counts sides already, so this is spawn points and
+  a menu row rather than a system.
 
 **Gate to Phase 3:** upgrades produce genuinely different builds rather than flat stat bumps.
 
@@ -86,7 +97,9 @@ These apply to every phase.
 
 - **Mobile-first.** Landscape, touch, scalable UI, 60 FPS target on mid-range Android and
   playable at 30.
-- **Everything original.** No characters, maps, names, art, sound, spell designs, UI or text
-  taken from any existing game.
+- **Original where it is seen.** No characters, maps, names, art, sound, UI or text taken
+  from any existing game. Spell DESIGNS are the deliberate exception since Session 16 - the
+  roster is taken from the arena map this game follows and rebuilt on our own numbers. See
+  GAME_DESIGN.md's Originality section for what that does and does not permit.
 - **Placeholders until the game is fun.** Final art is wasted effort before then.
 - **Earn complexity.** Every system has to justify itself against the current phase.
