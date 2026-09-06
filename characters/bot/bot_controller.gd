@@ -356,7 +356,10 @@ func _best_projectile(book: AbilityComponent) -> int:
 			continue
 		if not book.is_ready(slot) or gap > ability.effective_range() * 0.9:
 			continue
-		var worth := ability.instability + ability.knockback + ability.health_damage
+		# One number is the whole worth of a spell now, weighted by how hard it shoves. The
+		# bot used to add three separate fields, which was the only way to rank spells while
+		# they had three; see Ability.damage.
+		var worth := ability.damage * (1.0 + ability.push_mult)
 		if worth > best_worth:
 			best_worth = worth
 			best = slot

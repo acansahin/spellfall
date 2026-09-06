@@ -31,19 +31,27 @@ after: its list was read straight out of the map file - see `docs` on `extract_w
 sibling tower-defense repo - and eleven spells were built from what it does, not from what a
 wiki says about it. What each spell *is* comes from there.
 
-What still does not, and is not negotiable:
+**Session 24 narrowed it again, and much further.** The rule about numbers is gone. The map's
+own movement, damage, knockback, cooldowns, ranges, health and arena size are what this game
+runs on now, and its roster is the roster this game is building toward. That was decided
+deliberately and it is recorded here rather than quietly applied.
 
-- **No names.** Every spell in this repo is named here. `Fireball` is a word, not a borrowing.
+Why: every attempt to keep "the shape but not the numbers" produced a game that felt wrong in
+ways nobody could name. The proportions section below shows the last one - three numbers moved
+across at two different scales, leaving a wizard walking its ring 2.4x faster than the map's
+does. There is one scale now, **1 metre = 128 Warcraft III units**, it is written down in
+`docs/warlock-reference.md`, and every measurement in the game derives from it.
+
+What still does not come from the map, and is not negotiable:
+
 - **No art, sound, models, text or UI layouts.** All of it is original and all of it is
-  placeholder.
-- **No numbers.** The map's cooldowns are a set of RATIOS - its main spell recharges in 4.8s
-  and its lightning in 16.5s - and those ratios were mapped onto our own Fireball. Nothing was
-  copied at face value onto an arena a fifth the size.
-- **No code.** Nothing was decompiled and nothing was ported.
+  placeholder. The spells are coloured shapes drawn in code.
+- **No code.** Nothing was decompiled and nothing was ported. `tools/w3x.py` reads the
+  archive's file format; what it prints is a table of numbers and the map's own tooltips.
 
-The trade is the same one the proportions section below already made and says out loud: this
-game is a small original arena brawler standing on a design that fifteen years of players have
-already sanded smooth, and pretending otherwise produced worse spells, not more original ones.
+The trade is the one the proportions section already made, taken to its end: this is a small
+arena brawler standing on a design that fifteen years of players have already sanded smooth,
+and pretending otherwise produced worse spells, not more original ones.
 
 ## Core loop
 
@@ -87,20 +95,41 @@ Why this instead of health:
 - **It reads without a tutorial.** A number that goes up and makes you fly further is easier
   to grasp than armour types or damage mitigation.
 
+**This mechanic is the reference map's, and that was discovered rather than designed.** The
+map keeps a wizard's accumulated damage in the unit's mana pool, and its hit function reads
+
+```
+dv = (100 + damage_points) * damage * push_mult * 0.03
+```
+
+which is exactly the curve below, arrived at here independently: 100 points doubles the push.
+`data/knockback_rules.tres` needed no change at all when the port landed.
+
 Knockback is computed as a modular formula:
 
 ```
-final_knockback = ability_base_knockback * instability_multiplier
+final_knockback = base_impulse(damage, push_mult) * instability_multiplier
+base_impulse    = damage * push_mult * 100 / 128        (128 units to the metre)
 instability_multiplier = base + (instability / 100) * per_100      (clamped)
 ```
 
 It deliberately does **not** live inside individual spell scripts. One place to read, one
 place to tune, one place a future server has to agree with — `combat/knockback/knockback.gd`.
 
-At the shipped values the multiplier is 1x at 0%, 2x at 100% and 2.5x at 150%. Because the
-distance you travel goes as speed *squared*, 50% instability carries you **2.25x** as far.
-That quadratic is the whole tension curve: the number climbs gently, the consequences climb
-fast. Tuning lives in `data/knockback_rules.tres`.
+At the shipped values the multiplier is 1x at 0%, 2x at 100% and 2.5x at 150%. Distance under
+the map's exponential drag is **linear** in the impulse, so 50% instability carries you 1.5x as
+far and not the 2.25x the old linear friction gave. The escalation is gentler; the absolute
+distances are much larger:
+
+| damage points | one Fireball | carries |
+|---|---|---|
+| 0 | 5.47 m/s | **8.1 m** |
+| 50 | 8.20 m/s | 12.2 m |
+| 100 | 10.94 m/s | 16.2 m |
+
+On an 11 m ring. So the pressure comes from EVERY exchange rather than only from late ones,
+and the first clean hit of a round is already a threat. Tuning lives in
+`data/knockback_rules.tres`; `--knockback-test` prints that table on every run.
 
 ## Controls
 
@@ -125,32 +154,45 @@ The first phone build played cramped: the wizard crossed the whole arena in two 
 Fireball reached everywhere from anywhere, so position meant nothing and a shot was a click.
 
 Rather than guess at better numbers, the ones from the Warcraft III custom map this game takes
-after were measured out of the map file itself. **Proportions and physics only** - no names, no
-spell designs, no art, no code. What matters is the shape of the relationships:
+after were measured out of the map file itself.
 
-| | The original | Spellfall before | Spellfall now |
+**Session 11 did that with three numbers and no stated scale, and that is the bug.** It moved
+the walk speed across at 52.5 units per metre and laid the arena out at 140, so a wizard that
+was supposed to take thirteen seconds to cross its ring took five. Every "the game feels too
+fast" report since is that one inconsistency.
+
+There is one scale now: **1 metre = 128 units**, the map's own terrain cell. It is written down
+in `docs/warlock-reference.md` and everything derives from it.
+
+| | The map | Session 11 | Now |
 |---|---|---|---|
-| Walk speed | 210 units/s | 6.5 m/s | **4.0 m/s** |
-| Arena radius | 1408 units (shrinks each round) | 7 m | **10 m** |
-| **Seconds to walk across** | **~13.4** | 2.2 | **5.0** |
-| Main projectile | 750 units/s, 1s | 18 m/s, 1.2s | **12 m/s, 0.45s** |
-| Projectile / walk speed | 3.6x | 2.8x | **3.0x** |
-| **Projectile range / arena radius** | **0.53** | 3.1 | **0.54** |
+| Walk speed | 210 units/s | 4.0 m/s (at 52.5 u/m) | **1.641 m/s** (at 128) |
+| Arena radius | 1408 units | 10 m (at 140 u/m) | **11.0 m** |
+| **Seconds to walk across** | **13.4** | 5.0 | **13.4** |
+| Main projectile | 750 units/s | 12 m/s | **5.86 m/s** |
+| Projectile / walk speed | 3.6x | 3.0x | **3.6x** |
+| Projectile range / arena radius | 0.53 | 0.54 | **0.53** |
+| Getting going | ~0.6 s | 0.16 s | **0.6 s** |
+| Stopping | coast, no brake | 0.34 s | **coast, no brake** |
+| Health | 100, no regen | 100, no regen | 100, no regen |
 
-The last row is the one that was wrong. In the original a bolt reaches barely half way to the
-rim, so **threatening someone means walking to them** - and walking is the whole game. Ours
-out-ranged the entire board three times over, which is why standing still worked.
+The projectile row was already right in ratio, and that is worth noticing: Session 11 fixed the
+relationship and left the absolute pace wrong, which is exactly the kind of error a ratio table
+hides. In the map a bolt reaches barely half way to the rim, so **threatening someone means
+walking to them** - and walking is the whole game.
 
-The arena is not the original's 13 seconds across, and deliberately so: that map's camera
-follows the player, and this one shows the whole ring at once because in a knockback game the
-edge is the most important thing on screen. Five seconds is what fits on one screen while
-still leaving the wizard readable on a phone - it costs the wizard about 3% of screen height.
+**The arena is now the map's thirteen seconds across, which it deliberately was not before.**
+The old argument was that this game shows the whole ring at once where the map's camera follows
+the player, so a thirteen-second board would leave the wizard too small to read. That is still
+true and it is the cost being paid: the wizard is a smaller figure on a bigger-feeling board.
+The trade was taken on purpose, because the alternative was a fight that resolves before the
+player has made a decision.
 
-**What this changed that nobody asked for:** knockback now moves you less relative to the ring.
-A clean Force Wave at 0% instability slides you 4.8m, which used to be 69% of the way to the
-rim and is now 48%. The escalation still bites - the same hit at 100% instability throws you
-19m - but early exchanges are survivable and rounds run longer. That is the tension curve
-stretching, not breaking, and it is the first thing to re-measure after a play session.
+**What this changes that nobody asked for:** knockback moves you a great deal MORE relative to
+the ring, because the map's drag is exponential and its impulses are large. A clean Fireball at
+zero damage points carries 8.1 m on an 11 m ring - three quarters of the way to the rim, from
+the very first exchange. That is the number to re-measure after a play session, and if it is
+wrong the honest lever is each spell's `push_mult`, not the drag: the drag is the walk.
 
 ## Cover
 
@@ -168,14 +210,19 @@ opening lane full of rock is a round that starts with both players walking sidew
 
 ## Weight
 
-Movement has a ramp: about a sixth of a second to get going, a third to stop, and a third to
-reverse. It was instant before, and instant is what made the wizard feel like a cursor rather
-than a body. Now a direction is a small commitment, stopping is a decision made slightly in
-advance, and a slide from a hit is something you steer out of rather than something you cancel.
+Movement is **momentum**, which is the reference map's own model rather than a ramp toward a
+target. About six tenths of a second to reach walking speed, and **no brake at all**: let go
+and you coast, halving your speed roughly once a second. A direction is a commitment, stopping
+is a decision made a full second in advance, and a slide from a hit is something you steer out
+of rather than something you cancel.
 
-Fireball leaves at 15.5 m/s and arrives at 9. The shot is a punch up close and a lob at the
-end of its reach, which means the answer to "am I close enough" is now visible in the flight
-itself. Neither of these is a new mechanic; both are the same spells with weight added.
+Three models have stood here - instant, then an asymmetric 0.16/0.34 ramp, now this. The ramp
+was an attempt to buy the map's feel with different arithmetic and it got most of the way
+there; what it could not reproduce is the coast, because a ramp toward zero *stops*.
+
+Fireball flies at a **constant 5.86 m/s** now, where it used to leave at 15.5 and arrive at 9.
+That deceleration was this repo's invention and the map has none - its missiles fly flat. What
+answers "am I close enough" is the range itself, which reaches half way to the rim.
 
 ## What a hit feels like
 
@@ -205,45 +252,47 @@ All eleven are **built**. Numbers are placeholders to be tuned in playtesting, a
 `data/abilities/*.tres` — one file each, no scripts. The roster is
 `data/spell_catalogue.tres`; adding a spell is a file and a line, never a code change.
 
-**Spell damage is a chip, and there is a hard floor under it: no spell may empty a full health
-bar in under ten clean hits.** Five spells drain health at all; the other six do nothing to it.
-This is the one balance number in the game that is a rule rather than a taste, because it
-decides what the game IS. Fireball shipped at five hits for a session and that was long enough
-to see the problem: at five, the fastest way to win is to stand still and shoot, the ring stops
-mattering, and the instability curve that is supposed to be the escalation never gets used. The
-comparison that keeps it honest — **a trip into the lava empties a bar in 4.5 seconds; the
-fastest spell needs 9 seconds of perfect uptime to do the same.** `--loadout-test` asserts both.
+**One number per spell does everything.** `damage` drains health, raises the target's damage
+points AND sets how far the hit throws them; the only lever between those is `push_mult`. That
+is the map's model rather than a simplification of ours - see docs/warlock-reference.md §4.
+
+So most of the roster chips health now, where five spells did before. The floor under it is
+unchanged and is still a rule rather than a taste: **no spell may empty a full health bar in
+under ten clean hits.** It survives the port for a pleasant reason - the map's own heaviest
+single hit is 10 out of 100, which is exactly ten - and so does the comparison that keeps it
+honest: **a trip into the lava empties a bar in 4.5 seconds; the fastest spell needs 30
+seconds of perfect uptime to do the same.** `--loadout-test` asserts both.
 
 ### Always with you
 
-| Spell | Type | Inst | Knock | Role |
+| Spell | Type | Dmg | Push | Role |
 |---|---|---|---|---|
-| **Fireball** | Aimed projectile, dies on hit | 12 | 6 | Your main threat, and the only spell that is a habit rather than a decision. Ten clean hits to empty a bar. 0.9s. |
+| **Fireball** | Aimed projectile, dies on hit | 7.0 | 1.0 | Your main threat, and the only spell that is a habit rather than a decision. 5.9 m/s over 5.9 m, which is half way to the rim. Fifteen clean hits to empty a bar. 4.8s. |
 
 ### STRIKE — your second way to land one
 
-| Spell | Type | Inst | Knock | Role |
+| Spell | Type | Dmg | Push | Role |
 |---|---|---|---|---|
-| **Force Wave** | 110° cone, 4m, instant | 5 | 11 | The finisher. Weak in the open, lethal near an edge. Throws away from YOU, not along the aim. 3.5s. |
-| **Arc Lance** | Flat, fast, 15m | 10 | 5 | Crosses the ring almost instantly and barely pushes. The answer to someone who will not come close. 3.1s. |
-| **Seeker** | Slow projectile, turns 220°/s | 14 | 7 | Corrects an aim that was wrong, and still loses somebody who walks across its nose. 2.6s. |
-| **Loopshot** | Flies out 11m, returns, pierces | 9 | 8 | Two chances at the same wizard from one cast — if you are still standing where it comes home. 3.0s. |
+| **Force Wave** | Cone, 4m, instant | 10.0 | 0.8 | The map's heaviest single hit, and the ten-hit floor in person. Weak in the open, lethal near an edge. Throws away from YOU, not along the aim. 3.0s. |
+| **Arc Lance** | Flat, 13.3 m/s, 12m | 7.0 | 1.2 | Crosses the ring almost instantly and shoves hard. The answer to someone who will not come close, and it costs you a sixteen-second wait. 16.5s. |
+| **Seeker** | Slow projectile, turns 220°/s, 9.4m | 7.0 | 1.0 | Corrects an aim that was wrong, and still loses somebody who walks across its nose. 14.0s. |
+| **Loopshot** | Flies out 8.4m, returns, pierces | 7.2 | 1.2 | Two chances at the same wizard from one cast — if you are still standing where it comes home. 16.0s. |
 
 ### MOTION — how you close a gap, or leave one
 
 | Spell | Type | Inst | Knock | Role |
 |---|---|---|---|---|
-| **Blink** | 5m teleport | — | — | Dodge and reposition. Clamped inside the arena, cancels the slide you are in, keeps the hitstun. 5s. |
-| **Lunge** | 6m charge that hits | 10 | 9 | The same escape, spent as an attack. It shoves what it runs through, and it puts you where they are. 5.3s. |
-| **Warp Bolt** | Projectile, trades places | — | — | Hurts nobody. It takes the ground they were standing on — including the ground over the lava. 5s. |
+| **Blink** | 6.0m teleport | — | — | Dodge and reposition. Clamped inside the arena, cancels the slide you are in, keeps the hitstun. 16.0s. |
+| **Lunge** | 5.5m charge that hits | 5.4 | 1.15 | The same escape, spent as an attack. It shoves what it runs through, and it puts you where they are. 17.0s. |
+| **Warp Bolt** | Projectile, 6.25m, trades places | — | — | Hurts nobody. It takes the ground they were standing on — including the ground over the lava. 16.0s. |
 
 ### GUARD — what you do about the hit you saw coming
 
 | Spell | Type | Inst | Knock | Role |
 |---|---|---|---|---|
-| **Arcane Shield** | 1.2s ward | — | — | 35% of a hit gets through. Measured: a hit that carries 2.35m carries 0.30m through it. 8s. |
-| **Rewind** | Undo, 3.2s later | — | — | Puts you back where you cast it, with the health you had. It does NOT give back instability — the round still remembers. 7s. |
-| **Momentum** | 6s, converts | — | — | Half of every hit is swallowed and paid back as walking speed, up to +2.5 m/s. The only guard that rewards standing in a fight. 6.5s. |
+| **Arcane Shield** | 2.8s ward | — | — | 35% of a hit gets through. Measured: a hit that carries 5.05m carries 2.53m through it. 25.0s. |
+| **Rewind** | Undo, 3.6s later | — | — | Puts you back where you cast it, with the health you had. It does NOT give back damage points — the round still remembers. 22.0s. |
+| **Momentum** | 7s, converts | — | — | Half of every hit is swallowed and paid back as walking speed, up to +2.5 m/s — which on a 1.64 m/s walk is more than doubling it. The only guard that rewards standing in a fight. 21.0s. |
 
 The intended tension is unchanged and now has three shapes instead of one: something builds
 instability from range, something converts it into a kill but costs you position, something
@@ -316,8 +365,9 @@ version and stays on the roadmap.
 
 ## Arena
 
-One circular stone platform. It starts **12 metres in radius** — 24 across, six seconds of
-walking — and **closes during the round**. Around it, lava: a flat field you can be knocked
+One circular stone platform. It starts **11 metres in radius** — 22 across, thirteen and a
+half seconds of walking, which is the map's own ring at 128 units to the metre — and **closes
+during the round**. Around it, lava: a flat field you can be knocked
 onto, stand on, and walk back off. The stone sits 8cm proud of it, which a wizard's capsule
 rides up without noticing.
 

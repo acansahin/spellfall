@@ -111,28 +111,45 @@ enum Bolt {
 @export var charges: int = 1
 
 @export_group("Combat")
-## Instability added to whatever this hits. Read by the instability system, not by this
-## class - see ARCHITECTURE.md. Session 4.
-@export var instability: float = 0.0
-## Base knockback, before the target's instability multiplier is applied. Session 4.
-@export var knockback: float = 0.0
+## What this spell does, as ONE number, out of a hundred points of health.
+##
+## There used to be three fields here - `instability`, `knockback` and `health_damage` - set
+## independently, and that separation was invented in this repo. The reference map has one
+## number, and its hit function reads
+##
+##     dv = (100 + damage_points) * damage * push_mult * 0.03
+##
+## so the same `damage` drains health, raises the target's damage points AND decides how far
+## they fly. A spell therefore cannot be "heavy but harmless" or "deadly but gentle" by fiat.
+## The only lever between those is `push_mult` below, and that is the design space the map
+## actually has. See docs/warlock-reference.md sections 4 and 5.
+##
+## Zero for a spell not meant to threaten at all - Teleport, Swap, and all three guards.
+## Everything else chips, which IS a change: five spells drained health before, most of the
+## roster does now.
+##
+## The floor under it is still a rule rather than a taste: **no spell may empty a full bar in
+## under ten clean hits.** It survives the port because the map's own heaviest single hit is
+## Scourge, at 10 out of 100 - exactly ten. `--loadout-test` asserts it.
+@export var damage: float = 0.0
 
-## Health points this drains outright, bypassing instability and knockback entirely.
+## How hard this pushes, per point of damage. 1.0 is Fireball; the map's real range is 0.1
+## to 1.4.
 ##
-## A CHIP, never a win condition. The game is won at the EDGE: you destabilise somebody until a
-## hit throws them into the lava, and what this field does is shorten the trip they survive
-## afterwards. It exists so that a fight leaves a mark between exchanges, not so that a fight
-## can be won without ever using the arena.
+## The whole per-spell design space, and it is deliberately NOT correlated with damage: the
+## map's Gravity does 3 damage at 0.1 push, and another of its calls does the same 3 at 1.4.
+## So a spell can threaten your health, your position, or both, and the two are separable
+## without needing separate damage numbers.
+@export var push_mult: float = 1.0
+
+## Whether the push follows the PROJECTILE's travel, or points from the caster to the victim.
 ##
-## The rule that keeps it honest, and it is a rule rather than a taste: **no spell may empty a
-## full bar in under ten clean hits.** Fireball sat at five, which made it a damage race with a
-## knockback theme - the whole ring stopped mattering, and so did the instability curve that is
-## supposed to be the escalation. `--loadout-test` asserts the ten, so retuning past it takes an
-## argument rather than a decimal point.
-##
-## Zero for every spell that is not meant to threaten at all - the two motion spells, all three
-## guards, and Warp Bolt, whose entire payload is the ground it takes from you.
-@export var health_damage: float = 0.0
+## The map has both doors and they belong to different spells: `SW()` shoves along the
+## missile's line, `WW()` shoves away from whoever cast it. Along-travel keeps a skillshot's
+## angle meaningful - clipping someone with the edge of a Fireball still throws them along
+## its line, which is what makes aiming at the rim a tactic. Away-from-caster is what a burst
+## around your own feet wants, where there is no travel to speak of.
+@export var push_along_travel: bool = true
 
 @export_group("Projectile")
 ## Metres per second.
@@ -216,9 +233,9 @@ enum Bolt {
 
 ## Whether a DASH catches whoever stands in its way. False makes it a pure escape.
 ##
-## The hit uses the same `instability` / `knockback` / `health_damage` the projectiles use and
-## goes through the same `_apply_hit` door, so a charge is not a second damage rule - it is a
-## second way of reaching the one that already exists.
+## The hit uses the same `damage` / `push_mult` the projectiles use and goes through the same
+## `_apply_hit` door, so a charge is not a second damage rule - it is a second way of reaching
+## the one that already exists.
 @export var dash_hits: bool = false
 
 ## Half-width of the corridor a hitting DASH sweeps, in metres. Roughly a body's width: wide

@@ -1170,9 +1170,10 @@ func _cast_buff(ability: Ability, caster: Node3D) -> void:
 ## `direction` is the way the victim gets thrown: a projectile's travel direction, or the line
 ## out from the caster for a cone.
 ##
-## `caster` is who threw it, and may be null for a hit with no author. Only one rule reads it -
-## a spell that trades places needs both ends - but it arrives here rather than being looked up
-## because two spells can be in the air at once and "whoever cast last" is a guess.
+## `caster` is who threw it, and may be null for a hit with no author. Two rules read it - a
+## spell that trades places needs both ends, and a spell that pushes away from its caster needs
+## to know where the caster was - but it arrives here rather than being looked up because two
+## spells can be in the air at once and "whoever cast last" is a guess.
 func _apply_hit(body: Node3D, direction: Vector3, ability: Ability,
 		caster: Node3D = null) -> void:
 	var fighter := body as Player
@@ -1182,21 +1183,33 @@ func _apply_hit(body: Node3D, direction: Vector3, ability: Ability,
 	if ability.swaps_places:
 		_swap_places(caster as Player, fighter, ability)
 
-	# Instability is raised FIRST, and the knockback reads the new value. So a hit is
-	# amplified by the destabilisation it just caused, which makes a landed combo escalate
-	# instead of plateauing. The alternative - reading the value from before the hit - is
-	# defensible and duller.
-	var inst := fighter.instability()
-	if inst != null:
-		inst.add(ability.instability)
-	var level := inst.current if inst != null else 0.0
-
-	var impulse := Knockback.velocity(ability.knockback, direction, level, knockback_rules)
-	fighter.apply_knockback(impulse)
-	if ability.health_damage > 0.0:
+	# ONE number does all three things - see Ability.damage. Health first, then damage points,
+	# then the push that reads them.
+	if ability.damage > 0.0:
 		var hp := fighter.health()
 		if hp != null:
-			hp.damage(ability.health_damage)
+			hp.damage(ability.damage)
+
+	# Damage points are raised FIRST, and the push reads the new value. So a hit is amplified
+	# by the destabilisation it just caused, which makes a landed combo escalate instead of
+	# plateauing. The alternative - reading the value from before the hit - is defensible and
+	# duller.
+	var inst := fighter.instability()
+	if inst != null:
+		inst.add(ability.damage)
+	var level := inst.current if inst != null else 0.0
+
+	# `push_along_travel` picks between the map's two hit functions. Away-from-caster needs a
+	# caster to be away FROM, so a hit with no known origin falls back to the travel line.
+	var push_dir := direction
+	if not ability.push_along_travel and caster != null:
+		var away := fighter.global_position - (caster as Node3D).global_position
+		if Vector3(away.x, 0.0, away.z).length_squared() > 0.0001:
+			push_dir = away
+	var impulse := Knockback.velocity(
+		Knockback.base_impulse(ability.damage, ability.push_mult),
+		push_dir, level, knockback_rules)
+	fighter.apply_knockback(impulse)
 	var shielded := " (shielded)" if fighter.is_shielded() else ""
 	# What the victim ACTUALLY took, not what was thrown at them: the shield is applied inside
 	# apply_knockback, and a hit somebody shrugged off has to feel like one.
@@ -1828,12 +1841,16 @@ func _run_two_thumb_tests() -> void:
 		"stick owner=%d move_dir=%s" % [stick.touch_index(), _input.command.move_dir])
 
 	# --- and the wizard really is moving while all this happens ---------------------------
+	# Forty ticks, not ten. Under the map's movement model a wizard starting from rest is
+	# still on its 0.6s acceleration ramp after ten - it covers eight centimetres, which this
+	# read as "not moving" when it was moving exactly as designed. Forty ticks is two thirds
+	# of a second and carries about half a metre.
 	var pos_before: Vector3 = _player.global_position
-	for i in 10:
+	for i in 40:
 		await get_tree().physics_frame
 	var travelled: float = _player.global_position.distance_to(pos_before)
 	_expect("wizard moved while casting", travelled > 0.3,
-		"travelled %.2fm in 10 ticks" % travelled)
+		"travelled %.2fm in 40 ticks" % travelled)
 
 	# --- left thumb lifts -----------------------------------------------------------------
 	_emit_touch(0, stick_centre, false)
@@ -1902,9 +1919,16 @@ func _run_knockback_tests() -> void:
 	# round is live is measuring a fighter that was told to stand still.
 	await _wait_for_live()
 	var rules := knockback_rules
-	print("[knockback] rules: base=%.1f per100=%.1f max=%.1f lift=%.1f | bot friction=%.1f" % [
+	print("[knockback] rules: base=%.1f per100=%.1f max=%.1f lift=%.1f | bot drag=%.2f/s" % [
 		rules.base_multiplier, rules.per_100_instability, rules.max_multiplier, rules.lift,
-		_bot.knockback_friction])
+		_bot.drag_per_second])
+	# The reference map's own reading, printed rather than asserted: what one Fireball does to
+	# a target at each stage of a round. This is the number to argue with after a play session,
+	# and the reason it is printed is that no assertion can tell "far" from "too far".
+	for points in [0.0, 50.0, 100.0, 150.0]:
+		var shove := Knockback.base_impulse(7.0, 1.0) * Knockback.multiplier(points, rules)
+		print("[knockback]   Fireball at %3d%%: %5.2f m/s, carries %5.2f m" % [
+			int(points), shove, Knockback.slide_distance(shove, _bot.drag_per_second)])
 
 	# --- the curve is pure arithmetic, check it directly ---------------------------------
 	_expect("multiplier at 0% is 1.0",
@@ -1928,10 +1952,13 @@ func _run_knockback_tests() -> void:
 		"y=%.2f" % dir_impulse.y)
 
 	# --- measured slide matches the closed form ------------------------------------------
-	var base_speed := 6.0
-	var predicted := Knockback.slide_distance(base_speed, _bot.knockback_friction)
+	# 2.0 m/s, not the 6.0 this used to use. Under exponential drag a hit carries `v/0.673`,
+	# so 6.0 would slide the bot nine metres - off an eleven-metre ring and into the lava,
+	# where it burns down mid-measurement and the number measures the kill zone instead.
+	var base_speed := 2.0
+	var predicted := Knockback.slide_distance(base_speed, _bot.drag_per_second)
 	var measured := await _measure_slide(base_speed, 0.0)
-	_expect("slide at 0% matches v^2/2f",
+	_expect("slide at 0% matches v/-ln(drag)",
 		absf(measured - predicted) / predicted < 0.15,
 		"predicted %.2fm, measured %.2fm" % [predicted, measured])
 
@@ -1940,25 +1967,35 @@ func _run_knockback_tests() -> void:
 	_expect("identical hits carry identical distance",
 		absf(again - measured) < 0.02, "%.4fm then %.4fm" % [measured, again])
 
-	# --- instability escalates it, quadratically -----------------------------------------
-	# Speed scales by the multiplier, and distance goes as speed squared, so 50% instability
-	# (1.5x speed) must carry 2.25x as far. That relationship is the whole tension curve.
+	# --- instability escalates it, LINEARLY ----------------------------------------------
+	# This asserted 2.25x for a long time and the number was right for linear friction, where
+	# distance went as speed squared. Exponential drag integrates to `v/k`, so distance is
+	# linear in the impulse: 50% instability is 1.5x the speed and 1.5x the carry.
+	#
+	# That is a real loss of escalation and it is not being hidden here. What replaces it is
+	# the absolute distances, which are much larger - a clean hit now crosses most of the
+	# ring at zero instability, so the pressure comes from every exchange rather than only
+	# from late ones. See docs/warlock-reference.md section 4.
 	var at50 := await _measure_slide(base_speed, 50.0)
 	var ratio := at50 / measured
-	_expect("50% instability carries ~2.25x as far", absf(ratio - 2.25) < 0.25,
+	_expect("50% instability carries ~1.5x as far", absf(ratio - 1.5) < 0.15,
 		"%.2fm vs %.2fm = %.2fx" % [at50, measured, ratio])
 
 	# --- and eventually it throws you off ------------------------------------------------
 	_bot.respawn_at(bot_spawn)
 	for i in 20:
 		await get_tree().physics_frame
-	var hard := Knockback.velocity(base_speed, Vector3(0, 0, -1), 200.0, knockback_rules)
+	# Sized off the arena rather than off a literal: this asserted `> 7.2` from the days of a
+	# seven-metre ring and has been passing for free on every larger board since. A hit that
+	# carries twice the diameter must clear any spawn, whichever way it points.
+	var clear_it := 2.0 * _arena.radius * -log(_bot.drag_per_second)
+	var hard := Knockback.velocity(clear_it, Vector3(0, 0, -1), 0.0, knockback_rules)
 	_bot.apply_knockback(hard)
 	var left_arena := false
 	for i in 240:
 		await get_tree().physics_frame
 		var p := _bot.global_position
-		if Vector2(p.x, p.z).length() > 7.2 or p.y < 0.0:
+		if Vector2(p.x, p.z).length() > _arena.radius or p.y < 0.0:
 			left_arena = true
 			break
 	_expect("a hit at 200% throws the target off the arena", left_arena,
@@ -2065,7 +2102,9 @@ func _run_round_tests() -> void:
 		"player=%s bot=%s" % [_player.accepts_input, _bot.accepts_input])
 
 	var live_at := _player.global_position
-	for i in 15:
+	# Forty-five ticks for the same reason as `--twothumb-test`: fifteen is a quarter of a
+	# second, and a quarter of a second into a 0.6s ramp is eight centimetres of travel.
+	for i in 45:
 		await get_tree().physics_frame
 	var moved := Vector2(_player.global_position.x - live_at.x,
 		_player.global_position.z - live_at.z).length()
@@ -2334,14 +2373,21 @@ func _run_bot_tests() -> void:
 			landed.append(1)
 	_bot.abilities().cast_performed.connect(on_cast)
 	_pool.projectile_hit.connect(on_hit)
+	# The window is derived from the spell rather than fixed at five seconds. Fireball's
+	# cooldown is the map's 4.8s, so five seconds is ONE cast and this asserted two - it was
+	# measuring the cooldown, not the bot. Two and a bit cooldowns is what "casts repeatedly"
+	# means for whatever spell the bot happens to be holding.
+	var primary := _bot.abilities().ability_in(0)
+	var window := primary.cooldown * 2.2 + 1.0
 	var fighting := 0.0
-	while fighting < 5.0:
+	while fighting < window:
 		_player.respawn_at(post)
 		await get_tree().physics_frame
 		fighting += 1.0 / 60.0
 	_bot.abilities().cast_performed.disconnect(on_cast)
 	_pool.projectile_hit.disconnect(on_hit)
-	_expect("it uses its spell unprompted", casts.size() >= 2, "%d casts in 5s" % casts.size())
+	_expect("it uses its spell unprompted", casts.size() >= 2,
+		"%d casts in %.1fs, on a %.1fs cooldown" % [casts.size(), window, primary.cooldown])
 	_expect("and lands them on a stationary target", landed.size() >= 1,
 		"%d of %d casts hit" % [landed.size(), casts.size()])
 
@@ -2372,11 +2418,12 @@ func _run_bot_tests() -> void:
 	# about a game nobody else is playing.
 	_expect("the bot fights with the player's numbers",
 		is_equal_approx(_bot.move_speed, _player.move_speed)
-			and is_equal_approx(_bot.knockback_friction, _player.knockback_friction)
+			and is_equal_approx(_bot.drag_per_second, _player.drag_per_second)
+			and is_equal_approx(_bot.acceleration, _player.acceleration)
 			and is_equal_approx(_bot.hitstun_per_speed, _player.hitstun_per_speed),
-		"speed %.1f/%.1f friction %.1f/%.1f" % [
+		"speed %.2f/%.2f drag %.2f/%.2f" % [
 			_bot.move_speed, _player.move_speed,
-			_bot.knockback_friction, _player.knockback_friction])
+			_bot.drag_per_second, _player.drag_per_second])
 	_expect("and with the player's spell",
 		_bot.abilities().ability_in(0) == _player.abilities().ability_in(0),
 		"%s vs %s" % [_bot.abilities().ability_in(0).id, _player.abilities().ability_in(0).id])
@@ -2471,13 +2518,19 @@ func _run_spell_tests() -> void:
 	_expect("Force Wave was ready", cone_fired, "try_cast returned %s" % cone_fired)
 	await get_tree().physics_frame
 	_expect("a target inside the fan is hit",
-		is_equal_approx(target.current - before, wave.instability),
-		"instability %.0f%% -> %.0f%%, spell adds %.0f" % [before, target.current, wave.instability])
+		is_equal_approx(target.current - before, wave.damage),
+		"damage points %.0f%% -> %.0f%%, spell adds %.0f" % [before, target.current, wave.damage])
 	var pushed := await _drift_of(_bot, 0.35)
 	_expect("and is thrown away from the caster", pushed.x > 1.0 and absf(pushed.y) < 0.6,
 		"moved %s" % pushed)
-	_expect("Force Wave hits harder than Fireball", wave.knockback > book.ability_in(fireball).knockback,
-		"%.1f vs %.1f" % [wave.knockback, book.ability_in(fireball).knockback])
+	# Scourge is the map's heaviest single hit - 10 damage against Fireball's 7 - even though
+	# it shoves at 0.8 where Fireball shoves at 1.0. The comparison is the impulse, not either
+	# field on its own, which is the point of collapsing the three fields into one.
+	var wave_push := Knockback.base_impulse(wave.damage, wave.push_mult)
+	var ball := book.ability_in(fireball)
+	var ball_push := Knockback.base_impulse(ball.damage, ball.push_mult)
+	_expect("the close-range burst hits harder than Fireball", wave_push > ball_push,
+		"%.2f vs %.2f m/s" % [wave_push, ball_push])
 
 	# --- ...and misses what is not ----------------------------------------------------------
 	# Out of range: the same aim, half again as far as the fan is long.
@@ -3337,11 +3390,21 @@ func _run_lava_tests() -> void:
 	bot_hp.reset()
 	_apply_hit(_bot, Vector3(0.0, 0.0, -1.0), fireball)
 	_expect("a Fireball drains health directly",
-		is_equal_approx(bot_hp.current, bot_hp.maximum - fireball.health_damage),
+		is_equal_approx(bot_hp.current, bot_hp.maximum - fireball.damage),
 		"%.1f left of %.1f, spell claims %.1f damage" % [
-			bot_hp.current, bot_hp.maximum, fireball.health_damage])
-	_expect("and still raises instability alongside it", inst.current > 0.0,
-		"instability=%.0f%%" % inst.current)
+			bot_hp.current, bot_hp.maximum, fireball.damage])
+	_expect("and raises damage points by the SAME number", is_equal_approx(inst.current, fireball.damage),
+		"damage points=%.1f, damage=%.1f" % [inst.current, fireball.damage])
+
+	# Put the bot back before anything else in this suite runs. The Fireball above does not
+	# just chip it any more - under the map's drag that one hit carries the bot eight metres,
+	# which off-centre is into the lava, where it burns down and ends the round. Every later
+	# section here measures the PLAYER burning, and a round that resets underneath it heals
+	# the player and restarts the clock: the burn came out at a third of its real rate and the
+	# elimination that fired belonged to the wrong fighter.
+	_bot.respawn_at(Vector3(0.0, 1.2, 3.0))
+	bot_hp.reset()
+	await get_tree().physics_frame
 
 	# --- the bar over the wizard's head follows it ------------------------------------------
 	var bar := _player.get_node_or_null(^"HealthBar") as HealthBar
@@ -3600,9 +3663,9 @@ func _run_loadout_tests() -> void:
 	# floor, and even the floor has to be slower than the lava.
 	var fastest_seconds := INF
 	for spell in all:
-		if spell.health_damage <= 0.0:
+		if spell.damage <= 0.0:
 			continue
-		var hits := full / spell.health_damage
+		var hits: float = full / spell.damage
 		if hits < quickest:
 			quickest = hits
 			quickest_name = spell.display_name
@@ -3726,8 +3789,8 @@ func _run_loadout_tests() -> void:
 	_expect("a seeker turns toward what it can see", absf(closed) < absf(opened) - 0.15,
 		"aimed %.0f degrees off, now %.0f" % [rad_to_deg(opened), rad_to_deg(closed)])
 	var caught := await _instability_after(seeker.lifetime + 0.2)
-	_expect("and lands the shot the aim missed", caught >= seeker.instability - 0.01,
-		"instability rose %.0f, spell adds %.0f" % [caught, seeker.instability])
+	_expect("and lands the shot the aim missed", caught >= seeker.damage - 0.01,
+		"damage points rose %.0f, spell adds %.0f" % [caught, seeker.damage])
 
 	# --- Loopshot: it comes home, and it can catch you twice --------------------------------------
 	await _equip(&"loopshot", &"blink", &"arcane_shield")
@@ -3795,9 +3858,9 @@ func _run_loadout_tests() -> void:
 		absf(moved.length() - lunge.dash_distance) < 0.3,
 		"moved %.2fm, spell says %.1fm" % [moved.length(), lunge.dash_distance])
 	_expect("and catches whoever was in the way",
-		_instability_of(_bot) - before >= lunge.instability - 0.01,
+		_instability_of(_bot) - before >= lunge.damage - 0.01,
 		"instability rose %.0f, spell adds %.0f" % [
-			_instability_of(_bot) - before, lunge.instability])
+			_instability_of(_bot) - before, lunge.damage])
 
 	# --- ...and a plain Blink still does not -------------------------------------------------------
 	await _equip(&"force_wave", &"blink", &"arcane_shield")
@@ -3985,9 +4048,9 @@ func _run_team_tests() -> void:
 		is_equal_approx(_instability_of(ally), ally_before),
 		"%s at %.0f%%, was %.0f%%" % [_title_of(ally), _instability_of(ally), ally_before])
 	_expect("and does not stop on them either - it reaches the enemy behind",
-		_instability_of(_bot) - foe_before >= fireball.instability - 0.01,
+		_instability_of(_bot) - foe_before >= fireball.damage - 0.01,
 		"%s rose %.0f, spell adds %.0f" % [
-			_title_of(_bot), _instability_of(_bot) - foe_before, fireball.instability])
+			_title_of(_bot), _instability_of(_bot) - foe_before, fireball.damage])
 
 	# --- and neither does a cone ----------------------------------------------------------------
 	await _equip(&"force_wave", &"blink", &"arcane_shield")
@@ -4007,7 +4070,7 @@ func _run_team_tests() -> void:
 		is_equal_approx(_instability_of(ally), ally_before),
 		"%s at %.0f%%" % [_title_of(ally), _instability_of(ally)])
 	_expect("and catches the enemy in the same fan",
-		_instability_of(_bot) - foe_before >= wave.instability - 0.01,
+		_instability_of(_bot) - foe_before >= wave.damage - 0.01,
 		"%s rose %.0f" % [_title_of(_bot), _instability_of(_bot) - foe_before])
 
 	# --- one down is not one side down ------------------------------------------------------------

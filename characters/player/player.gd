@@ -25,29 +25,42 @@ extends CharacterBody3D
 ## Everything here runs in _physics_process at the fixed 60Hz tick set in project.godot, so
 ## behaviour does not change with rendered framerate.
 
-## Top ground speed in metres per second.
+## Top ground speed in metres per second. The reference map's 210 units/s, at 128 units to
+## the metre. See docs/warlock-reference.md.
 ##
-## 4.0 crosses the 20m arena in five seconds. It was 6.5 on a 14m arena, which crossed it in
-## 2.2 - and that number, measured against the original this game takes after, is where the
-## whole "it feels cramped and twitchy" problem came from. Warlock's wizard walks its arena
-## in about thirteen seconds; two is a plate, not a place. See GAME_DESIGN.md.
-@export var move_speed := 4.0
+## It was 4.0, and 6.5 before that, and both came from mapping the map's numbers across at a
+## scale that was never written down - speed at 52.5 units/m while the arena was laid out at
+## 140. That is the whole of "the game feels too fast": the wizard walked its ring 2.4x
+## faster than the map's does. One scale now, stated in the reference doc and applied to the
+## arena, the projectiles, the ranges and this.
+##
+## 1.641 m/s crosses the 11m arena in 13.4 seconds, which is what the map takes.
+@export var move_speed := 1.641
 
-## Seconds to reach top speed from a standstill.
+## Metres per second per second, while under `move_speed` along the direction being asked for.
 ##
-## It was 0.0 - instant - on the argument that a brawler must not feel like steering a truck.
-## Played on a phone, instant reads as weightless: the wizard teleports between directions and
-## a hit you slide out of feels like a hiccup rather than a shove. This is the ramp the
-## original's own movement has, arrived at from the other end: it damps a velocity rather than
-## assigning one, which is the same thing said in different arithmetic.
-##
-## The pair is ASYMMETRIC on purpose. Getting going is nearly as quick as it was; stopping
-## takes twice as long, which is what a slide IS. Raise `decel_time` for more skating, lower
-## `accel_time` for a twitchier start.
-@export_range(0.0, 0.5, 0.01) var accel_time := 0.16
+## The map accelerates by `IA/20` per 0.03s tick, where IA is its top speed per tick - so top
+## speed arrives in twenty ticks, 0.6 seconds. It scales that by the fighter's own top speed
+## over the base one, and so does this: a buffed wizard should get going in the same 0.6s,
+## not spend longer ramping to a bigger number.
+@export var acceleration := 2.734
 
-## Seconds to stop from top speed. Longer than the acceleration: see above.
-@export_range(0.0, 0.5, 0.01) var decel_time := 0.34
+## What fraction of a velocity survives one second. The map multiplies by 0.98 every 0.03s
+## tick; `0.98 ^ (1/0.03)` is this.
+##
+## THERE IS NO BRAKING TERM. Releasing the stick does not stop the wizard - only drag does,
+## and it halves the speed about once a second. That coast is the map's signature feel, and
+## its own Time Shift restores your "momentum" alongside your position and health, which is
+## the map saying out loud that the slide is part of the state of a fight.
+##
+## It governs knockback too, and that is not a shortcut: in the map a hit is added into the
+## same velocity a walk is, and bleeds off the same way. One number, so a hit and a step can
+## never disagree about how slippery the floor is.
+##
+## The closed form for "how far does this hit carry?" survives the change from the linear
+## friction this used to have - it is `speed / -log(drag)` now instead of `v^2 / 2f`. See
+## `Knockback.slide_distance()`, which is what --knockback-test asserts against.
+@export_range(0.05, 0.99, 0.01) var drag_per_second := 0.51
 
 ## How much steering authority remains while airborne. Knocked off the edge you should
 ## feel committed, not able to fly back — but 0.0 removes all recovery skill.
@@ -58,17 +71,6 @@ extends CharacterBody3D
 @export var turn_speed := 14.0
 
 @export_group("Knockback")
-## How fast an incoming knockback bleeds off, in m/s per second.
-##
-## LINEAR, not exponential, and that is the important part. Linear drag means the distance a
-## hit carries you has a closed form - v squared over 2f - so "how much knockback throws
-## someone off a 7m arena?" is a question with an answer instead of a playtest. An
-## exponential decay never quite stops, and makes the same question guesswork.
-##
-## This lives on the fighter, not on KnockbackRules, because it describes how THIS body
-## slides. A heavier character would take the identical hit and travel less far.
-@export var knockback_friction := 14.0
-
 ## Seconds of reduced control per m/s of incoming knockback. A harder hit takes you out of
 ## the fight for longer, which is what stops a player simply walking out of every knockback
 ## and makes positioning matter.
@@ -108,10 +110,15 @@ var _input_velocity := Vector3.ZERO
 
 ## Velocity from being hit, kept SEPARATE from the velocity the player asks for.
 ##
-## This is not optional bookkeeping. With accel_time at 0 the input path assigns
-## `velocity.x` outright every tick, so a knockback folded into `velocity` would be erased on
-## the very next frame. Holding it apart and summing at the end is what lets movement stay
-## instant - which the game needs - while a hit still carries.
+## The reference map keeps ONE velocity and adds a hit straight into it. This port keeps two
+## and sums them at the end, which is not a disagreement: both accumulators now carry the
+## same drag, so the total behaves exactly as one would. What the split buys is that the
+## steering path can never assign over a hit - it did once, with an instant ramp, and a
+## knockback folded into `velocity` was erased on the very next frame.
+##
+## The one place the two must meet is the acceleration gate in `_apply_horizontal()`, which
+## reads the COMBINED speed along the wished direction. That is what the map tests, and it
+## is what makes steering out of a slide work.
 var _knockback := Vector3.ZERO
 
 ## Seconds left of reduced control after being hit.
@@ -203,21 +210,33 @@ func _apply_horizontal(wish: Vector2, delta: float) -> void:
 	# the buff existed - would accelerate toward a speed the target no longer states, and the
 	# bonus would show up as a longer ramp instead of a faster walk.
 	var top := move_speed + _speed_bonus
-	var target := Vector3(wish.x, 0.0, wish.y) * top
 
 	var authority := 1.0 if is_on_floor() else air_control
 	if _hitstun > 0.0:
 		authority = minf(authority, hitstun_control)
 
-	# Scaling the TARGET rather than blending toward the previous value keeps this
-	# stateless: no authority setting can leave a residue that outlives the hitstun.
-	target *= authority
+	if wish != Vector2.ZERO and authority > 0.0:
+		var dir := Vector3(wish.x, 0.0, wish.y).normalized()
+		# The map tests the speed the body ALREADY carries along the wished direction, and it
+		# tests the WHOLE velocity - knockback included. That is why steering out of a slide
+		# works at all: flying backwards at 10 m/s, the component along "forward" is negative,
+		# so you are under the cap and you accelerate. Reading only the steering accumulator
+		# here would let a wizard mid-launch accelerate as though standing still, and the hit
+		# would compound with the recovery.
+		var along := (_input_velocity + Vector3(_knockback.x, 0.0, _knockback.z)).dot(dir)
+		if along <= top:
+			# `top / move_speed` is the map's own `VE/IA`: a speed buff raises the ceiling and
+			# the acceleration together, so the ramp stays 0.6s at any speed.
+			var rate := acceleration * (top / move_speed) * authority * minf(wish.length(), 1.0)
+			_input_velocity += dir * rate * delta
 
-	var ramp := accel_time if target.length_squared() > 0.0 else decel_time
-	if ramp <= 0.0:
-		_input_velocity = target
-	else:
-		_input_velocity = _input_velocity.move_toward(target, (top / ramp) * delta)
+	# Drag runs whether or not anything was asked for, because there is no other way to stop.
+	_input_velocity *= pow(drag_per_second, delta)
+	# Exponential decay never reaches zero, and a residual 1e-30 velocity is a wizard that is
+	# forever "moving" - it keeps the facing code awake and stops any is-it-still test from
+	# ever firing. Snap it once it is well below anything a player could perceive.
+	if _input_velocity.length_squared() < 0.0001:
+		_input_velocity = Vector3.ZERO
 
 
 func _apply_gravity(delta: float) -> void:
@@ -470,7 +489,11 @@ func _decay_knockback(delta: float) -> void:
 	# The vertical part is handed to gravity on the frame it is applied, so only the ground
 	# plane decays here. Bleeding Y as well would fight gravity and make falls float.
 	_knockback.y = 0.0
-	_knockback = _knockback.move_toward(Vector3.ZERO, knockback_friction * delta)
+	# The same drag a walk gets, because in the map it is the same velocity. See
+	# `drag_per_second`.
+	_knockback *= pow(drag_per_second, delta)
+	if _knockback.length_squared() < 0.0001:
+		_knockback = Vector3.ZERO
 
 
 ## True while recovering from a hit. The HUD and future VFX can read it.

@@ -21,8 +21,14 @@ extends Node3D
 ## cached edge at it.
 signal radius_changed(radius: float)
 
-## Where a round starts.
-@export var start_radius := 12.0
+## Where a round starts. The reference map's 1408 units, at 128 units to the metre - see
+## docs/warlock-reference.md.
+##
+## It was already 12.0, which is within a metre of the map's own ring, so this barely moves.
+## Worth saying out loud because it is the half of the "too fast" problem that was NOT wrong:
+## the arena was the right size all along and the wizard was crossing it 2.4x too quickly. At
+## 1.641 m/s an eleven-metre ring takes 13.4 seconds to cross, which is the map's number.
+@export var start_radius := 11.0
 
 ## How small it is allowed to get. At 4.5m a Force Wave reaches most of the way across, which
 ## is the point: by the end of a round, standing still is not an option anyone has.

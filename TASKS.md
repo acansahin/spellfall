@@ -800,3 +800,100 @@ the previous session's theory outright.
 - [ ] The spell bar is still laid out for a right thumb - a big button bottom-right with three
       satellites. For a desk a centred row would be conventional.
 
+
+---
+
+## Session 24 - The map's own physics
+
+"Su anki oyun biraz hizli geliyor bana." That report was exact, and the cause was arithmetic
+rather than feel: Session 11 moved three numbers across from the reference map at two
+different scales - walk speed at 52.5 units/metre while the arena was laid out at 140 - so a
+wizard that should cross its ring in 13.4 seconds crossed it in 5. Everything below follows
+from picking ONE scale and applying it.
+
+**1 metre = 128 Warcraft III units**, the map's own terrain cell.
+
+- [x] `tools/w3x.py` - an MPQ reader that can open the map. Every file in it is encrypted and
+      the sibling tower-defense repo's reader refuses all of them; the forty lines that fix
+      that have now been written twice and lost twice, both times to a scratchpad. Committed
+- [x] `tools/warlock_dump.py` - `units`, `abilities`, `hits`, `speeds`, `metres`. Two of those
+      survive the script being obfuscated, which is the whole trick: every hit in the map goes
+      through `WW()`/`SW()`, whose call sites carry each spell's damage and push in the clear,
+      and every speed is written `N*.03` because the map integrates at a 0.03s tick
+- [x] `docs/warlock-reference.md` - what the tool prints, written up. **This is the file a
+      balance argument happens against from now on**
+
+### Movement is momentum, not a ramp
+
+- [x] `move_speed` 4.0 -> **1.641 m/s** (the map's 210 units/s). 13.4s to cross an 11m ring
+- [x] `accel_time`/`decel_time` -> `acceleration` 2.734 m/s^2 and `drag_per_second` 0.51.
+      **There is no braking term**: releasing the stick leaves you coasting, halving your
+      speed about once a second. That coast is what the map's own Time Shift means when it
+      restores your "momentum" alongside your position and health
+- [x] The acceleration gate reads the COMBINED velocity - steering plus knockback - along the
+      wished direction, which is what the map tests and is why steering out of a slide works
+- [x] `knockback_friction` gone. A hit decays under the same drag a walk does, because in the
+      map a hit IS a walk - one velocity, one rule
+- [x] `Knockback.slide_distance()` is `v / -ln(drag)`. The old comment argued drag must be
+      LINEAR or the slide would have no closed form; that was a false dilemma, and the
+      measured slide matches the new form to within a hundredth of a metre
+- [x] Both accumulators snap to zero below 0.01 m/s. Exponential decay never reaches zero and
+      a wizard forever "moving" at 1e-30 m/s keeps every is-it-still test awake
+
+### Damage and knockback are ONE number
+
+- [x] `Ability.instability` / `knockback` / `health_damage` -> `damage` + `push_mult` +
+      `push_along_travel`. The map has no separate knockback stat:
+      `dv = (100 + damage_points) * damage * push_mult * 0.03`
+- [x] **The instability curve was already the map's, which nobody knew.** It keeps accumulated
+      damage in the unit's mana pool, so 100 points doubles the push - and
+      `data/knockback_rules.tres` has shipped at `base 1.0, per_100 1.0` since session 4.
+      Not one number in that file changed
+- [x] `Knockback.base_impulse()` and `Knockback.UNITS_PER_METRE`. The 128 appears once
+- [x] `push_along_travel` picks between the map's two hit doors - `SW()` shoves along the
+      missile's line, `WW()` away from the caster. A hit with no known caster falls back to
+      the travel line, so the field can never leave a spell with no direction
+- [x] Consequence, stated rather than hidden: **most of the roster chips health now**, where
+      five spells did. The ten-hit floor survives anyway - the map's heaviest single hit is 10
+      out of 100, exactly ten
+
+### The eleven spells, on the map's numbers
+
+- [x] Every `.tres` re-derived from its counterpart in `war3map.w3a`, at level 1: Fireball
+      7.0 damage / 4.8s, Force Wave 10.0 / 3.0, Arc Lance 7.0 / 16.5, Seeker 7.0 / 14.0,
+      Loopshot 7.2 / 16.0, Lunge 5.4 / 17.0, and the guards at 25 / 22 / 21
+- [x] Projectiles fly FLAT. `projectile_drag` 1.0 everywhere - the map's missiles do not
+      decelerate, and Fireball's 15.5-arriving-at-9 was this repo's invention
+- [x] Fireball 15.5 -> **5.86 m/s** over 5.9m, which is half way to the rim
+- [x] Arena `start_radius` 12.0 -> **11.0m**. Barely a move, and worth saying out loud: the
+      arena was the right size all along and the wizard was crossing it 2.4x too fast
+
+### The suites, re-derived rather than loosened
+
+All seventeen green. Five had to change, and every one of them was measuring the old numbers:
+
+- [x] `--knockback-test`: the slide's closed form, and **50% instability now carries 1.5x, not
+      2.25x**. Distance is linear in the impulse under exponential drag where it was quadratic
+      under linear friction. It also prints the Fireball-at-each-stage table every run, because
+      no assertion can tell "far" from "too far"
+- [x] `--knockback-test`: the throw-off-the-arena hit is sized off `_arena.radius` instead of a
+      literal `7.2` left over from a seven-metre ring, which had been passing for free since
+- [x] `--twothumb-test` / `--round-test`: ten and fifteen ticks cannot see a 0.6s acceleration
+      ramp. The wizard covered eight centimetres and these read it as "not moving"
+- [x] `--bot-test`: five seconds is ONE Fireball at a 4.8s cooldown, and this asserted two
+      casts. The window derives from the spell now
+- [x] `--lava-test`: the Fireball it fires at the bot early on carries the bot **eight metres**
+      now, into the lava, where it burned down and ended the round - which healed the player
+      and restarted the clock under the burn measurement that runs later. The burn came out at
+      a third of its real rate and the elimination that fired belonged to the wrong fighter
+
+### Still open
+
+- [ ] **Nobody has played it yet.** The number to judge is the 8.1m a clean Fireball carries on
+      an 11m ring - three quarters of the way to the rim, from the first exchange. If that is
+      too swingy the honest lever is each spell's `push_mult`, never the drag: the drag is the
+      walk
+- [ ] **Cooldowns are long now** - 14 to 25 seconds outside Fireball - and the player carries
+      four spells where the map's player carries eight. A round may read as sparse
+- [ ] The other eleven spells, and the map's seven-column loadout
+- [ ] Lava damage per second is still ours (22). The map's is behind the script's obfuscation

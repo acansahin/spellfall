@@ -324,14 +324,15 @@ Movement tuning lives in exports on `player.gd`:
 
 | Export | Now | Why |
 |---|---|---|
-| `move_speed` | 6.5 m/s | Crosses the 14m arena in ~2.2s |
-| `accel_time` | 0.0 | Instant. A brawler wants direction changes to be immediate |
-| `decel_time` | 0.0 | Instant, predictable stops |
+| `move_speed` | 1.641 m/s | The map's 210 units/s at 128 units/m. Crosses the 11m arena in 13.4s |
+| `acceleration` | 2.734 m/s² | The map's `IA/20` per tick: top speed in 0.6s, at any speed |
+| `drag_per_second` | 0.51 | The map's `*.98` per 0.03s tick. **The only thing that slows you down** |
 | `air_control` | 0.25 | Knocked off you feel committed, but recovery skill still exists |
 | `turn_speed` | 14 rad/s | Cosmetic only - turning never gates movement |
 
-`accel_time` and `decel_time` at 0.0 mean instant; the ramp exists so adding weight later is a
-tuning change and not a rewrite.
+There is **no deceleration term**. `drag_per_second` is what stops a wizard, and it governs
+knockback too, because in the map a hit and a step are the same velocity. See
+docs/warlock-reference.md section 3.
 
 ## Camera
 
@@ -433,39 +434,56 @@ on `player.gd`, because a heavier character should travel less from the identica
 1x at 0%, 2x at 100%, 2.5x at 150%. Linear because a player has to be able to look at a number
 and predict what the next hit does; an exponential curve makes that guesswork.
 
-Distance goes as **speed squared**, so 50% instability (1.5x speed) carries 2.25x as far. That
-quadratic is the tension curve — the numbers climb gently and the consequences climb fast.
+Distance is **linear in the impulse** under exponential drag, so 50% instability (1.5x speed)
+carries 1.5x as far. That used to be a quadratic 2.25x, under the linear friction this port
+replaced; the escalation is gentler now and the absolute distances are far larger - a clean
+Fireball crosses most of the ring at zero instability. See docs/warlock-reference.md section 4.
 
-### The legs have a ramp now
+### The legs carry momentum
 
-`accel_time` and `decel_time` were 0.0 - movement was assigned outright, which is instant and,
-on a phone, weightless: the wizard teleports between directions and a hit you walk out of reads
-as a hiccup. They are now **0.16 and 0.34**, asymmetric on purpose: getting going is nearly as
-quick as it was, stopping takes twice as long, and reversing costs about a third of a second.
-That third of a second is the whole of "momentum" as a player feels it.
+Three models have stood here. Movement was **assigned outright** first, which is instant and,
+on a phone, weightless. Then it was an **asymmetric ramp** (0.16s to start, 0.34s to stop),
+which bought weight while keeping a closed form for the slide. It is now the reference map's
+own integrator, which is neither:
 
-The reference map reaches the same place by different arithmetic - it damps one velocity per
-tick and adds the walk on top of whatever is left, rather than ramping toward a target. **The
-exponential half of that model was deliberately not copied.** Knockback here decays linearly,
-which is what gives the slide a closed form (below); exponential decay never quite stops, and
-the question "how far does this hit throw someone" would stop having an answer. The ramp buys
-the feel; the linear drag keeps the mathematics.
+```
+if the speed already carried along the wished direction is under top speed:
+    velocity += acceleration * direction * delta
+velocity *= drag_per_second ^ delta          # every tick, wish or no wish
+```
 
-### Drag is linear on purpose too
+**There is no braking term at all.** Releasing the stick leaves you coasting, halving your
+speed about once a second. That is the map's signature feel and the thing its own Time Shift
+means when it restores your "momentum" alongside your position and health.
 
-`knockback_friction` bleeds the hit off at a constant m/s², which gives the slide a closed
-form: **v² / 2f**. So "how much knockback throws someone off a 7m arena?" has an answer
-instead of a playtest, and the harness can check that the measured slide is the intended one.
-Exponential decay never quite stops and makes the same question unanswerable.
+The gate reads the **combined** velocity - steering plus knockback - along the wished
+direction. That is what the map tests, and it is why steering out of a slide works: flying
+backwards, your speed along "forward" is negative, so you are under the cap and you accelerate.
+
+### Exponential drag, and the closed form that survived it
+
+The previous section here argued that drag must be LINEAR, because `v² / 2f` gives the slide a
+closed form and exponential decay never quite stops. Half of that was right and half of it was
+a false dilemma. Exponential decay integrates perfectly well:
+
+**distance = v / -ln(drag)**
+
+`Knockback.slide_distance()` is that, and `--knockback-test` still asserts a measured slide
+against it - to within a hundredth of a metre, in practice. What genuinely changed is the
+SHAPE: distance is now linear in the impulse where it used to be quadratic, and the tail never
+formally reaches zero, so both `_input_velocity` and `_knockback` snap to zero below 0.01 m/s.
+Without that snap a wizard is forever "moving" at 1e-30 m/s and every is-it-still test fails.
 
 ### Two velocity accumulators
 
 `player.gd` keeps `_input_velocity` and `_knockback` **separate**, summing them once per tick.
-This is load-bearing, not tidiness. It was written when `accel_time` was 0 and the input path
-assigned `velocity.x` outright every tick, which erased any knockback folded into `velocity` on
-the very next frame. The ramp softens that particular failure without removing the need for the
-split: the two decay by different rules - the walk ramps toward what the thumb asks for, the
-hit bleeds off at a constant m/s² - and a single accumulator cannot obey both.
+This is load-bearing, not tidiness. It was written when movement was assigned outright every
+tick, which erased any knockback folded into `velocity` on the very next frame.
+
+The map itself keeps ONE velocity and adds a hit straight into it, and that is no longer a
+disagreement: both accumulators now carry the same drag, so the sum behaves exactly as one
+would. What the split still buys is that the steering path can never assign over a hit. The
+one place the two must meet is the acceleration gate above, which reads the combined speed.
 Worse, reading `velocity` back after `move_and_slide()` as "what I was doing" folds the last
 frame's knockback into this frame's input, and any reduced-authority path (hitstun, airborne)
 then keeps a fraction of it *and* adds the knockback again — the hit compounds with itself and
@@ -488,9 +506,15 @@ setting can leave a residue that outlives the hitstun.
 
 ### Who applies a hit
 
-`main.gd._on_projectile_hit` is the single place. Instability is raised **first** and the
-knockback reads the new value, so a landed hit is amplified by the destabilisation it just
-caused and combos escalate. Reading the pre-hit value is defensible and duller.
+`main.gd._apply_hit` is the single place, and it now spends **one** number three ways. The map
+has no separate knockback stat: `Ability.damage` drains health, raises damage points and sets
+the push, with `push_mult` the only lever between them. Damage points are raised **before** the
+push reads them, so a landed hit is amplified by the destabilisation it just caused and combos
+escalate. Reading the pre-hit value is defensible and duller.
+
+`Ability.push_along_travel` picks between the map's two hit functions: `SW()` shoves along the
+missile's line, `WW()` away from whoever cast it. A hit with no known caster falls back to the
+travel line, so the field can never leave a spell with no direction at all.
 
 ## Abilities
 
