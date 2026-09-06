@@ -32,7 +32,10 @@ const OPTION_HEIGHT := 74.0
 
 ## Width of a column. Three of these plus the gaps fill the design width with a margin either
 ## side; a fourth column would need this to come down, which is the moment to notice.
-const COLUMN_WIDTH := 372.0
+##
+## A little narrower than the room, because each column is a scrolling list now and a
+## scrollbar has to sit somewhere that is not on top of a cooldown.
+const COLUMN_WIDTH := 358.0
 
 const BACKDROP := Color(0.043, 0.035, 0.09, 0.97)
 const IDLE_FILL := Color(1, 1, 1, 0.06)
@@ -267,6 +270,19 @@ func _heading(text: String, font_size: int, tint: Color) -> Label:
 	return label
 
 
+## One column: its two headings, and its spells inside a SCROLLING list.
+##
+## The list scrolls because the roster outgrew the screen. At four spells a column the panels
+## fitted with room to spare; at eight, the last two and the FIGHT button below them were off
+## the bottom edge - and a screen whose confirm button cannot be reached is a screen the player
+## is trapped in, which is a worse failure than any amount of scrolling.
+##
+## The alternative was shrinking the rows to fit, and it was measured rather than argued about:
+## the room left over for a column's list is about 360px, which at eight rows is thirty pixels
+## each. That is not a row, it is a line of text with an icon squeezed beside it. A scroll keeps
+## every row the size it was designed at and costs a gesture that phones make for free.
+##
+## The headings stay OUTSIDE the scroll, so a column never loses its own name while you read it.
 func _build_column(index: int) -> Control:
 	var column: SpellColumn = _catalogue.columns[index]
 	var box := VBoxContainer.new()
@@ -277,11 +293,26 @@ func _build_column(index: int) -> Control:
 	box.add_child(_heading(column.title, 21, Color(1, 1, 1)))
 	box.add_child(_heading(column.subtitle, 13, DIM_TEXT))
 
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	# PASS, not IGNORE: the container itself must see a drag to scroll, and the panels beneath
+	# it must still see a click. IGNORE here makes the list unscrollable on a phone, which is
+	# the only device that has no other way down it.
+	scroll.mouse_filter = Control.MOUSE_FILTER_PASS
+	box.add_child(scroll)
+
+	var list := VBoxContainer.new()
+	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	list.add_theme_constant_override("separation", 8)
+	list.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	scroll.add_child(list)
+
 	var panels: Array = []
 	for choice in column.spells.size():
 		var panel := _build_option(column.spells[choice], index, choice)
 		panels.append(panel)
-		box.add_child(panel)
+		list.add_child(panel)
 	_panels.append(panels)
 	_restyle(index)
 	return box

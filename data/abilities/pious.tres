@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="Ability" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://combat/abilities/ability.gd" id="1_ability"]
+
+[resource]
+script = ExtResource("1_ability")
+id = &"pious"
+display_name = "Pious"
+blurb = "Hurts everyone nearby and mends whoever is on your side."
+colour = Color(1, 0.929412, 0.694118, 1)
+glyph = 21
+cast_type = 1
+cooldown = 3.0
+charges = 1
+damage = 10.0
+push_mult = 0.8
+push_along_travel = false
+ally_heal = 5.0
+area = 3.6
+cone_angle = 180.0
+hits_caster = true

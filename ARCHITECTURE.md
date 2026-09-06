@@ -52,10 +52,11 @@ res://
     loadout/       spell_catalogue.gd + spell_column.gd (the roster, as data) +
                    loadout_store.gd (user://loadout.cfg, by spell id)
     spawn/         (planned)
-  data/            abilities/*.tres (eleven spells), spell_catalogue.tres, knockback_rules.tres
+  data/            abilities/*.tres (22 spells + one fragment), spell_catalogue.tres,
+                   knockback_rules.tres
   network/         (planned) Phase C onward
   .github/workflows/  pages.yml - exports the Web preset and publishes it to GitHub Pages
-  vfx/             spell_glyph.gd - the eleven icons, as vector shapes in a unit box;
+  vfx/             spell_glyph.gd - 22 icons, as vector shapes in a unit box;
                    ground_shapes.gd - flat meshes; spell_flash.gd - the fan Force Wave
                    draws; aim_indicator.gd - what a spell will do, before it does it;
                    impact_burst.gd - sparks; ground_streak.gd - the smear a Blink leaves
@@ -558,33 +559,36 @@ indexing `_cooldowns` crashed once, because the bounds that were tested were not
 that were used; `abilities` now resizes the cooldown array through its setter, so a spellbook
 assigned at runtime cannot desync the two.
 
-### The eleven spells
+### The twenty-two spells
 
-All eleven are `.tres` files in `data/abilities/`. None of them has a script. What differs
-between them is numbers and which **cast type** they select, and each cast type has exactly
-one runtime, in `main.gd`, at the seam where a cast request becomes something in the world.
+All of them are `.tres` files in `data/abilities/`. None has a script. What differs between
+them is numbers and which **mechanic** they select, and each mechanic is one field read at one
+seam in `main.gd`.
 
-| Spell | Cast type | Runtime | The rule that makes it that spell |
+Eight mechanics are the whole of the new runtime; every other spell is existing fields in a
+new arrangement. `--roster-test` has one section per mechanic for exactly that reason.
+
+| Mechanic | Field | Where it is read | The rule that makes it that spell |
 |---|---|---|---|
-| Fireball | `PROJECTILE` | `ProjectilePool.fire` | travels, hits the first body, expires |
-| Arc Lance | `PROJECTILE` | the same | no drag and three times the speed — it is Fireball's numbers, nothing more |
-| Seeker | `PROJECTILE` | the same + `Projectile._home` | turns at `homing_turn` deg/s toward the nearest fighter |
-| Loopshot | `PROJECTILE` | the same + `_turn_for_home` | turns at `returns_after` of its life and flies at the caster; `pierces` lets it catch the same wizard twice |
-| Warp Bolt | `PROJECTILE` | the same + `_swap_places` | `swaps_places` — the caster and the target exchange positions |
-| Force Wave | `CONE` | `_cast_cone` → `ConeCast.targets` | thrown **away from the caster**, not along the aim |
-| Blink | `DASH` | `_cast_dash` | landing point **clamped inside the arena** |
-| Lunge | `DASH` | the same + `_dash_targets` | `dash_hits` — the corridor is swept and everyone in it goes through `_apply_hit` |
-| Arcane Shield | `BUFF` | `_cast_buff` → `Player.apply_shield` | a multiplier on incoming knockback, not a block |
-| Momentum | `BUFF` | the same | `speed_per_absorbed` — what the ward swallowed is paid back as walking speed |
-| Rewind | `BUFF` | `_cast_buff` → `Player.begin_rewind` | position and health recorded at CAST time, restored at resolve time |
+| blast | `area` on a PROJECTILE | `_on_projectile_spent` → `_burst` | resolves at the SPOT it died, so a meteor that lands on empty ground still lands. The direct hit is skipped for these, or the first target takes it twice |
+| falloff | `falloff_over` | `_falloff`, inside `_burst` and `_cast_cone` | damage scales to nothing at the rim of a burst, so its centre is the worst place to stand |
+| self-hit | `hits_caster` | `_cast_cone` routes to `_burst` instead | a burst has no direction, so it stops being a cone at all — and catching yourself is the map's price for a two-second cooldown |
+| split | `splits_into` + `split_child` | `_on_projectile_spent` → `_split` | fragments are a whole Ability of their own, so a weak shot can leave a dangerous cloud |
+| stream | `stream_count` / `stream_interval` | `_fire_stream`, an `await` loop | the aim is frozen at the cast: you commit to a line and they get to walk out of it |
+| bounce | `bounces` / `bounce_falloff` | `_bounce_onward` | fires a DUPLICATED ability, one bounce poorer. Duplicating keeps `hit`'s signature, which has broken two harnesses silently once already |
+| root | `root_seconds` | `_apply_hit` → `Player.apply_root` | takes the legs, not the body: knockback still lands and the lava still burns |
+| drain / mend | `heal_caster`, `ally_heal` | `_apply_hit`, `_burst` | the only healing in the game, and neither works alone — one needs a victim, the other an ally |
+| pull | `pull_force` / `pull_radius` | `Projectile._pull` → `Player.apply_pull` | an acceleration on the knockback channel, ACCUMULATED rather than replaced |
+| tether | `tether_seconds` / `tether_dps` | `_tick_tethers` in `main.gd` | health only, keyed by the victim, so a second link refreshes rather than stacks |
 
-**Eleven spells need eleven SHAPES, not eleven tints.** `Ability.glyph` picks one of
-`SpellGlyph`'s vector icons, drawn straight into the spell button and into each menu row.
-Four spells were four tinted discs and that read; eleven are eleven tinted discs, three of them
-some shade of blue, under a thumb, mid-fight. The shapes are named for what they look like
-(`FLAME`, `FAN`, `BOLT`, …) rather than for the spell that uses one, so a twelfth spell reaches
-for the closest fit before anybody draws a new one — and `--loadout-test` asserts that no two
-spells in the roster share a shape.
+**Twenty-two spells need twenty-two SHAPES, and that is more drawing than the comparison is
+worth.** `Ability.glyph` picks one of `SpellGlyph`'s vector icons, drawn into the spell button
+and into each menu row. The rule used to be "unique across the roster"; it is now **unique
+within a column, plus the primary unique against all of them**, and that is a better rule
+rather than a weaker one: what a player compares is a column while picking, and what they
+carry is Fireball plus one spell from each column — so the bar is always four different shapes.
+`--loadout-test` asserts both halves, and the same rule applies to `Ability.bolt`, the shape a
+spell wears in flight.
 
 Two details are worth keeping:
 

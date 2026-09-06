@@ -83,6 +83,26 @@ func damage(amount: float) -> void:
 		emptied.emit()
 
 
+## Gives health back. Two spells in the roster do it and nothing else in the game does.
+##
+## The doc below on `restore_to` says "nothing in this game heals - stone does not mend a burn,
+## and a Fireball taken stays taken". That was true of everything the game had, and the two
+## spells that break it are the map's own and break it in a way that keeps the rule's point:
+## **you cannot heal on your own.** Drain takes the health off somebody else, and Pious hands
+## it to an ally. Both cost a cast, both need a target, and neither does anything for a wizard
+## standing alone in the lava - which is the situation the no-healing rule exists to make
+## frightening.
+##
+## Clamped to the maximum, so neither can bank health nobody had.
+func heal(amount: float) -> void:
+	if amount <= 0.0:
+		return
+	var previous := current
+	current = minf(current + amount, maximum)
+	if current != previous:
+		changed.emit(current, previous)
+
+
 ## Puts the bar back to a value it held earlier, for a spell that rewinds its caster.
 ##
 ## Deliberately not `damage(-n)`: healing and un-doing are different claims. Nothing in this

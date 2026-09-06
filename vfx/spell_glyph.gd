@@ -58,6 +58,28 @@ static func draw_into(canvas: CanvasItem, glyph: Ability.Glyph, centre: Vector2,
 			_clock(canvas, centre, size, tint, width)
 		Ability.Glyph.SURGE:
 			_surge(canvas, centre, size, tint, width)
+		Ability.Glyph.ROCK:
+			_rock(canvas, centre, size, tint, width)
+		Ability.Glyph.BURST:
+			_burst(canvas, centre, size, tint, width)
+		Ability.Glyph.STREAM:
+			_stream(canvas, centre, size, tint)
+		Ability.Glyph.BOUNCE:
+			_bounce(canvas, centre, size, tint, width)
+		Ability.Glyph.DROP:
+			_drop(canvas, centre, size, tint, width)
+		Ability.Glyph.WEB:
+			_web(canvas, centre, size, tint, width)
+		Ability.Glyph.VORTEX:
+			_vortex(canvas, centre, size, tint, width)
+		Ability.Glyph.CHAIN:
+			_chain(canvas, centre, size, tint, width)
+		Ability.Glyph.GHOST:
+			_ghost(canvas, centre, size, tint)
+		Ability.Glyph.STAR:
+			_star(canvas, centre, size, tint, width)
+		Ability.Glyph.CROSS:
+			_cross(canvas, centre, size, tint, width)
 
 
 ## Prints a key's letter in the corner of a glyph's box.
@@ -225,6 +247,126 @@ static func _surge(canvas: CanvasItem, centre: Vector2, size: float, tint: Color
 	# On the END of the middle line, not floating past it. Drawn detached first, and it read as
 	# a list icon rather than as something leaving.
 	_head(canvas, centre, size, tint, width, Vector2(0.86, 0.0), Vector2.RIGHT)
+
+
+## Meteor. A lump with a streak trailing up-left, so the icon says "falling" and not "rock".
+##
+## The lump is deliberately irregular and deliberately CONVEX - `draw_colored_polygon`
+## triangulates without checking, so a concave outline comes out with pieces missing rather
+## than with an error. See `_flame`.
+static func _rock(canvas: CanvasItem, centre: Vector2, size: float, tint: Color,
+		width: float) -> void:
+	_fill(canvas, [
+		Vector2(0.10, -0.16), Vector2(0.62, 0.06), Vector2(0.54, 0.62), Vector2(0.02, 0.86),
+		Vector2(-0.48, 0.56), Vector2(-0.44, 0.02),
+	], centre, size, tint)
+	for lane in [-0.34, 0.02, 0.36]:
+		_stroke(canvas, [
+			Vector2(lane - 0.34, -1.0), Vector2(lane - 0.10, -0.42),
+		], centre, size, Color(tint.r, tint.g, tint.b, 0.7), width)
+
+
+## Splitter. A core with six short rays leaving it - the spell drawn as what it becomes.
+static func _burst(canvas: CanvasItem, centre: Vector2, size: float, tint: Color,
+		width: float) -> void:
+	canvas.draw_circle(centre, size * 0.24, tint)
+	for step in 6:
+		var angle := TAU * float(step) / 6.0
+		var direction := Vector2(cos(angle), sin(angle))
+		_stroke(canvas, [direction * 0.44, direction * 0.94], centre, size, tint, width)
+
+
+## Fire Spray. Three dots growing along a line: one cast, arriving in pieces, over time.
+static func _stream(canvas: CanvasItem, centre: Vector2, size: float, tint: Color) -> void:
+	var along := Vector2(0.62, -0.52).normalized()
+	var steps := [-0.78, -0.10, 0.62]
+	for index in steps.size():
+		var at := centre + along * float(steps[index]) * size
+		canvas.draw_circle(at, size * (0.13 + 0.07 * float(index)), tint)
+
+
+## Bouncer. A zigzag with a mark at each corner - the path, not the missile.
+static func _bounce(canvas: CanvasItem, centre: Vector2, size: float, tint: Color,
+		width: float) -> void:
+	var corners := [
+		Vector2(-0.88, 0.56), Vector2(-0.30, -0.62), Vector2(0.28, 0.50), Vector2(0.88, -0.58),
+	]
+	_stroke(canvas, corners, centre, size, tint, width)
+	for corner in corners:
+		canvas.draw_circle(centre + (corner as Vector2) * size, size * 0.11, tint)
+
+
+## Drain. A droplet with an arrow running INTO it: the spell takes rather than gives.
+static func _drop(canvas: CanvasItem, centre: Vector2, size: float, tint: Color,
+		width: float) -> void:
+	_fill(canvas, [
+		Vector2(0.34, -0.28), Vector2(0.62, 0.24), Vector2(0.40, 0.76), Vector2(-0.02, 0.90),
+		Vector2(-0.24, 0.42), Vector2(-0.06, -0.10),
+	], centre, size, tint)
+	_stroke(canvas, [Vector2(-0.92, -0.72), Vector2(-0.22, -0.30)], centre, size, tint, width)
+	_head(canvas, centre, size, tint, width, Vector2(-0.16, -0.26), Vector2(0.86, 0.52))
+
+
+## Entangle. A ring with four spokes closing on its centre - a thing held, not a thing thrown.
+static func _web(canvas: CanvasItem, centre: Vector2, size: float, tint: Color,
+		width: float) -> void:
+	canvas.draw_arc(centre, size * 0.86, 0.0, TAU, 28, tint, width, true)
+	for step in 4:
+		var angle := TAU * float(step) / 4.0 + PI * 0.25
+		var direction := Vector2(cos(angle), sin(angle))
+		_stroke(canvas, [direction * 0.84, direction * 0.22], centre, size, tint, width)
+	canvas.draw_circle(centre, size * 0.14, tint)
+
+
+## Gravity. Three arcs winding inward, each shorter and tighter than the last.
+static func _vortex(canvas: CanvasItem, centre: Vector2, size: float, tint: Color,
+		width: float) -> void:
+	for step in 3:
+		var radius := (0.92 - 0.28 * float(step)) * size
+		var from := deg_to_rad(-30.0 + 100.0 * float(step))
+		canvas.draw_arc(centre, radius, from, from + deg_to_rad(230.0), 20, tint, width, true)
+
+
+## Link. Two rings joined by a line - the spell is the line, and it is between two people.
+static func _chain(canvas: CanvasItem, centre: Vector2, size: float, tint: Color,
+		width: float) -> void:
+	var left := centre + Vector2(-0.62, 0.32) * size
+	var right := centre + Vector2(0.62, -0.32) * size
+	canvas.draw_arc(left, size * 0.30, 0.0, TAU, 18, tint, width, true)
+	canvas.draw_arc(right, size * 0.30, 0.0, TAU, 18, tint, width, true)
+	_stroke(canvas, [Vector2(-0.42, 0.20), Vector2(0.42, -0.20)], centre, size, tint, width)
+
+
+## WindWalk. A shape and its two trailing copies, each fainter: something that was here.
+static func _ghost(canvas: CanvasItem, centre: Vector2, size: float, tint: Color) -> void:
+	var lanes := [0.72, 0.06, -0.62]
+	for index in lanes.size():
+		var shade := Color(tint.r, tint.g, tint.b, 0.28 + 0.36 * float(index))
+		var x := float(lanes[index])
+		_fill(canvas, [
+			Vector2(x, -0.74), Vector2(x + 0.26, -0.10), Vector2(x + 0.22, 0.72),
+			Vector2(x - 0.22, 0.72), Vector2(x - 0.26, -0.10),
+		], centre, size, shade)
+
+
+## Cataclysm. Eight rays out of the centre, and no outline: everything at once, from you.
+static func _star(canvas: CanvasItem, centre: Vector2, size: float, tint: Color,
+		width: float) -> void:
+	for step in 8:
+		var angle := TAU * float(step) / 8.0
+		var direction := Vector2(cos(angle), sin(angle))
+		var reach := 0.98 if step % 2 == 0 else 0.66
+		_stroke(canvas, [direction * 0.14, direction * reach], centre, size, tint, width)
+
+
+## Pious. A cross under an arc - the one spell in the roster that helps somebody.
+static func _cross(canvas: CanvasItem, centre: Vector2, size: float, tint: Color,
+		width: float) -> void:
+	_stroke(canvas, [Vector2(0.0, -0.30), Vector2(0.0, 0.88)], centre, size, tint, width)
+	_stroke(canvas, [Vector2(-0.46, 0.16), Vector2(0.46, 0.16)], centre, size, tint, width)
+	canvas.draw_arc(centre + Vector2(0.0, -0.30) * size, size * 0.44,
+		deg_to_rad(190.0), deg_to_rad(350.0), 18, Color(tint.r, tint.g, tint.b, 0.75),
+		width, true)
 
 
 # ---------------------------------------------------------------------------------------

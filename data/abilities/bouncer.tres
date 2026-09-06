@@ -1,0 +1,25 @@
+[gd_resource type="Resource" script_class="Ability" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://combat/abilities/ability.gd" id="1_ability"]
+
+[resource]
+script = ExtResource("1_ability")
+id = &"bouncer"
+display_name = "Bouncer"
+blurb = "Finds the next one, a fifth weaker each time."
+colour = Color(0.611765, 1, 0.788235, 1)
+glyph = 14
+cast_type = 0
+cooldown = 20.0
+charges = 1
+damage = 6.0
+push_mult = 1.0
+projectile_speed = 7.03
+projectile_radius = 0.3
+bolt = 4
+lifetime = 1.0
+spawn_offset = 0.9
+projectile_drag = 1.0
+bounces = 3
+bounce_falloff = 0.2
+bounce_range = 7.03

@@ -241,27 +241,27 @@ from tones rather than recorded, the sparks are untextured spheres, and the shak
 That is deliberate at this phase: the feel is meant to be tuned by playing, and none of it
 should cost anything to throw away.
 
-## The eleven spells, and the four you take
+## The twenty-two spells, and the four you take
 
 You carry **four**. Fireball is one of them, always, and the other three are chosen before the
-match from three columns of three or four. Nine choices in, that is 36 loadouts, and every one
-of them still opens with the same spell — which is what keeps the game teachable while the
-build is yours.
+match from three columns. Twenty-one choices in, that is 336 loadouts, and every one of them
+still opens with the same spell — which is what keeps the game teachable while the build is
+yours.
 
-All eleven are **built**. Numbers are placeholders to be tuned in playtesting, and they live in
+The roster is the reference map's, all of it. **The map offers seven columns and you pick one
+from each, carrying eight spells; this offers three columns and you carry four.** That is the
+one structural departure and it is a UI limit rather than a design choice: four thumb buttons,
+four keys. The twenty-one are grouped by what they DO rather than by the map's own column
+letters, which is why Scourge and Cataclysm sit under GUARD - a burst centred on yourself that
+hurts you too is a defensive decision, whatever else it is.
+
+All twenty-two are **built**. Numbers are the map's own level-1 values and they live in
 `data/abilities/*.tres` — one file each, no scripts. The roster is
 `data/spell_catalogue.tres`; adding a spell is a file and a line, never a code change.
 
-**One number per spell does everything.** `damage` drains health, raises the target's damage
-points AND sets how far the hit throws them; the only lever between those is `push_mult`. That
-is the map's model rather than a simplification of ours - see docs/warlock-reference.md §4.
-
-So most of the roster chips health now, where five spells did before. The floor under it is
-unchanged and is still a rule rather than a taste: **no spell may empty a full health bar in
-under ten clean hits.** It survives the port for a pleasant reason - the map's own heaviest
-single hit is 10 out of 100, which is exactly ten - and so does the comparison that keeps it
-honest: **a trip into the lava empties a bar in 4.5 seconds; the fastest spell needs 30
-seconds of perfect uptime to do the same.** `--loadout-test` asserts both.
+Eight of them needed genuinely new runtime and the rest are existing fields in new
+combinations. `--roster-test` is one section per MECHANIC rather than per spell, for that
+reason: a blast, a split, a stream, a bounce, a root, a drain, a pull and a tether.
 
 ### Always with you
 
@@ -273,40 +273,48 @@ seconds of perfect uptime to do the same.** `--loadout-test` asserts both.
 
 | Spell | Type | Dmg | Push | Role |
 |---|---|---|---|---|
-| **Force Wave** | Cone, 4m, instant | 10.0 | 0.8 | The map's heaviest single hit, and the ten-hit floor in person. Weak in the open, lethal near an edge. Throws away from YOU, not along the aim. 3.0s. |
 | **Arc Lance** | Flat, 13.3 m/s, 12m | 7.0 | 1.2 | Crosses the ring almost instantly and shoves hard. The answer to someone who will not come close, and it costs you a sixteen-second wait. 16.5s. |
 | **Seeker** | Slow projectile, turns 220°/s, 9.4m | 7.0 | 1.0 | Corrects an aim that was wrong, and still loses somebody who walks across its nose. 14.0s. |
 | **Loopshot** | Flies out 8.4m, returns, pierces | 7.2 | 1.2 | Two chances at the same wizard from one cast — if you are still standing where it comes home. 16.0s. |
+| **Meteor** | Lands at 6.3m, 3.2m blast | 10.0 | 1.0 | The only spell that does not need to touch anybody. Falls off to nothing at the edge of its own blast, so the middle is the worst place to stand. 20.0s. |
+| **Splitter** | Breaks into six at the end of its flight | 3.0 | 1.4 | Weak on its own and dangerous where it lands. The six carry the heaviest push in the roster. 30.0s. |
+| **Fire Spray** | Six shots down one line, 0.16s apart | 2.6 | **0.6** | One cast, six chances, and an aim you committed to before the first one left. The map's own "60% knockback". 16.0s. |
+| **Bouncer** | Finds the next enemy within 7m, three times | 6.0 | 1.0 | A single-target spell in a 1v1 and the best spell in the column in a 2v2. A fifth weaker each hop. 20.0s. |
+| **Drain** | Slow projectile | 6.0 | 0.6 | Takes their health and gives it to you. The only way in the game to undo a trip into the lava. 22.0s. |
 
-### MOTION — how you close a gap, or leave one
+### CONTROL — where the two of you are standing
 
-| Spell | Type | Inst | Knock | Role |
+| Spell | Type | Dmg | Push | Role |
 |---|---|---|---|---|
 | **Blink** | 6.0m teleport | — | — | Dodge and reposition. Clamped inside the arena, cancels the slide you are in, keeps the hitstun. 16.0s. |
 | **Lunge** | 5.5m charge that hits | 5.4 | 1.15 | The same escape, spent as an attack. It shoves what it runs through, and it puts you where they are. 17.0s. |
 | **Warp Bolt** | Projectile, 6.25m, trades places | — | — | Hurts nobody. It takes the ground they were standing on — including the ground over the lava. 16.0s. |
+| **WindWalk** | 7.0m charge that hits | 5.4 | 1.15 | Lunge with a longer run and a much longer wait. The map's own charge form. 30.0s. |
+| **Entangle** | Projectile, roots for 4.5s | — | — | Takes their legs and nothing else. Knockback still moves them and the lava still burns them, which is the whole spell: it is only lethal where they are already standing. 27.0s. |
+| **Gravity** | Slow projectile dragging everything within 4.5m | 3.0 | **0.1** | Barely pushes and pulls constantly. It is the one spell that moves people without hitting them, and it moves you too. 26.0s. |
+| **Link** | Projectile, then 8s of 2.5/s | 0.2 | 0.2 | A commitment you make early and forget about. Twenty points over eight seconds, from a spell that does nothing on arrival. 16.0s. |
 
 ### GUARD — what you do about the hit you saw coming
 
-| Spell | Type | Inst | Knock | Role |
+| Spell | Type | Dmg | Push | Role |
 |---|---|---|---|---|
 | **Arcane Shield** | 2.8s ward | — | — | 35% of a hit gets through. Measured: a hit that carries 5.05m carries 2.53m through it. 25.0s. |
 | **Rewind** | Undo, 3.6s later | — | — | Puts you back where you cast it, with the health you had. It does NOT give back damage points — the round still remembers. 22.0s. |
 | **Momentum** | 7s, converts | — | — | Half of every hit is swallowed and paid back as walking speed, up to +2.5 m/s — which on a 1.64 m/s walk is more than doubling it. The only guard that rewards standing in a fight. 21.0s. |
+| **Force Wave** | Cone, 4m, instant | 10.0 | 0.8 | The map's heaviest single hit, and the ten-hit floor in person. Weak in the open, lethal near an edge. Throws away from YOU, not along the aim. 3.0s. |
+| **Cataclysm** | 5m burst around you, **you included** | 6.0 | 1.0 | Everything nearby, yourself at the centre taking the worst of it. Two-second cooldown, and the self-hit near a rim is a way to travel rather than only a cost. 2.0s. |
+| **Pious** | 3.6m burst around you, **you included**, allies mended 5 | 10.0 | 0.8 | Costs a lone caster five health and pays for itself the moment somebody is standing with you. 3.0s. |
 
-The intended tension is unchanged and now has three shapes instead of one: something builds
-instability from range, something converts it into a kill but costs you position, something
-moves you, and something is a read — spend it early and it is gone when the real hit lands.
+Each spell has its own **shape** on the button, not just its own colour. Twenty-two spells and
+twenty-two drawings would be a lot of drawing to protect a comparison nobody makes, so the
+rule is now **unique within a column** plus the primary being unique against all of them: what
+you compare is a column while picking, and what you carry is Fireball plus one from each
+column, so your four buttons are always four different shapes. `--loadout-test` asserts it.
 
-Each spell has its own **shape** on the button, not just its own colour — a flame, a fan, a
-bolt, a spiral, a boomerang, a hop, three chevrons, two swapping arrows, a shield, a clock, a
-surge. All eleven are drawn in code and all eleven are placeholder, like everything else here.
-Colour alone carried four spells and stopped carrying eleven.
-
-In flight they differ too: Fireball is a ball, Arc Lance a long spike, Seeker a dart with its
-point forward, Loopshot a flat bar spinning as it goes, and Warp Bolt a hoop lying flat. What a
-spell HITS with is still the same sphere for all five — the shape is what it looks like, never
-what it catches you with.
+In flight they differ too, under the same per-column rule: a ball, a spike, a dart, a spinning
+bar, a hoop, a lump, a speck, a four-sided sliver and a cone arriving mouth-first. What a
+spell HITS with is still the same sphere for all of them — the shape is what it looks like,
+never what it catches you with.
 
 ## Playing at a desk
 

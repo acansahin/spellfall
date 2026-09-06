@@ -205,6 +205,18 @@ Three of them — **Shield, Time Shift, Rush** — take no target and fire on th
 Every other spell is armed by its key and sent with a left click. That split is not a
 convention somebody invented: it falls out of each ability's base ability in `war3map.w3a`.
 
+## 7b. The one number not taken at face value
+
+**Meteor.** The map's tooltip says "Damage: 7-14 depending on range between impact location
+and nearby warlocks", and 14 out of 100 health is seven clean hits to a full bar. This repo has
+one balance rule that is a rule rather than a taste - **no spell may empty a bar in under ten
+clean hits** - and 14 breaks it where every other spell in the map obeys it.
+
+So Meteor ships at **10 at the centre**, falling to nothing at the edge of its 3.2m blast. The
+shape of the map's spell is intact, the direction of its falloff is intact, and the number is
+this port's. It is recorded here rather than in a comment because it is the only place the
+port and the map disagree about a number.
+
 ## 8. What is NOT in here
 
 - **Lava damage per second.** The arena and its lava are built by triggers whose constants

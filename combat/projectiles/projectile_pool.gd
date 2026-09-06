@@ -16,6 +16,10 @@ extends Node3D
 ## combat layer connects once, rather than to every projectile as it is launched.
 signal projectile_hit(body: Node3D, direction: Vector3, ability: Ability, shooter: Node3D)
 
+## Emitted when any projectile from this pool ends, wherever it ended. Blasts and splits ride
+## on this; see `Projectile.spent`.
+signal projectile_spent(at: Vector3, direction: Vector3, ability: Ability, shooter: Node3D)
+
 @export var projectile_scene: PackedScene = null
 
 ## How many to build up front. Eight covers a busy moment for one caster; the pool grows
@@ -36,6 +40,7 @@ func _build() -> Projectile:
 	add_child(p)
 	p.finished.connect(_reclaim)
 	p.hit.connect(_relay_hit)
+	p.spent.connect(_relay_spent)
 	_all.append(p)
 	_idle.append(p)
 	return p
@@ -57,6 +62,10 @@ func _reclaim(p: Projectile) -> void:
 
 func _relay_hit(body: Node3D, direction: Vector3, ability: Ability, shooter: Node3D) -> void:
 	projectile_hit.emit(body, direction, ability, shooter)
+
+
+func _relay_spent(at: Vector3, direction: Vector3, ability: Ability, shooter: Node3D) -> void:
+	projectile_spent.emit(at, direction, ability, shooter)
 
 
 ## Number currently in flight. Used by the harness to prove reuse rather than growth.

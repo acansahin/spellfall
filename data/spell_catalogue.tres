@@ -1,4 +1,4 @@
-[gd_resource type="Resource" script_class="SpellCatalogue" load_steps=15 format=3]
+[gd_resource type="Resource" script_class="SpellCatalogue" load_steps=26 format=3]
 
 [ext_resource type="Script" path="res://systems/loadout/spell_catalogue.gd" id="1_catalogue"]
 [ext_resource type="Script" path="res://systems/loadout/spell_column.gd" id="2_column"]
@@ -8,32 +8,43 @@
 [ext_resource type="Resource" path="res://data/abilities/arc_lance.tres" id="6_arc_lance"]
 [ext_resource type="Resource" path="res://data/abilities/seeker.tres" id="7_seeker"]
 [ext_resource type="Resource" path="res://data/abilities/loopshot.tres" id="8_loopshot"]
-[ext_resource type="Resource" path="res://data/abilities/blink.tres" id="9_blink"]
-[ext_resource type="Resource" path="res://data/abilities/lunge.tres" id="10_lunge"]
-[ext_resource type="Resource" path="res://data/abilities/warp_bolt.tres" id="11_warp_bolt"]
-[ext_resource type="Resource" path="res://data/abilities/arcane_shield.tres" id="12_shield"]
-[ext_resource type="Resource" path="res://data/abilities/rewind.tres" id="13_rewind"]
-[ext_resource type="Resource" path="res://data/abilities/momentum.tres" id="14_momentum"]
+[ext_resource type="Resource" path="res://data/abilities/meteor.tres" id="9_meteor"]
+[ext_resource type="Resource" path="res://data/abilities/splitter.tres" id="10_splitter"]
+[ext_resource type="Resource" path="res://data/abilities/fire_spray.tres" id="11_fire_spray"]
+[ext_resource type="Resource" path="res://data/abilities/bouncer.tres" id="12_bouncer"]
+[ext_resource type="Resource" path="res://data/abilities/blink.tres" id="13_blink"]
+[ext_resource type="Resource" path="res://data/abilities/lunge.tres" id="14_lunge"]
+[ext_resource type="Resource" path="res://data/abilities/warp_bolt.tres" id="15_warp_bolt"]
+[ext_resource type="Resource" path="res://data/abilities/wind_walk.tres" id="16_wind_walk"]
+[ext_resource type="Resource" path="res://data/abilities/entangle.tres" id="17_entangle"]
+[ext_resource type="Resource" path="res://data/abilities/gravity.tres" id="18_gravity"]
+[ext_resource type="Resource" path="res://data/abilities/link.tres" id="19_link"]
+[ext_resource type="Resource" path="res://data/abilities/arcane_shield.tres" id="20_shield"]
+[ext_resource type="Resource" path="res://data/abilities/rewind.tres" id="21_rewind"]
+[ext_resource type="Resource" path="res://data/abilities/momentum.tres" id="22_momentum"]
+[ext_resource type="Resource" path="res://data/abilities/drain.tres" id="23_drain"]
+[ext_resource type="Resource" path="res://data/abilities/cataclysm.tres" id="24_cataclysm"]
+[ext_resource type="Resource" path="res://data/abilities/pious.tres" id="25_pious"]
 
 [sub_resource type="Resource" id="Column_strike"]
 script = ExtResource("2_column")
 title = "STRIKE"
 subtitle = "Your second way to land one"
-spells = Array[ExtResource("3_ability")]([ExtResource("5_force_wave"), ExtResource("6_arc_lance"), ExtResource("7_seeker"), ExtResource("8_loopshot")])
+spells = Array[ExtResource("3_ability")]([ExtResource("5_force_wave"), ExtResource("6_arc_lance"), ExtResource("7_seeker"), ExtResource("8_loopshot"), ExtResource("9_meteor"), ExtResource("10_splitter"), ExtResource("11_fire_spray"), ExtResource("12_bouncer")])
 
-[sub_resource type="Resource" id="Column_motion"]
+[sub_resource type="Resource" id="Column_control"]
 script = ExtResource("2_column")
-title = "MOTION"
-subtitle = "How you close a gap, or leave one"
-spells = Array[ExtResource("3_ability")]([ExtResource("9_blink"), ExtResource("10_lunge"), ExtResource("11_warp_bolt")])
+title = "CONTROL"
+subtitle = "Where the two of you are standing"
+spells = Array[ExtResource("3_ability")]([ExtResource("13_blink"), ExtResource("14_lunge"), ExtResource("15_warp_bolt"), ExtResource("16_wind_walk"), ExtResource("17_entangle"), ExtResource("18_gravity"), ExtResource("19_link")])
 
 [sub_resource type="Resource" id="Column_guard"]
 script = ExtResource("2_column")
 title = "GUARD"
 subtitle = "What you do about the hit you saw coming"
-spells = Array[ExtResource("3_ability")]([ExtResource("12_shield"), ExtResource("13_rewind"), ExtResource("14_momentum")])
+spells = Array[ExtResource("3_ability")]([ExtResource("20_shield"), ExtResource("21_rewind"), ExtResource("22_momentum"), ExtResource("23_drain"), ExtResource("24_cataclysm"), ExtResource("25_pious")])
 
 [resource]
 script = ExtResource("1_catalogue")
 primary = ExtResource("4_fireball")
-columns = Array[ExtResource("2_column")]([SubResource("Column_strike"), SubResource("Column_motion"), SubResource("Column_guard")])
+columns = Array[ExtResource("2_column")]([SubResource("Column_strike"), SubResource("Column_control"), SubResource("Column_guard")])

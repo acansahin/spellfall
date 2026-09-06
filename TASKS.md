@@ -887,13 +887,79 @@ All seventeen green. Five had to change, and every one of them was measuring the
       and restarted the clock under the burn measurement that runs later. The burn came out at
       a third of its real rate and the elimination that fired belonged to the wrong fighter
 
+### The other eleven spells
+
+The roster is the map's whole roster now: twenty-two spells, and the eleven that were missing
+are **Meteor, Splitter, Fire Spray, Bouncer, Drain, WindWalk, Entangle, Gravity, Link,
+Cataclysm and Pious**.
+
+Eight mechanics cover all eleven; everything else is existing fields rearranged.
+`--roster-test` has one section per MECHANIC rather than per spell, for that reason.
+
+- [x] **blast** - `area` on a projectile, resolved at the spot it DIED rather than on what it
+      touched, so a meteor that lands on empty ground still lands. `Projectile.spent` is the
+      new signal that makes it possible. The direct hit is skipped for these, or the first
+      target takes the same spell twice
+- [x] **falloff** - `falloff_over`, so the centre of a blast is the worst place to stand. The
+      map states its meteor as "7-14 depending on range" and the direction is the point
+- [x] **self-hit** - `hits_caster` routes a CONE through the blast door instead, because a
+      burst has no direction to fan along. Catching yourself is the map's price for a
+      two-second cooldown
+- [x] **split** - `splits_into` + `split_child`, a whole Ability of its own rather than a
+      fraction of the parent. `splinter.tres` is in `data/abilities/` and in no column: nobody
+      picks it
+- [x] **stream** - `stream_count` / `stream_interval`, with the aim FROZEN at the cast. Re-aiming
+      per shot would turn six missiles into six free hits
+- [x] **bounce** - fires a DUPLICATED ability, one bounce poorer and a fifth weaker. Duplicating
+      rather than tracking a scale on the projectile keeps `hit`'s signature, which has already
+      broken two harnesses silently once
+- [x] **root** - takes the legs, not the body. Knockback still lands and the lava still burns
+- [x] **drain / mend** - the first healing in the game, and neither half works alone: one needs
+      a victim, the other an ally
+- [x] **pull** - an acceleration ADDED to the knockback channel rather than replacing it, which
+      is the opposite rule to a hit and has to be, or a field leaves you carrying one tick of it
+- [x] **tether** - health only, keyed by the VICTIM, so a second link refreshes rather than
+      stacks
+- [x] Eleven more glyphs and four more bolt shapes, all vector, all in the unit box
+- [x] `--roster-test`, thirty assertions
+
+### Traps this half hit
+
+- [x] **`_equip(strike, motion, guard)` matches ids to COLUMNS.** Passing a CONTROL spell as its
+      first argument leaves that column on its default and casts something else entirely - and
+      it fails as "the root does not work", "the tether does not work", "gravity does not pull",
+      three separate bugs that were one typo each
+- [x] **The default loadout lost its cone**, and four suites that look for one by cast type
+      broke at once with `Nil`. Force Wave had been STRIKE's first entry and the regroup moved
+      it. It is back at the head of STRIKE, and the rule is now explicit: **the first entry of
+      each column has to leave the default bar holding all four cast types**
+- [x] **Eight rows in a column do not fit on a 720-tall screen** - the last two options AND the
+      FIGHT button were below the bottom edge, which is a menu with no way out. The columns
+      scroll now, and `--loadout-test` asserts the FIGHT button is on the screen. Shrinking the
+      rows was measured and rejected: about 360px are left for a list, which at eight rows is
+      thirty pixels each
+- [x] **Twenty-two spells do not need twenty-two glyphs.** The uniqueness rule is now per
+      COLUMN plus the primary against all of them, which is what a player actually compares -
+      and it still guarantees four different shapes on the bar, because you carry one spell
+      from each column
+
 ### Still open
 
 - [ ] **Nobody has played it yet.** The number to judge is the 8.1m a clean Fireball carries on
       an 11m ring - three quarters of the way to the rim, from the first exchange. If that is
       too swingy the honest lever is each spell's `push_mult`, never the drag: the drag is the
       walk
-- [ ] **Cooldowns are long now** - 14 to 25 seconds outside Fireball - and the player carries
-      four spells where the map's player carries eight. A round may read as sparse
-- [ ] The other eleven spells, and the map's seven-column loadout
+- [ ] **Cooldowns are long now** - 14 to 30 seconds outside Fireball and the two self-bursts -
+      and the player carries four spells where the map's player carries eight. A round may read
+      as sparse
+- [ ] **The spells still carry this repo's names**, not the map's: Force Wave is its Scourge,
+      Arc Lance its Lightning, Seeker its Homing, Loopshot its Boomerang, Blink its Teleport,
+      Lunge its Thrust, Warp Bolt its Swap, Rewind its Time Shift, Momentum its Rush. The
+      numbers and the behaviour are the map's; the eleven new spells already carry its names
+- [ ] **Three columns, not seven.** The map offers seven and you carry eight spells; four thumb
+      buttons and four keys is why this offers three. It is the one structural departure
+- [ ] `bounce` has never been seen doing the interesting half of its job, because
+      `--roster-test` is 1v1 and a bounce needs somebody else to reach
 - [ ] Lava damage per second is still ours (22). The map's is behind the script's obfuscation
+- [ ] Meteor is the one number not taken at face value - 10 at the centre where the map says up
+      to 14 - because 14 breaks the ten-hit floor. Recorded in docs/warlock-reference.md

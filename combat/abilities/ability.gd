@@ -4,14 +4,15 @@ extends Resource
 ## One spell, as data.
 ##
 ## Adding a spell should mean authoring a `.tres` file in `data/abilities/`, not writing a
-## script. That is the whole point of this class: the eleven spells differ in numbers and in
-## which *behaviour* they select, not in bespoke code. A twelfth that is "Fireball but wider
-## and slower" must cost a file, not a class.
+## script. That is the whole point of this class: the twenty-two spells differ in numbers and
+## in which *behaviour* they select, not in bespoke code. A twenty-third that is "Fireball but
+## wider and slower" must cost a file, not a class.
 ##
-## Seven of the eleven were added at once and only two of them needed a line of runtime: the
-## rest are this file's fields in new combinations. Where a field DID have to be added it says
-## what the spell is - `returns_after` is the whole of a boomerang - rather than naming the
-## spell, so the next one that wants to come back gets it free.
+## The claim has been tested twice now. Seven spells were added at once and only two needed a
+## line of runtime; eleven more were added after that and eight mechanics covered all of them.
+## Where a field DID have to be added it says what the spell DOES - `returns_after` is the
+## whole of a boomerang, `falloff_over` the whole of a meteor - rather than naming the spell,
+## so the next one that wants to come back or fall off gets it free.
 ##
 ## Not every field applies to every cast type - `projectile_speed` means nothing to a buff.
 ## Unused fields are simply left at their defaults; a runtime reads only what its cast type
@@ -59,6 +60,28 @@ enum Glyph {
 	CLOCK,
 	## A wall, and lines leaving it faster. Momentum.
 	SURGE,
+	## A lump with a streak behind it. Meteor.
+	ROCK,
+	## A core with short rays leaving it. Splitter.
+	BURST,
+	## Three dots growing along a line. Fire Spray.
+	STREAM,
+	## A zigzag with a mark at each corner. Bouncer.
+	BOUNCE,
+	## A droplet with an arrow running into it. Drain.
+	DROP,
+	## A ring with spokes closing on its centre. Entangle.
+	WEB,
+	## Arcs winding inward. Gravity.
+	VORTEX,
+	## Two rings joined by a line. Link.
+	CHAIN,
+	## A shape and its two trailing copies. WindWalk.
+	GHOST,
+	## An eight-pointed burst from the centre out. Cataclysm.
+	STAR,
+	## A cross under an arc. Pious.
+	CROSS,
 }
 
 ## What a projectile LOOKS like in flight. The icon says which spell it is before you cast it;
@@ -77,6 +100,14 @@ enum Bolt {
 	BLADE,
 	## A hoop, lying flat. Warp Bolt.
 	RING,
+	## A lump. Meteor, and anything else that is a thrown thing rather than a spell.
+	STONE,
+	## A small bright ball. The fragments of a splitter, and the drops of a stream.
+	MOTE,
+	## A four-sided sliver, longer than it is wide. Splitter.
+	PRISM,
+	## A cone with its WIDE end forward - a mouth rather than a point. Drain.
+	FUNNEL,
 }
 
 @export_group("Identity")
@@ -109,6 +140,16 @@ enum Bolt {
 @export var cooldown: float = 1.0
 ## How many casts are banked. 1 means a plain cooldown. (>1 not implemented yet)
 @export var charges: int = 1
+
+## How many projectiles ONE cast sends, spaced `stream_interval` apart. Fire Spray, at six.
+##
+## A stream and not a volley: they leave one at a time along the aim held at the moment of the
+## cast, so walking sideways while one is in the air is what makes it dodgeable and what makes
+## it worth aiming ahead of somebody.
+@export var stream_count: int = 1
+
+## Seconds between the projectiles of a stream.
+@export var stream_interval: float = 0.15
 
 @export_group("Combat")
 ## What this spell does, as ONE number, out of a hundred points of health.
@@ -150,6 +191,33 @@ enum Bolt {
 ## its line, which is what makes aiming at the rim a tactic. Away-from-caster is what a burst
 ## around your own feet wants, where there is no travel to speak of.
 @export var push_along_travel: bool = true
+
+## Seconds the target cannot walk for. Entangle.
+##
+## It roots, it does not freeze: knockback still moves you and the round still burns you. A
+## spell that stopped a body outright would also stop the lava from mattering, which is the
+## one thing in this game that must never stop mattering.
+@export var root_seconds: float = 0.0
+
+## Fraction of the damage dealt that comes back to the caster as health. Drain, at 1.0.
+##
+## Capped by the caster's own maximum like any other heal, so it is a way to undo a trip into
+## the lava rather than a way to bank health you never had.
+@export_range(0.0, 2.0, 0.05) var heal_caster: float = 0.0
+
+## Health given to every ALLY the burst catches, including the caster. Pious.
+##
+## Separate from `damage` rather than a negative one, because the two land on different
+## people: the same cast hurts an enemy and mends a friend, which is what the map's own
+## version does and what makes it the odd spell in its column.
+@export var ally_heal: float = 0.0
+
+## Seconds a tether keeps draining whoever this hit. Link.
+@export var tether_seconds: float = 0.0
+
+## Health per second that tether takes. The map's Link is 0.2 a tick, which is a slow bleed
+## rather than a threat - the spell is a commitment you make early and forget about.
+@export var tether_dps: float = 0.0
 
 @export_group("Projectile")
 ## Metres per second.
@@ -217,13 +285,65 @@ enum Bolt {
 ## and only the resolution differs.
 @export var swaps_places: bool = false
 
+## How many children this breaks into when its flight ends. Splitter.
+##
+## They are fired from wherever it died, fanned across `split_spread` degrees around the
+## direction it was travelling, and each one is `split_child` - a whole Ability of its own, so
+## the fragments have their own damage, speed, colour and shape rather than inheriting a
+## fraction of their parent's.
+@export var splits_into: int = 0
+
+## The spell each fragment IS. Null with `splits_into` above zero simply splits into nothing.
+@export var split_child: Resource = null
+
+## Degrees the fan of fragments covers, centred on the parent's heading.
+@export var split_spread: float = 90.0
+
+## How many times this looks for another target after a hit. Bouncer.
+##
+## It searches within `bounce_range` for a fighter it has not already caught, so a bouncer in
+## a 1v1 is a single-target spell with a long cooldown and in a 2v2 is the best spell in the
+## column. That asymmetry is the map's and is kept.
+@export var bounces: int = 0
+
+## Fraction of the damage each bounce loses.
+@export_range(0.0, 1.0, 0.05) var bounce_falloff: float = 0.2
+
+## How far a bounce will look for its next target, in metres.
+@export var bounce_range: float = 7.0
+
 @export_group("Area")
-## How far the effect reaches, in metres. For a CONE this is the length of the fan. For a
-## PROJECTILE it would be the splash radius on impact, and 0 means a single-target hit
-## (splash is not implemented yet).
+## How far the effect reaches, in metres. For a CONE this is the length of the fan; for a
+## PROJECTILE it is the blast radius on impact, and 0 means a single-target hit.
 @export var area: float = 0.0
 ## Cone HALF-angle in degrees, so 55 is a 110-degree fan. Read by CONE casts only.
 @export var cone_angle: float = 45.0
+
+## Metres over which a burst's damage falls to nothing, measured from its centre. 0 means the
+## whole area hits equally hard.
+##
+## The map states this the other way round - Meteor is "7-14 depending on range" - and the
+## direction matters: standing at the centre of a meteor is the WORST place to be, not a safe
+## one. Falloff is applied to `damage`, so it scales the push and the damage points with it,
+## because those are the same number.
+@export var falloff_over: float = 0.0
+
+## Whether a burst catches the caster too. Scourge, Cataclysm and Pious.
+##
+## This is the map's own balance for a spell that hits in every direction on a three-second
+## cooldown, and it is why those three are not simply better than an aimed spell: you pay for
+## every cast. Note it also pushes you, which is a use rather than a cost - a self-hit near
+## the rim is a way to travel.
+@export var hits_caster: bool = false
+
+## How hard a projectile drags nearby fighters toward itself, in m/s per second. Gravity.
+##
+## An acceleration and not a teleport, so walking out of it is possible and being caught in
+## the open by one is a position problem rather than a stun.
+@export var pull_force: float = 0.0
+
+## Radius of that pull, in metres.
+@export var pull_radius: float = 4.0
 
 @export_group("Dash")
 ## Metres the caster is moved by a DASH cast. The landing point is clamped to the arena by
@@ -271,6 +391,10 @@ enum Bolt {
 ## undoes where a fight put you, never how dangerous the fight has become - which keeps the
 ## escalation curve intact and makes the spell a retreat rather than a reset.
 @export var rewind: bool = false
+
+## Metres per second added to the caster's walking speed for `duration`. WindWalk's charge is
+## a dash; this is the other half of the map's own speed buffs, and Pious hands it to allies.
+@export var move_bonus: float = 0.0
 
 
 ## How far this spell reaches, in metres, whatever kind of spell it is.

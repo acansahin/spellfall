@@ -124,6 +124,17 @@ var _knockback := Vector3.ZERO
 ## Seconds left of reduced control after being hit.
 var _hitstun := 0.0
 
+## Seconds left rooted. Entangle.
+var _root_timer := 0.0
+
+## A flat walking-speed bonus with its own clock, separate from the one Momentum banks.
+##
+## Two of them, because they expire differently: Momentum's is tied to the shield that earned
+## it and dies with it, and this one is a spell's whole payload with a duration of its own. One
+## variable would make casting Pious cancel a Momentum somebody was still holding.
+var _move_bonus := 0.0
+var _move_bonus_timer := 0.0
+
 ## What fraction of an incoming knockback gets through. 1.0 is unprotected; Arcane Shield
 ## drops it for a moment. Held on the fighter and not in the knockback formula because the
 ## formula answers "how hard was that hit" and this answers "how much of it landed on ME".
@@ -180,6 +191,12 @@ func _physics_process(delta: float) -> void:
 
 	if _hitstun > 0.0:
 		_hitstun = maxf(0.0, _hitstun - delta)
+	if _root_timer > 0.0:
+		_root_timer = maxf(0.0, _root_timer - delta)
+	if _move_bonus_timer > 0.0:
+		_move_bonus_timer = maxf(0.0, _move_bonus_timer - delta)
+		if _move_bonus_timer == 0.0:
+			_move_bonus = 0.0
 	if _shield_timer > 0.0:
 		_shield_timer = maxf(0.0, _shield_timer - delta)
 		if _shield_timer == 0.0:
@@ -209,11 +226,16 @@ func _apply_horizontal(wish: Vector2, delta: float) -> void:
 	# converting buff adds to it; reading the export directly in the ramp - as this did before
 	# the buff existed - would accelerate toward a speed the target no longer states, and the
 	# bonus would show up as a longer ramp instead of a faster walk.
-	var top := move_speed + _speed_bonus
+	var top := move_speed + _speed_bonus + _move_bonus
 
 	var authority := 1.0 if is_on_floor() else air_control
 	if _hitstun > 0.0:
 		authority = minf(authority, hitstun_control)
+	# A root takes the legs, not the body. Knockback still lands, the lava still burns, and the
+	# drag below still runs - so being rooted in the lava is exactly as bad as it sounds, and
+	# being rooted mid-slide does not freeze you in mid-air.
+	if _root_timer > 0.0:
+		authority = 0.0
 
 	if wish != Vector2.ZERO and authority > 0.0:
 		var dir := Vector3(wish.x, 0.0, wish.y).normalized()
@@ -287,6 +309,9 @@ func respawn_at(point: Vector3) -> void:
 	_input_velocity = Vector3.ZERO
 	_knockback = Vector3.ZERO
 	_hitstun = 0.0
+	_root_timer = 0.0
+	_move_bonus = 0.0
+	_move_bonus_timer = 0.0
 	_rewind_timer = 0.0
 	_drop_shield()
 	global_position = point
@@ -363,6 +388,36 @@ func apply_knockback(impulse: Vector3) -> void:
 	if flat.length() >= Vector3(_knockback.x, 0.0, _knockback.z).length():
 		_knockback = arriving
 	_hitstun = maxf(_hitstun, flat.length() * hitstun_per_speed)
+
+
+## Takes the legs for `seconds`. Recasting keeps whichever root lasts longer.
+func apply_root(seconds: float) -> void:
+	_root_timer = maxf(_root_timer, seconds)
+
+
+## True while rooted. For the HUD, the bot and the harness.
+func is_rooted() -> bool:
+	return _root_timer > 0.0
+
+
+## Adds `bonus` m/s of walking speed for `seconds`. Recasting keeps the better of the two
+## rather than stacking, the same rule shields and knockback use.
+func grant_speed(bonus: float, seconds: float) -> void:
+	if bonus <= 0.0 or seconds <= 0.0:
+		return
+	_move_bonus = maxf(_move_bonus, bonus)
+	_move_bonus_timer = maxf(_move_bonus_timer, seconds)
+
+
+## Adds an impulse to the knockback channel without replacing what is already there.
+##
+## `apply_knockback` REPLACES, which is right for a hit: two hits a frame apart must not
+## combine into a launch neither earned. A gravity field is the opposite case - a small nudge
+## applied sixty times a second - and replacing on each one would leave a fighter carrying a
+## single tick's worth of pull and no accumulation at all.
+func apply_pull(impulse: Vector3) -> void:
+	_knockback.x += impulse.x
+	_knockback.z += impulse.z
 
 
 ## Raises a shield: `factor` of an incoming knockback gets through, for `seconds`.

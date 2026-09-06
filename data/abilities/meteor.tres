@@ -1,0 +1,24 @@
+[gd_resource type="Resource" script_class="Ability" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://combat/abilities/ability.gd" id="1_ability"]
+
+[resource]
+script = ExtResource("1_ability")
+id = &"meteor"
+display_name = "Meteor"
+blurb = "Lands where you aimed, and the middle is the worst place to be."
+colour = Color(1, 0.415686, 0.301961, 1)
+glyph = 11
+cast_type = 0
+cooldown = 20.0
+charges = 1
+damage = 10.0
+push_mult = 1.0
+projectile_speed = 7.81
+projectile_radius = 0.55
+bolt = 5
+lifetime = 0.8
+spawn_offset = 0.9
+projectile_drag = 1.0
+area = 3.2
+falloff_over = 3.2
