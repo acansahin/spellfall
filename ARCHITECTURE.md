@@ -57,9 +57,9 @@ res://
   network/         (planned) Phase C onward
   .github/workflows/  pages.yml - exports the Web preset and publishes it to GitHub Pages
   vfx/             spell_glyph.gd - 22 icons, as vector shapes in a unit box;
-                   ground_shapes.gd - flat meshes; spell_flash.gd - the fan Force Wave
+                   ground_shapes.gd - flat meshes; spell_flash.gd - the fan Scourge
                    draws; aim_indicator.gd - what a spell will do, before it does it;
-                   impact_burst.gd - sparks; ground_streak.gd - the smear a Blink leaves
+                   impact_burst.gd - sparks; ground_streak.gd - the smear a Teleport leaves
   audio/           sound_bank.gd - every sound, synthesized. There are no audio files
   tests/  assets/
 ```
@@ -606,7 +606,7 @@ Two details are worth keeping:
 
 **In the air, shape carries the identity too.** `Ability.bolt` picks one of five meshes built
 once and shared by every projectile that ever flies with it: an `ORB` (Fireball), a `SHARD`
-(Arc Lance), a `DART` (Seeker), a spinning `BLADE` (Loopshot) and a flat `RING` (Warp Bolt).
+(Lightning), a `DART` (Homing), a spinning `BLADE` (Boomerang) and a flat `RING` (Swap).
 `--bolt-pose` fires all five down parallel lanes so one screenshot compares them.
 
 Three rules hold it together:
@@ -634,11 +634,11 @@ Four details are load-bearing:
   stays taken, so the escalation curve survives the spell. `Ability.rewind` says so in its own
   doc comment, and `--loadout-test` asserts it rather than trusting it.
 
-- **Force Wave pushes outward, not forward.** A wave shoves what it touches, so someone caught
+- **Scourge pushes outward, not forward.** A wave shoves what it touches, so someone caught
   at the shoulder of the fan is thrown sideways — which near a rim is off it. That is the
   whole reason it is the finisher, and `--spells-test` asserts the direction rather than
   trusting it.
-- **Blink is clamped by the LEVEL, not by the spell.** `main.gd` is the only thing that knows
+- **Teleport is clamped by the LEVEL, not by the spell.** `main.gd` is the only thing that knows
   where the edge is, and it already reads the radius off the platform's collision shape. A
   spell that could drop you in the void is a spell nobody would ever press.
 - **The shield is applied in `Player.apply_knockback`, not in `Knockback.velocity`.** The
@@ -739,7 +739,7 @@ fifth spell is a node and an angle.
 
 `AbilityButton` tests a **disc**, not its bounding box. A round button with a square hit area
 claims the corners of a square nobody can see, and in a cluster those invisible corners overlap
-— which turns "tap Blink" into "cast whichever button happens to sit earlier in the scene
+— which turns "tap Teleport" into "cast whichever button happens to sit earlier in the scene
 tree", with nothing on screen looking wrong. Matching the hit area to the drawing is what lets
 the cluster be tight enough to reach without moving your hand. `--twothumb-test` asserts no two
 buttons can share a finger, and `--button-test` asserts a tap in the gap between two of them
@@ -826,7 +826,7 @@ Two of those are decisions rather than drawings:
 
 The level drives the indicator every rendered frame, rather than on a signal, because the thing
 being previewed moves: you walk while you aim. It is driven by `main.gd` and not by the fighter
-for the same reason Blink is clamped there — the arena's size is the level's knowledge.
+for the same reason Teleport is clamped there — the arena's size is the level's knowledge.
 
 ### Casting is latched, not sampled
 
@@ -873,14 +873,14 @@ reaction time is a gameplay number: it must not sharpen on a 144Hz desktop and d
 | Hold a range | closes outside `preferred_range + range_slack`, backs off inside `preferred_range - range_slack`, circles in between |
 | Aim | at where the target is *going* — led by the projectile's flight time |
 | Shoot | once the spell is ready and it has dawdled for `cast_gap` |
-| Choose a spell | get back on the arena (Blink), shove off whoever is in its face (Force Wave), brace if it is nearly gone (Shield), otherwise Fireball |
+| Choose a spell | get back on the arena (Teleport), shove off whoever is in its face (Scourge), brace if it is nearly gone (Shield), otherwise Fireball |
 | Stay on the arena | never *asks* to move outward past `arena_radius - edge_margin`, and the further past that line it is, the more of its steering goes to getting back |
 
 Being thrown off is the game; walking off is a bug. Knockback still removes it exactly as it
 removes the player.
 
 It finds its spells **by cast type, not by slot index**, so a wizard with a different loadout -
-or with only two spells - is playable by the same bot with nothing changed here. Blink is the
+or with only two spells - is playable by the same bot with nothing changed here. Teleport is the
 one cast it does not aim at you: it is the escape, so it is aimed at the middle of the arena,
 and because facing follows aim the wizard visibly runs for safety rather than moonwalking.
 
@@ -978,7 +978,7 @@ lens lunging at them - `_on_arena_resized()` clamps what it hands the camera:
 ## The ring, and who owns its size
 
 `arena/arena.gd` owns the radius. It used to be a number typed into a collision shape and read
-once at startup; it moves now, so five readers ask instead of copying: Blink clamps against
+once at startup; it moves now, so five readers ask instead of copying: Teleport clamps against
 it, the bot keeps clear of it, the aim lane stops at it, the lava burns whoever is outside it,
 and the camera frames it. It arrives by `radius_changed` rather than being fetched, because a
 stale copy would put the bot's idea of the edge, the lava's idea of it and the drawn rim in
@@ -1010,7 +1010,7 @@ rounds is the only way back to full, which is what turns the number into a budge
 a bar that tops up between exchanges.
 
 Who is burning is decided by `main.gd._tick_lava()` with a **radius test**, not an `Area3D`.
-The arena is a circle and every other rule in the file already knows it - Blink clamps against
+The arena is a circle and every other rule in the file already knows it - Teleport clamps against
 it, the bot keeps clear of it, the aim lane stops at it - so a fifth way of asking "am I inside
 the ring" would be a fifth thing to keep in step.
 
@@ -1044,7 +1044,7 @@ Four obstacles stand in the arena - two rocks and two trees - and they do three 
 it, so a Fireball dies against a rock. The level's `_apply_hit` then finds the body is not a
 `Player` and does nothing, which is exactly what hitting a rock should mean. `ConeCast` casts
 a sight line against the same layer for the same reason: **cover has to mean one thing**, and
-a rock that stops a Fireball but not a Force Wave teaches a rule and then breaks it.
+a rock that stops a Fireball but not a Scourge teaches a rule and then breaks it.
 
 The sight line runs between two fighters' ORIGINS, which sit at chest height on a 2m capsule -
 so an obstacle has to be about that tall to be cover, and both of these are. It is cast against
@@ -1148,7 +1148,7 @@ argument-gated harness. Everything after a bare `--` reaches `OS.get_cmdline_use
 | `--bot-test` | Asserts the bot: range, aim, facing, edge safety, difficulty, and that it does not cheat |
 | `--bot:off` | Parks the bot, for a screenshot or a suite that measures something else |
 | `--bot-skill:S` | `calm`, `steady` or `sharp`, to play a different difficulty |
-| `--spells-test` | Asserts Force Wave, Blink and Arcane Shield do what they claim |
+| `--spells-test` | Asserts Scourge, Teleport and Shield do what they claim |
 | `--button-test` | Asserts a finger on button N casts spell N and nothing else |
 | `--aim-test` | Asserts drag-to-aim: the indicator, the direction, the latch, and the dash clamp |
 | `--aim-hold:S,X,Y` | Holds a drag on button S toward X,Y and never lifts, so a shot catches the indicator |

@@ -183,7 +183,7 @@ func _track(global_pos: Vector2) -> void:
 ##
 ## A DISC, not the bounding box. The button is drawn as a circle, so a square hit area claims
 ## the corners of a square nobody can see - and with four buttons in a cluster those invisible
-## corners overlap, which turns "tap Blink" into "cast whichever button sits earlier in the
+## corners overlap, which turns "tap Teleport" into "cast whichever button sits earlier in the
 ## scene tree". Matching the hit area to the drawing is what lets the cluster be tight enough
 ## to reach with one thumb.
 func _claims(point: Vector2) -> bool:
@@ -234,7 +234,7 @@ func _draw() -> void:
 		# letter over them would be a reminder of a keyboard nobody is holding.
 		if key_label != "":
 			# Placed against the BUTTON's rim rather than the glyph's corner. At the glyph's
-			# size it landed on top of the drawing - the E sat inside Blink's own dot - and a
+			# size it landed on top of the drawing - the E sat inside Teleport's own dot - and a
 			# reminder that obscures the thing it is reminding you of is worth less than
 			# nothing.
 			SpellGlyph.draw_key(self, key_label, _centre, radius * 0.74,

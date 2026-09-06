@@ -3,8 +3,8 @@ extends Object
 
 ## Flat meshes that lie on the ground plane, built from a spell's own numbers.
 ##
-## Every one of these is a shape the player is told something with: the fan Force Wave will
-## hit, the lane a Fireball will fly down, the spot a Blink will put you on. They live in one
+## Every one of these is a shape the player is told something with: the fan Scourge will
+## hit, the lane a Fireball will fly down, the spot a Teleport will put you on. They live in one
 ## file because the SAME shape is drawn twice - once while you are aiming and once when the
 ## spell goes off - and a fan that was aimed differently from the fan that hit would teach the
 ## player something untrue. One builder, two callers, no second copy of the trigonometry.
@@ -58,7 +58,7 @@ static func strip(length: float, width: float, start: float = 0.0) -> ArrayMesh:
 
 ## An annulus centred on the origin: a ring `thickness` metres wide at `radius`.
 ##
-## Used for the spot a Blink lands on and for the "this one affects you" circle a buff draws.
+## Used for the spot a Teleport lands on and for the "this one affects you" circle a buff draws.
 ## A ring rather than a disc because a filled circle under a wizard reads as ground the
 ## wizard is standing on, and this is a place the wizard is not standing yet.
 static func ring(radius: float, thickness: float) -> ArrayMesh:

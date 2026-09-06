@@ -3,7 +3,7 @@ extends MeshInstance3D
 
 ## A flat fan of light on the ground, for a spell that happens instantly.
 ##
-## Force Wave hits everything in its cone on the frame it is cast. With nothing drawn there
+## Scourge hits everything in its cone on the frame it is cast. With nothing drawn there
 ## is no way to connect "I tapped" to "they flew", and an instant spell you cannot see is one
 ## nobody can learn to dodge. Readability beats spectacle - see GAME_DESIGN.md - so this is a
 ## flat translucent fan and nothing else. The game-feel pass can make it beautiful.

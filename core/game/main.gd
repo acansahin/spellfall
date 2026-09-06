@@ -20,7 +20,7 @@ extends Node3D
 ##   --bot-test        assert the bot: range, aim, facing, edge safety, difficulty, fairness
 ##   --bot:off         park the bot, for a screenshot or a suite measuring something else
 ##   --bot-skill:S     play against calm|steady|sharp instead of the scene's setting
-##   --spells-test     assert Force Wave, Blink and Arcane Shield do what they claim
+##   --spells-test     assert Scourge, Teleport and Shield do what they claim
 ##   --loadout-test    assert the catalogue, the picks, the screen, and each added spell's rule
 ##   --2v2             two a side: you and a bot ally against two bots
 ##   --pc-test         assert the desk controls: right click to walk, Q W E R to arm, left
@@ -130,7 +130,7 @@ var _spawns: Dictionary = {}
 var _titles: Dictionary = {}
 
 ## Metres either side of a spawn point that teammates stand, in a team match. Wide enough that
-## a Force Wave aimed at one does not automatically catch the other on the opening exchange.
+## a Scourge aimed at one does not automatically catch the other on the opening exchange.
 const TEAM_SPREAD := 2.6
 
 ## Metres from a walk order at which it counts as reached. Roughly a body's width: closer than
@@ -153,11 +153,11 @@ var _move_target_set := false
 const ALLY_TINT := Color(0.36, 0.82, 0.62)
 const SECOND_FOE_TINT := Color(0.95, 0.42, 0.20)
 
-## The platform's radius, measured once in _ready. Blink clamps against it and the bot is
+## The platform's radius, measured once in _ready. Teleport clamps against it and the bot is
 ## handed it; nothing else in the level needs to know the arena has a size.
 var _arena_edge := 7.0
 
-## How far inside the rim a Blink is allowed to land. Enough that you arrive ON the platform
+## How far inside the rim a Teleport is allowed to land. Enough that you arrive ON the platform
 ## rather than on its lip, where the next breath of knockback removes you anyway.
 const BLINK_EDGE_MARGIN := 0.6
 
@@ -246,7 +246,7 @@ func _tick_tethers(delta: float) -> void:
 ## reverse it.
 ##
 ## A radius test rather than an Area3D. The arena is a circle and every other rule in this
-## file already knows it - Blink clamps against it, the bot keeps clear of it, the aim lane
+## file already knows it - Teleport clamps against it, the bot keeps clear of it, the aim lane
 ## stops at it - so a fifth way of asking "am I inside the ring" would be a fifth thing to
 ## keep in step. It is also two floats of work per fighter per tick.
 ##
@@ -451,7 +451,7 @@ func _quiet_feel() -> void:
 ##
 ## Third in the family, after `_freeze_bot()` and `_quiet_feel()`, and for the same reason
 ## each time: every suite written before cover existed assumes an EMPTY arena and picks the
-## spot it measures from by hand. Force Wave's "the push goes away from the caster" test
+## spot it measures from by hand. Scourge's "the push goes away from the caster" test
 ## happened to put its target a metre from a tree, so the victim slid along the trunk and the
 ## measured push came out 30 degrees off - correct physics, correct test, arena furniture in
 ## the way. That is the most expensive kind of failure to read, so the furniture goes.
@@ -1226,7 +1226,7 @@ func _bounce_onward(body: Node3D, ability: Ability, shooter: Node3D) -> void:
 	_pool.fire(weaker, from.global_position + heading * weaker.spawn_offset, heading, shooter)
 
 
-## Force Wave. Everything standing in the fan is hit on this frame, and thrown AWAY FROM THE
+## Scourge. Everything standing in the fan is hit on this frame, and thrown AWAY FROM THE
 ## CASTER rather than along the aim.
 ##
 ## That difference is the spell. A wave shoves what it touches outward, so catching someone at
@@ -1257,7 +1257,7 @@ func _cast_cone(ability: Ability, direction: Vector3, caster: Node3D) -> void:
 		_apply_hit(body, push.normalized(), ability, caster, _falloff(ability, reach))
 
 
-## Blink. The landing point is clamped INSIDE the arena here, in the level, because the level
+## Teleport. The landing point is clamped INSIDE the arena here, in the level, because the level
 ## is the only thing that knows where the edge is - and a spell that could drop you in the
 ## void is a spell nobody would ever press.
 func _cast_dash(ability: Ability, direction: Vector3, caster: Node3D) -> void:
@@ -1334,7 +1334,7 @@ func _blink_landing(fighter: Player, direction: Vector3, ability: Ability) -> Ve
 ## a ward, a conversion and a rewind all do exactly one thing to the caster and nothing to the
 ## world, so they share a runtime and differ in which fields are set.
 ##
-## Arcane Shield is reduction rather than blocking - see GAME_DESIGN.md for why blocking is the
+## Shield is reduction rather than blocking - see GAME_DESIGN.md for why blocking is the
 ## better long-term version and still not the one that ships.
 func _cast_buff(ability: Ability, caster: Node3D) -> void:
 	var fighter := caster as Player
@@ -1999,7 +1999,7 @@ func _run_two_thumb_tests() -> void:
 			not stick.get_global_rect().grow(44.0).intersects(other.get_global_rect().grow(16.0)),
 			"stick=%s button=%s" % [stick.get_global_rect(), other.get_global_rect()])
 	# And no two spells share a finger. A cluster tight enough to thumb is a cluster tight
-	# enough to mis-tap, and a mis-tapped Blink at the rim is a lost round.
+	# enough to mis-tap, and a mis-tapped Teleport at the rim is a lost round.
 	for i in _mobile.buttons.size():
 		for j in range(i + 1, _mobile.buttons.size()):
 			var a: AbilityButton = _mobile.buttons[i]
@@ -2658,8 +2658,8 @@ func _run_bot_tests() -> void:
 # Spell harness
 #
 # Three of the four spells do not throw a projectile, so nothing about them can be watched
-# flying across the arena. Force Wave hits on the frame it is cast, Blink moves the caster
-# between one tick and the next, and Arcane Shield is a number that changes what a LATER hit
+# flying across the arena. Scourge hits on the frame it is cast, Teleport moves the caster
+# between one tick and the next, and Shield is a number that changes what a LATER hit
 # does. Each of those is easy to write and easy to get silently wrong, which is exactly the
 # shape of thing that needs measuring rather than playing.
 # ---------------------------------------------------------------------------------------
@@ -2718,12 +2718,12 @@ func _run_spell_tests() -> void:
 	var jump := book.ability_in(dash)
 	var shield := book.ability_in(buff)
 
-	# --- Force Wave: it hits what is in the fan --------------------------------------------
+	# --- Scourge: it hits what is in the fan --------------------------------------------
 	# The bot is put two and a half metres along +X, and the wave is aimed the same way.
 	await _place_fighters(Vector3(2.5, 1.2, 0.0), Vector3(0.0, 1.2, 0.0))
 	var before: float = target.current
 	var cone_fired: bool = book.try_cast(cone, Vector3(1, 0, 0))
-	_expect("Force Wave was ready", cone_fired, "try_cast returned %s" % cone_fired)
+	_expect("Scourge was ready", cone_fired, "try_cast returned %s" % cone_fired)
 	await get_tree().physics_frame
 	_expect("a target inside the fan is hit",
 		is_equal_approx(target.current - before, wave.damage),
@@ -2761,7 +2761,7 @@ func _run_spell_tests() -> void:
 		"90 degrees off a %.0f degree half-angle, instability %.0f%%" % [wave.cone_angle, target.current])
 
 	# The push follows the line out from the caster, not the line the wave was aimed along.
-	# That is the whole reason Force Wave is a finisher: standing at the shoulder of the fan
+	# That is the whole reason Scourge is a finisher: standing at the shoulder of the fan
 	# throws you sideways, which near a rim is off it.
 	await _place_fighters(Vector3(2.0, 1.2, -1.6), Vector3(0.0, 1.2, 0.0))
 	book.reset()
@@ -2772,14 +2772,14 @@ func _run_spell_tests() -> void:
 		shoved.y < -0.4 and shoved.x > 0.4,
 		"target sat up and left of the aim; it moved %s" % shoved)
 
-	# --- Blink: it moves you, exactly as far as it says --------------------------------------
+	# --- Teleport: it moves you, exactly as far as it says --------------------------------------
 	await _place_fighters(Vector3(0.0, 1.2, -5.0), Vector3(0.0, 1.2, 0.0))
 	var from := _player.global_position
 	var dash_fired: bool = book.try_cast(dash, Vector3(1, 0, 0))
-	_expect("Blink was ready", dash_fired, "try_cast returned %s" % dash_fired)
+	_expect("Teleport was ready", dash_fired, "try_cast returned %s" % dash_fired)
 	await get_tree().physics_frame
 	var jumped := Vector2(_player.global_position.x - from.x, _player.global_position.z - from.z)
-	_expect("Blink moves the caster its full distance",
+	_expect("Teleport moves the caster its full distance",
 		absf(jumped.x - jump.dash_distance) < 0.2 and absf(jumped.y) < 0.2,
 		"moved %s, spell says %.1fm" % [jumped, jump.dash_distance])
 	_expect("and put itself on cooldown", not book.is_ready(dash),
@@ -2792,7 +2792,7 @@ func _run_spell_tests() -> void:
 	book.try_cast(dash, Vector3(1, 0, 0))
 	await get_tree().physics_frame
 	var landed := _radius_of(_player.global_position)
-	_expect("Blink aimed off the arena lands on the arena", landed <= _arena_edge - 0.5,
+	_expect("Teleport aimed off the arena lands on the arena", landed <= _arena_edge - 0.5,
 		"from %.2fm outward, landed at %.2fm, rim %.2fm" % [rim, landed, _arena_edge])
 
 	# --- ...and cancels the slide, but not the stun --------------------------------------------
@@ -2803,12 +2803,12 @@ func _run_spell_tests() -> void:
 		"%.1f m/s" % _player.knockback_velocity().length())
 	book.try_cast(dash, Vector3(-1, 0, 0))
 	await get_tree().physics_frame
-	_expect("Blink cancels the slide", _player.knockback_velocity().length() < 0.01,
+	_expect("Teleport cancels the slide", _player.knockback_velocity().length() < 0.01,
 		"%.3f m/s" % _player.knockback_velocity().length())
 	_expect("but not the hitstun, so it is not a free reset", _player.is_in_hitstun(),
 		"in hitstun=%s" % _player.is_in_hitstun())
 
-	# --- Arcane Shield: it goes up, and it comes down --------------------------------------------
+	# --- Shield: it goes up, and it comes down --------------------------------------------
 	await _place_fighters(Vector3(0.0, 1.2, -5.0), Vector3(0.0, 1.2, 0.0))
 	var buff_fired: bool = book.try_cast(buff, Vector3.ZERO)
 	_expect("Shield was ready", buff_fired, "try_cast returned %s" % buff_fired)
@@ -3116,7 +3116,7 @@ func _run_aim_tests() -> void:
 
 	# --- a dash previews where it will REALLY land ----------------------------------------
 	#
-	# Standing close enough to the rim that a Blink would leave the arena, so the preview has
+	# Standing close enough to the rim that a Teleport would leave the arena, so the preview has
 	# to come out shorter than the spell. Positioned against the ARENA rather than at a fixed
 	# 3m, so growing the board cannot quietly turn this into a test of nothing.
 	var dash_slot := _slot_with(book, Ability.CastType.DASH)
@@ -3260,7 +3260,7 @@ func _run_feel_tests() -> void:
 	_freeze_bot()
 	_input.set_override_vector(Vector2.ZERO, true)
 	await _wait_for_live()
-	# Both fighters in the middle, so a Force Wave at full strength cannot throw either of
+	# Both fighters in the middle, so a Scourge at full strength cannot throw either of
 	# them off the arena in the middle of a measurement.
 	await _place_fighters(Vector3(0.0, 1.2, -2.5), Vector3(0.0, 1.2, 0.0))
 	var book := _player.abilities()
@@ -4008,16 +4008,16 @@ func _run_loadout_tests() -> void:
 
 	await _wait_for_live()
 
-	# --- Arc Lance: the long one --------------------------------------------------------------
+	# --- Lightning: the long one --------------------------------------------------------------
 	var fireball: Ability = catalogue.primary
 	var lance := _spell(&"arc_lance")
-	_expect("Arc Lance reaches far past Fireball",
+	_expect("Lightning reaches far past Fireball",
 		lance.effective_range() > fireball.effective_range() * 1.8,
 		"%.1fm vs %.1fm" % [lance.effective_range(), fireball.effective_range()])
 	_expect("and pays for it in cooldown", lance.cooldown > fireball.cooldown * 2.0,
 		"%.1fs vs %.1fs" % [lance.cooldown, fireball.cooldown])
 
-	# --- Seeker: it turns, and the turn is what lands it ----------------------------------------
+	# --- Homing: it turns, and the turn is what lands it ----------------------------------------
 	await _equip(&"seeker", &"blink", &"arcane_shield")
 	await _place_fighters(Vector3(0.0, 1.2, 0.0), Vector3(0.0, 1.2, -5.0))
 	var seeker := _spell(&"seeker")
@@ -4039,7 +4039,7 @@ func _run_loadout_tests() -> void:
 	_expect("and lands the shot the aim missed", caught >= seeker.damage - 0.01,
 		"damage points rose %.0f, spell adds %.0f" % [caught, seeker.damage])
 
-	# --- Loopshot: it comes home, and it can catch you twice --------------------------------------
+	# --- Boomerang: it comes home, and it can catch you twice --------------------------------------
 	await _equip(&"loopshot", &"blink", &"arcane_shield")
 	var loop := _spell(&"loopshot")
 	_expect("its stated reach is the outward leg, not the whole flight",
@@ -4091,7 +4091,7 @@ func _run_loadout_tests() -> void:
 	_expect("and can catch the same wizard going and coming", hits[0] >= 2,
 		"%d hits from one cast" % hits[0])
 
-	# --- Lunge: a charge that hits what it runs through --------------------------------------------
+	# --- Thrust: a charge that hits what it runs through --------------------------------------------
 	await _equip(&"force_wave", &"lunge", &"arcane_shield")
 	var lunge := _spell(&"lunge")
 	await _place_fighters(Vector3(3.0, 1.2, 0.0), Vector3(0.0, 1.2, 0.0))
@@ -4109,7 +4109,7 @@ func _run_loadout_tests() -> void:
 		"instability rose %.0f, spell adds %.0f" % [
 			_instability_of(_bot) - before, lunge.damage])
 
-	# --- ...and a plain Blink still does not -------------------------------------------------------
+	# --- ...and a plain Teleport still does not -------------------------------------------------------
 	await _equip(&"force_wave", &"blink", &"arcane_shield")
 	await _place_fighters(Vector3(3.0, 1.2, 0.0), Vector3(0.0, 1.2, 0.0))
 	before = _instability_of(_bot)
@@ -4118,9 +4118,9 @@ func _run_loadout_tests() -> void:
 	await _wait(0.2)
 	_expect("an escape is still only an escape",
 		is_equal_approx(_instability_of(_bot), before),
-		"Blink left instability at %.0f" % _instability_of(_bot))
+		"Teleport left instability at %.0f" % _instability_of(_bot))
 
-	# --- Warp Bolt: it trades, and it does not hurt ----------------------------------------------
+	# --- Swap: it trades, and it does not hurt ----------------------------------------------
 	await _equip(&"force_wave", &"warp_bolt", &"arcane_shield")
 	await _place_fighters(Vector3(4.5, 1.2, 0.0), Vector3(0.0, 1.2, 0.0))
 	var mine := _player.global_position
@@ -4139,7 +4139,7 @@ func _run_loadout_tests() -> void:
 		is_equal_approx(_instability_of(_bot), before),
 		"instability %.0f" % _instability_of(_bot))
 
-	# --- Rewind: it undoes where you are, never what you took ----------------------------------------
+	# --- Time Shift: it undoes where you are, never what you took ----------------------------------------
 	await _equip(&"force_wave", &"blink", &"rewind")
 	var rewind := _spell(&"rewind")
 	await _place_fighters(Vector3(0.0, 1.2, 6.0), Vector3(2.0, 1.2, 0.0))
@@ -4165,7 +4165,7 @@ func _run_loadout_tests() -> void:
 		"instability %.0f, still the %.0f it climbed to" % [
 			_instability_of(_player), instability_then])
 
-	# --- Momentum: the hit pays for itself -------------------------------------------------------
+	# --- Rush: the hit pays for itself -------------------------------------------------------
 	await _equip(&"force_wave", &"blink", &"momentum")
 	var momentum := _spell(&"momentum")
 	var blow := Knockback.velocity(9.0, Vector3(1, 0, 0), 0.0, knockback_rules)

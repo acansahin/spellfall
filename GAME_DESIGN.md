@@ -42,6 +42,19 @@ across at two different scales, leaving a wizard walking its ring 2.4x faster th
 does. There is one scale now, **1 metre = 128 Warcraft III units**, it is written down in
 `docs/warlock-reference.md`, and every measurement in the game derives from it.
 
+**The spell names are the map's too**, as of the same session. Ten of them had invented
+names here - Force Wave, Arc Lance, Seeker, Loopshot, Blink, Lunge, Warp Bolt, Arcane Shield,
+Rewind, Momentum - and they are now Scourge, Lightning, Homing, Boomerang, Teleport, Thrust,
+Swap, Shield, Time Shift and Rush. The other eleven arrived carrying the map's names already.
+
+**Their `id` keys did not follow, deliberately.** `Ability.id` is a stable key in code and in
+save data and is never shown to a player, and four of the map's names collide head-on with
+fields this code already has: `swaps_places` for Swap, `homing_turn` for Homing,
+`apply_shield` for Shield, `begin_rewind` for Time Shift. Those fields are named after
+BEHAVIOURS on purpose, so that whatever spell uses one can be called anything - renaming them
+to match would undo exactly that. So `force_wave.tres` holds a spell called Scourge, and that
+is the field doing its job rather than drift.
+
 What still does not come from the map, and is not negotiable:
 
 - **No art, sound, models, text or UI layouts.** All of it is original and all of it is
@@ -229,7 +242,7 @@ answers "am I close enough" is the range itself, which reaches half way to the r
 Knockback is the mechanic; this is how the game says so. A hit stops the world for a few
 hundredths of a second, throws a spray of sparks at the contact point, jolts the camera,
 thumps, and buzzes the handset — all scaled by the same number, the knockback that actually
-landed. A hit somebody shrugged off with Arcane Shield feels shrugged off, because the reading
+landed. A hit somebody shrugged off with Shield feels shrugged off, because the reading
 is taken after the shield, not before.
 
 None of it is information the player did not already have. It is the same event the HUD
@@ -273,9 +286,9 @@ reason: a blast, a split, a stream, a bounce, a root, a drain, a pull and a teth
 
 | Spell | Type | Dmg | Push | Role |
 |---|---|---|---|---|
-| **Arc Lance** | Flat, 13.3 m/s, 12m | 7.0 | 1.2 | Crosses the ring almost instantly and shoves hard. The answer to someone who will not come close, and it costs you a sixteen-second wait. 16.5s. |
-| **Seeker** | Slow projectile, turns 220°/s, 9.4m | 7.0 | 1.0 | Corrects an aim that was wrong, and still loses somebody who walks across its nose. 14.0s. |
-| **Loopshot** | Flies out 8.4m, returns, pierces | 7.2 | 1.2 | Two chances at the same wizard from one cast — if you are still standing where it comes home. 16.0s. |
+| **Lightning** | Flat, 13.3 m/s, 12m | 7.0 | 1.2 | Crosses the ring almost instantly and shoves hard. The answer to someone who will not come close, and it costs you a sixteen-second wait. 16.5s. |
+| **Homing** | Slow projectile, turns 220°/s, 9.4m | 7.0 | 1.0 | Corrects an aim that was wrong, and still loses somebody who walks across its nose. 14.0s. |
+| **Boomerang** | Flies out 8.4m, returns, pierces | 7.2 | 1.2 | Two chances at the same wizard from one cast — if you are still standing where it comes home. 16.0s. |
 | **Meteor** | Lands at 6.3m, 3.2m blast | 10.0 | 1.0 | The only spell that does not need to touch anybody. Falls off to nothing at the edge of its own blast, so the middle is the worst place to stand. 20.0s. |
 | **Splitter** | Breaks into six at the end of its flight | 3.0 | 1.4 | Weak on its own and dangerous where it lands. The six carry the heaviest push in the roster. 30.0s. |
 | **Fire Spray** | Six shots down one line, 0.16s apart | 2.6 | **0.6** | One cast, six chances, and an aim you committed to before the first one left. The map's own "60% knockback". 16.0s. |
@@ -286,10 +299,10 @@ reason: a blast, a split, a stream, a bounce, a root, a drain, a pull and a teth
 
 | Spell | Type | Dmg | Push | Role |
 |---|---|---|---|---|
-| **Blink** | 6.0m teleport | — | — | Dodge and reposition. Clamped inside the arena, cancels the slide you are in, keeps the hitstun. 16.0s. |
-| **Lunge** | 5.5m charge that hits | 5.4 | 1.15 | The same escape, spent as an attack. It shoves what it runs through, and it puts you where they are. 17.0s. |
-| **Warp Bolt** | Projectile, 6.25m, trades places | — | — | Hurts nobody. It takes the ground they were standing on — including the ground over the lava. 16.0s. |
-| **WindWalk** | 7.0m charge that hits | 5.4 | 1.15 | Lunge with a longer run and a much longer wait. The map's own charge form. 30.0s. |
+| **Teleport** | 6.0m teleport | — | — | Dodge and reposition. Clamped inside the arena, cancels the slide you are in, keeps the hitstun. 16.0s. |
+| **Thrust** | 5.5m charge that hits | 5.4 | 1.15 | The same escape, spent as an attack. It shoves what it runs through, and it puts you where they are. 17.0s. |
+| **Swap** | Projectile, 6.25m, trades places | — | — | Hurts nobody. It takes the ground they were standing on — including the ground over the lava. 16.0s. |
+| **WindWalk** | 7.0m charge that hits | 5.4 | 1.15 | Thrust with a longer run and a much longer wait. The map's own charge form. 30.0s. |
 | **Entangle** | Projectile, roots for 4.5s | — | — | Takes their legs and nothing else. Knockback still moves them and the lava still burns them, which is the whole spell: it is only lethal where they are already standing. 27.0s. |
 | **Gravity** | Slow projectile dragging everything within 4.5m | 3.0 | **0.1** | Barely pushes and pulls constantly. It is the one spell that moves people without hitting them, and it moves you too. 26.0s. |
 | **Link** | Projectile, then 8s of 2.5/s | 0.2 | 0.2 | A commitment you make early and forget about. Twenty points over eight seconds, from a spell that does nothing on arrival. 16.0s. |
@@ -298,10 +311,10 @@ reason: a blast, a split, a stream, a bounce, a root, a drain, a pull and a teth
 
 | Spell | Type | Dmg | Push | Role |
 |---|---|---|---|---|
-| **Arcane Shield** | 2.8s ward | — | — | 35% of a hit gets through. Measured: a hit that carries 5.05m carries 2.53m through it. 25.0s. |
-| **Rewind** | Undo, 3.6s later | — | — | Puts you back where you cast it, with the health you had. It does NOT give back damage points — the round still remembers. 22.0s. |
-| **Momentum** | 7s, converts | — | — | Half of every hit is swallowed and paid back as walking speed, up to +2.5 m/s — which on a 1.64 m/s walk is more than doubling it. The only guard that rewards standing in a fight. 21.0s. |
-| **Force Wave** | Cone, 4m, instant | 10.0 | 0.8 | The map's heaviest single hit, and the ten-hit floor in person. Weak in the open, lethal near an edge. Throws away from YOU, not along the aim. 3.0s. |
+| **Shield** | 2.8s ward | — | — | 35% of a hit gets through. Measured: a hit that carries 5.05m carries 2.53m through it. 25.0s. |
+| **Time Shift** | Undo, 3.6s later | — | — | Puts you back where you cast it, with the health you had. It does NOT give back damage points — the round still remembers. 22.0s. |
+| **Rush** | 7s, converts | — | — | Half of every hit is swallowed and paid back as walking speed, up to +2.5 m/s — which on a 1.64 m/s walk is more than doubling it. The only guard that rewards standing in a fight. 21.0s. |
+| **Scourge** | Cone, 4m, instant | 10.0 | 0.8 | The map's heaviest single hit, and the ten-hit floor in person. Weak in the open, lethal near an edge. Throws away from YOU, not along the aim. 3.0s. |
 | **Cataclysm** | 5m burst around you, **you included** | 6.0 | 1.0 | Everything nearby, yourself at the centre taking the worst of it. Two-second cooldown, and the self-hit near a rim is a way to travel rather than only a cost. 2.0s. |
 | **Pious** | 3.6m burst around you, **you included**, allies mended 5 | 10.0 | 0.8 | Costs a lone caster five health and pays for itself the moment somebody is standing with you. 3.0s. |
 
@@ -334,7 +347,7 @@ ability, and the base ability says whether it needs a place to go.
 the map's own model, and it costs a mis-typed key nothing — a wrong spell is put back with the
 key you already have a finger on.
 
-**A ward needs no click.** Arcane Shield, Rewind and Momentum fire the instant you press their
+**A ward needs no click.** Shield, Time Shift and Rush fire the instant you press their
 key, because they are not pointed at anything. That is not a convenience anybody invented: the
 map's own three wards — Shield, Time Shift, Rush — are exactly the abilities there that take no
 target either, and the split falls out of a field this game already had.
@@ -366,7 +379,7 @@ you — reading your side matters, and finding yourself matters more.
 **The bot brings a random loadout every match.** Not for difficulty: it is the cheapest way to
 make sure a spell you never chose is still a spell you have had used against you.
 
-Arcane Shield ships as **knockback reduction** rather than projectile-blocking. Reduction is
+Shield ships as **knockback reduction** rather than projectile-blocking. Reduction is
 one number multiplied into the existing knockback formula; blocking needs projectile
 ownership, hit cancellation and its own visual language. Blocking is the better long-term
 version and stays on the roadmap.
@@ -416,8 +429,8 @@ the way. Stone mends 10 a second, deliberately less than half the burn: a dunk s
 something that lasts.
 
 **Fireball is the only spell that touches it directly** - 20 points a hit, on a 100-point
-total, so five landed shots end a fighter the way five seconds in the lava does. Force Wave,
-Blink and Arcane Shield still say nothing to it; the fight is still mostly about instability
+total, so five landed shots end a fighter the way five seconds in the lava does. Scourge,
+Teleport and Shield still say nothing to it; the fight is still mostly about instability
 and position, with one straight-line threat that skips the knockback question entirely.
 
 **Standing on stone no longer heals it.** A trip into the lava or a Fireball to the face costs
@@ -464,7 +477,7 @@ Not a feature list. These are the questions the prototype has to answer "yes" to
 - Does moving feel immediate and precise?
 - Does aiming feel good with a thumb?
 - Is landing a Fireball satisfying?
-- Is Force Wave near an edge exciting?
+- Is Scourge near an edge exciting?
 - Is knockback predictable enough to plan around?
 - Does rising instability actually create tension?
 - Does falling off work reliably and read clearly?

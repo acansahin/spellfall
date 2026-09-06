@@ -5,7 +5,7 @@
 [resource]
 script = ExtResource("1_ability")
 id = &"momentum"
-display_name = "Momentum"
+display_name = "Rush"
 blurb = "Half of every hit becomes walking speed."
 colour = Color(1, 0.549020, 0.549020, 1)
 glyph = 10

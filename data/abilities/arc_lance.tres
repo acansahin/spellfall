@@ -5,7 +5,7 @@
 [resource]
 script = ExtResource("1_ability")
 id = &"arc_lance"
-display_name = "Arc Lance"
+display_name = "Lightning"
 blurb = "Crosses the ring in a blink. Barely pushes."
 colour = Color(1, 0.945098, 0.552941, 1)
 glyph = 2

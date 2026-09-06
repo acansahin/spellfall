@@ -96,7 +96,7 @@ func _build() -> void:
 		_sweep(0.13, 380.0, 780.0, 0.45, 7.0),
 		_noise(0.05, 0.10, 20.0),
 	]))
-	# Blink is the same idea taken further and made airier - mostly noise, so it reads as
+	# Teleport is the same idea taken further and made airier - mostly noise, so it reads as
 	# displacement rather than as a projectile leaving.
 	_bank[&"blink"] = _wav(_mix([
 		_sweep(0.20, 300.0, 1250.0, 0.22, 5.0),

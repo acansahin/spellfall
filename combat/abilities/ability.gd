@@ -40,25 +40,25 @@ enum CastType {
 enum Glyph {
 	## A teardrop. Fireball.
 	FLAME,
-	## Arcs spreading from a point. Force Wave.
+	## Arcs spreading from a point. Scourge.
 	FAN,
-	## A lightning zigzag. Arc Lance.
+	## A lightning zigzag. Lightning.
 	BOLT,
-	## A curl tightening inward, with a head. Seeker.
+	## A curl tightening inward, with a head. Homing.
 	SPIRAL,
-	## A bent, thrown thing. Loopshot.
+	## A bent, thrown thing. Boomerang.
 	BOOMERANG,
-	## Two feet and a dashed hop. Blink.
+	## Two feet and a dashed hop. Teleport.
 	JUMP,
-	## Three forward chevrons. Lunge.
+	## Three forward chevrons. Thrust.
 	CHEVRON,
-	## Two arrows passing each other. Warp Bolt.
+	## Two arrows passing each other. Swap.
 	SWAP,
-	## A heraldic shield. Arcane Shield.
+	## A heraldic shield. Shield.
 	SHIELD,
-	## A clock with its hands set back. Rewind.
+	## A clock with its hands set back. Time Shift.
 	CLOCK,
-	## A wall, and lines leaving it faster. Momentum.
+	## A wall, and lines leaving it faster. Rush.
 	SURGE,
 	## A lump with a streak behind it. Meteor.
 	ROCK,
@@ -92,13 +92,13 @@ enum Glyph {
 enum Bolt {
 	## A ball. Fireball, and the default for anything that has not thought about it.
 	ORB,
-	## A long thin spike along the line of flight. Arc Lance.
+	## A long thin spike along the line of flight. Lightning.
 	SHARD,
-	## A cone with its point forward. Seeker.
+	## A cone with its point forward. Homing.
 	DART,
-	## A flat bar, spinning as it goes. Loopshot.
+	## A flat bar, spinning as it goes. Boomerang.
 	BLADE,
-	## A hoop, lying flat. Warp Bolt.
+	## A hoop, lying flat. Swap.
 	RING,
 	## A lump. Meteor, and anything else that is a thrown thing rather than a spell.
 	STONE,

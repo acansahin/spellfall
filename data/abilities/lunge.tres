@@ -5,7 +5,7 @@
 [resource]
 script = ExtResource("1_ability")
 id = &"lunge"
-display_name = "Lunge"
+display_name = "Thrust"
 blurb = "A charge that hits whoever is in the way."
 colour = Color(1, 0.717647, 0.301961, 1)
 glyph = 6

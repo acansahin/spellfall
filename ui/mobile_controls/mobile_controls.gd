@@ -89,7 +89,7 @@ func _ready() -> void:
 ##
 ## Read out of the tree rather than listed here, so adding a spell button is adding a node.
 ## Sorted by `slot` rather than trusting tree order, because the two disagreeing would place
-## Blink where the player expects Fireball, and nothing about the screen would look wrong.
+## Teleport where the player expects Fireball, and nothing about the screen would look wrong.
 func _collect_buttons() -> void:
 	buttons.clear()
 	for child in get_children():

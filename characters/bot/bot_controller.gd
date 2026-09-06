@@ -20,7 +20,7 @@ extends PlayerInputController
 ## human's controller. A bot's reaction time is a gameplay number: it must not get sharper on
 ## a 144Hz desktop and duller on a 30fps phone.
 
-## How much of Force Wave's reach the target must be inside before the bot throws one.
+## How much of Scourge's reach the target must be inside before the bot throws one.
 ## Firing at the very tip of the fan is how a cone misses a target that took one step.
 const CONE_TRIGGER := 0.9
 
@@ -86,7 +86,7 @@ const PROFILES: Dictionary = {
 @export var rng_seed := 0
 
 @export_group("Spells")
-## Own instability, in percent, above which it spends Arcane Shield. Below this a shield is
+## Own instability, in percent, above which it spends Shield. Below this a shield is
 ## wasted on a hit that was not going to remove it anyway.
 @export var shield_above := 70.0
 
@@ -170,7 +170,7 @@ func _physics_process(delta: float) -> void:
 
 	_perceive(delta)
 	var wish := _keep_inside(_steer(delta))
-	# The spell is chosen BEFORE the aim, because the two are not independent: Blink is aimed
+	# The spell is chosen BEFORE the aim, because the two are not independent: Teleport is aimed
 	# at safety and everything else is aimed at the enemy.
 	var slot := _choose_slot()
 	var aim := _aim_for(slot)
@@ -371,7 +371,7 @@ func _best_projectile(book: AbilityComponent) -> int:
 	return _slot_of(book, Ability.CastType.PROJECTILE)
 
 
-## Where to aim for a given spell. Blink goes towards the middle of the arena, because it is
+## Where to aim for a given spell. Teleport goes towards the middle of the arena, because it is
 ## the escape; everything else goes at the enemy. The wizard faces its aim, so a bot that is
 ## running for the centre also looks like it.
 func _aim_for(slot: int) -> Vector2:

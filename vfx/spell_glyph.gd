@@ -20,7 +20,7 @@ extends RefCounted
 ## The shapes are named for what they LOOK like, not for the spell that uses them, so two
 ## spells may share one and a new spell picks the closest fit rather than forcing a new
 ## drawing - the same reason `Ability.returns_after` is named after the behaviour and not
-## after Loopshot.
+## after Boomerang.
 
 ## How far the arrowheads stick out, in unit-box terms.
 const HEAD := 0.28
@@ -134,7 +134,7 @@ static func _flame(canvas: CanvasItem, centre: Vector2, size: float, tint: Color
 	], centre, size, core)
 
 
-## Force Wave. Three arcs spreading from a point on the left: the fan, drawn as the fan.
+## Scourge. Three arcs spreading from a point on the left: the fan, drawn as the fan.
 static func _fan(canvas: CanvasItem, centre: Vector2, size: float, tint: Color,
 		width: float) -> void:
 	var origin := centre + Vector2(-0.85, 0.0) * size
@@ -144,7 +144,7 @@ static func _fan(canvas: CanvasItem, centre: Vector2, size: float, tint: Color,
 			width, true)
 
 
-## Arc Lance. A lightning zigzag - the only glyph made of one unbroken hard-angled line.
+## Lightning. A lightning zigzag - the only glyph made of one unbroken hard-angled line.
 static func _bolt(canvas: CanvasItem, centre: Vector2, size: float, tint: Color,
 		width: float) -> void:
 	_stroke(canvas, [
@@ -152,7 +152,7 @@ static func _bolt(canvas: CanvasItem, centre: Vector2, size: float, tint: Color,
 	], centre, size, tint, width)
 
 
-## Seeker. A curl tightening inward, with a head on the end: a path that changed its mind.
+## Homing. A curl tightening inward, with a head on the end: a path that changed its mind.
 static func _spiral(canvas: CanvasItem, centre: Vector2, size: float, tint: Color,
 		width: float) -> void:
 	var points: Array = []
@@ -169,7 +169,7 @@ static func _spiral(canvas: CanvasItem, centre: Vector2, size: float, tint: Colo
 	_head(canvas, centre, size, tint, width, last, (last - before).normalized())
 
 
-## Loopshot. A boomerang: the one glyph with a corner in it, so it cannot be mistaken for the
+## Boomerang. A boomerang: the one glyph with a corner in it, so it cannot be mistaken for the
 ## two round ones. Filled, because a thrown object is an object.
 static func _boomerang(canvas: CanvasItem, centre: Vector2, size: float, tint: Color) -> void:
 	_fill(canvas, [
@@ -178,7 +178,7 @@ static func _boomerang(canvas: CanvasItem, centre: Vector2, size: float, tint: C
 	], centre, size, tint)
 
 
-## Blink. Two feet and nothing in between but a dashed hop - the spell is the gap.
+## Teleport. Two feet and nothing in between but a dashed hop - the spell is the gap.
 static func _jump(canvas: CanvasItem, centre: Vector2, size: float, tint: Color,
 		width: float) -> void:
 	canvas.draw_circle(centre + Vector2(-0.78, 0.58) * size, maxf(size * 0.15, 2.0), tint)
@@ -192,7 +192,7 @@ static func _jump(canvas: CanvasItem, centre: Vector2, size: float, tint: Color,
 		canvas.draw_arc(pivot, radius, from, from + deg_to_rad(34.0), 8, tint, width, true)
 
 
-## Lunge. Three chevrons: the shape every game has ever used for "forward, fast".
+## Thrust. Three chevrons: the shape every game has ever used for "forward, fast".
 static func _chevron(canvas: CanvasItem, centre: Vector2, size: float, tint: Color,
 		width: float) -> void:
 	for step in 3:
@@ -202,7 +202,7 @@ static func _chevron(canvas: CanvasItem, centre: Vector2, size: float, tint: Col
 		], centre, size, tint, width)
 
 
-## Warp Bolt. Two arrows passing each other. It says "exchange" and it says nothing about
+## Swap. Two arrows passing each other. It says "exchange" and it says nothing about
 ## damage, which is exactly what the spell does.
 static func _swap(canvas: CanvasItem, centre: Vector2, size: float, tint: Color,
 		width: float) -> void:
@@ -212,7 +212,7 @@ static func _swap(canvas: CanvasItem, centre: Vector2, size: float, tint: Color,
 	_head(canvas, centre, size, tint, width, Vector2(-0.85, 0.45), Vector2.LEFT)
 
 
-## Arcane Shield. A heraldic shield. There is no cleverer answer and no need for one.
+## Shield. A heraldic shield. There is no cleverer answer and no need for one.
 static func _shield(canvas: CanvasItem, centre: Vector2, size: float, tint: Color,
 		width: float) -> void:
 	_stroke(canvas, [
@@ -221,7 +221,7 @@ static func _shield(canvas: CanvasItem, centre: Vector2, size: float, tint: Colo
 	], centre, size, tint, width)
 
 
-## Rewind. A clock with its hands set back, and a gap in the rim with the head pointing
+## Time Shift. A clock with its hands set back, and a gap in the rim with the head pointing
 ## ANTICLOCKWISE - which is the only part of the drawing that says "back" rather than "time".
 static func _clock(canvas: CanvasItem, centre: Vector2, size: float, tint: Color,
 		width: float) -> void:
@@ -234,8 +234,8 @@ static func _clock(canvas: CanvasItem, centre: Vector2, size: float, tint: Color
 	_stroke(canvas, [Vector2(0.0, 0.0), Vector2(-0.44, 0.22)], centre, size, tint, width)
 
 
-## Momentum. A wall on the left, three lines leaving it longer each time, and a head: the hit
-## arrives and turns into speed. Deliberately not a chevron - Lunge already owns that.
+## Rush. A wall on the left, three lines leaving it longer each time, and a head: the hit
+## arrives and turns into speed. Deliberately not a chevron - Thrust already owns that.
 static func _surge(canvas: CanvasItem, centre: Vector2, size: float, tint: Color,
 		width: float) -> void:
 	_stroke(canvas, [Vector2(-0.86, -0.7), Vector2(-0.86, 0.7)], centre, size, tint, width)

@@ -138,7 +138,7 @@ func _ready() -> void:
 	# hundred fireballs are one SphereMesh. Duplicating it per projectile would be a hundred
 	# meshes for no difference on screen.
 	_shape.shape = _shape.shape.duplicate()
-	# Likewise one material per instance, so tinting a Fireball cannot recolour a Force Wave.
+	# Likewise one material per instance, so tinting a Fireball cannot recolour a Scourge.
 	_material = StandardMaterial3D.new()
 	_material.emission_enabled = true
 	# Was 2.2, which blew every tint toward white. That was survivable while all five spells

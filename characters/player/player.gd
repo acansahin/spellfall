@@ -127,15 +127,15 @@ var _hitstun := 0.0
 ## Seconds left rooted. Entangle.
 var _root_timer := 0.0
 
-## A flat walking-speed bonus with its own clock, separate from the one Momentum banks.
+## A flat walking-speed bonus with its own clock, separate from the one Rush banks.
 ##
-## Two of them, because they expire differently: Momentum's is tied to the shield that earned
+## Two of them, because they expire differently: Rush's is tied to the shield that earned
 ## it and dies with it, and this one is a spell's whole payload with a duration of its own. One
-## variable would make casting Pious cancel a Momentum somebody was still holding.
+## variable would make casting Pious cancel a Rush somebody was still holding.
 var _move_bonus := 0.0
 var _move_bonus_timer := 0.0
 
-## What fraction of an incoming knockback gets through. 1.0 is unprotected; Arcane Shield
+## What fraction of an incoming knockback gets through. 1.0 is unprotected; Shield
 ## drops it for a moment. Held on the fighter and not in the knockback formula because the
 ## formula answers "how hard was that hit" and this answers "how much of it landed on ME".
 var _shield_factor := 1.0
@@ -483,7 +483,7 @@ func is_shielded() -> bool:
 ## thing that knows where the arena ends.
 ##
 ## Knockback is cleared and hitstun deliberately is NOT. That is the shape of the escape: a
-## Blink cancels the slide you are in, so it can genuinely save you at an edge, but you land
+## Teleport cancels the slide you are in, so it can genuinely save you at an edge, but you land
 ## with the same reduced control the hit gave you, so it is not a free reset. If it plays too
 ## strong, the cooldown is the first dial to turn.
 func blink_to(point: Vector3) -> void:

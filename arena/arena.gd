@@ -5,7 +5,7 @@ extends Node3D
 ##
 ## The radius used to be a number typed into a collision shape, read once at startup and
 ## copied to whoever needed it. It is a moving value now - the ring closes during a round -
-## so it lives here and everything else asks. Blink clamps against it, the bot keeps clear of
+## so it lives here and everything else asks. Teleport clamps against it, the bot keeps clear of
 ## it, the aim lane stops at it, the lava burns whoever is outside it, and the camera frames
 ## it; five readers, one source.
 ##
@@ -30,7 +30,7 @@ signal radius_changed(radius: float)
 ## 1.641 m/s an eleven-metre ring takes 13.4 seconds to cross, which is the map's number.
 @export var start_radius := 11.0
 
-## How small it is allowed to get. At 4.5m a Force Wave reaches most of the way across, which
+## How small it is allowed to get. At 4.5m a Scourge reaches most of the way across, which
 ## is the point: by the end of a round, standing still is not an option anyone has.
 @export var min_radius := 4.5
 

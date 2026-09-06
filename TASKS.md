@@ -952,10 +952,12 @@ Eight mechanics cover all eleven; everything else is existing fields rearranged.
 - [ ] **Cooldowns are long now** - 14 to 30 seconds outside Fireball and the two self-bursts -
       and the player carries four spells where the map's player carries eight. A round may read
       as sparse
-- [ ] **The spells still carry this repo's names**, not the map's: Force Wave is its Scourge,
-      Arc Lance its Lightning, Seeker its Homing, Loopshot its Boomerang, Blink its Teleport,
-      Lunge its Thrust, Warp Bolt its Swap, Rewind its Time Shift, Momentum its Rush. The
-      numbers and the behaviour are the map's; the eleven new spells already carry its names
+- [x] **The spells carry the map's names now.** Force Wave -> Scourge, Arc Lance -> Lightning,
+      Seeker -> Homing, Loopshot -> Boomerang, Blink -> Teleport, Lunge -> Thrust, Warp Bolt ->
+      Swap, Arcane Shield -> Shield, Rewind -> Time Shift, Momentum -> Rush. **Display names
+      and prose only** - the `id` keys stayed, because four of the map's names collide with
+      fields this code already has (`swaps_places`, `homing_turn`, `apply_shield`,
+      `begin_rewind`) and those are named after behaviours on purpose
 - [ ] **Three columns, not seven.** The map offers seven and you carry eight spells; four thumb
       buttons and four keys is why this offers three. It is the one structural departure
 - [ ] `bounce` has never been seen doing the interesting half of its job, because
