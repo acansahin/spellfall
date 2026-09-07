@@ -9,11 +9,22 @@ extends Node3D
 ## it, the aim lane stops at it, the lava burns whoever is outside it, and the camera frames
 ## it; five readers, one source.
 ##
-## **It closes DURING a round, not between rounds.** The map this game takes after shrinks its
-## arena one step per round, which bounds a match but leaves a single round able to run
-## forever - and a round that can stall is exactly the problem, because nobody is knocked out
-## by accident any more now that the lava gives a way back. A ring that closes on a clock ends
-## every round on its own, and turns "hold your ground" into a decision with a deadline.
+## **It closes DURING a round, in whole-metre steps, and it does not stop.** That is the
+## reference map's own behaviour, read out of `PY()` and `WY()` in its script - see
+## docs/warlock-reference.md section 7c. This file used to say the map shrank between rounds
+## and that a continuous close was this port's own idea; both were wrong, and wrong because
+## nobody had looked.
+##
+## Three properties come with it and each is the point rather than a detail:
+##
+## - **It steps.** A whole ring of ground becomes lava at one moment. That is a different kind
+##   of pressure from a rim creeping inward: you can be standing somewhere safe and be standing
+##   in lava a moment later without having moved.
+## - **It speeds up as fighters die**, because the interval is `10 * sqrt(alive)` and `alive`
+##   is recomputed on every step. The closing ring is the loser's punishment and the winner's
+##   reward in one number.
+## - **It goes to zero.** There is no minimum, so a round always ends - which is the job the
+##   old continuous close was invented to do, and the map was already doing it.
 ##
 ## Nothing here knows what a fighter is. It moves geometry and emits a number.
 
@@ -21,26 +32,31 @@ extends Node3D
 ## cached edge at it.
 signal radius_changed(radius: float)
 
-## Where a round starts. The reference map's 1408 units, at 128 units to the metre - see
-## docs/warlock-reference.md.
+## Metres of radius a round starts at, if nobody says otherwise.
 ##
-## It was already 12.0, which is within a metre of the map's own ring, so this barely moves.
-## Worth saying out loud because it is the half of the "too fast" problem that was NOT wrong:
-## the arena was the right size all along and the wizard was crossing it 2.4x too quickly. At
-## 1.641 m/s an eleven-metre ring takes 13.4 seconds to cross, which is the map's number.
+## The map sizes its ring off the ROSTER - `9 + players/2` tiles, and a tile is one metre here
+## - so this is only the fallback for a scene opened with nobody in it. `size_for()` below is
+## what actually decides, and the level calls it once the squad exists.
 @export var start_radius := 11.0
 
-## How small it is allowed to get. At 4.5m a Scourge reaches most of the way across, which
-## is the point: by the end of a round, standing still is not an option anyone has.
-@export var min_radius := 4.5
+## The map's `9 +` term, in metres.
+@export var base_radius := 9.0
 
-## Seconds at full size before it begins to close. The opening exchange happens on the whole
-## board; the squeeze is what breaks a stalemate, so it should not arrive before there is one.
-@export var grace_seconds := 12.0
+## Seconds per step at ONE fighter alive. The map's `NN`, and the interval is this times the
+## square root of how many are still standing.
+@export var seconds_per_step := 10.0
 
-## Metres of radius lost per second once it starts. At 0.3 the ring takes 25 seconds to go
-## from 12m to 4.5m, so a round that nobody wins outright resolves in well under a minute.
-@export var shrink_per_second := 0.3
+## Metres the ring loses per step. The map moves one terrain tile at a time and a Warcraft III
+## tile is 128 units, which is exactly one metre on this port's scale.
+@export var step_metres := 1.0
+
+## THERE IS NO `grace_seconds` AND NO `shrink_per_second` ANY MORE, and no `min_radius`.
+##
+## The first two were one number each doing what `step_delay()` now does with the map's own
+## arithmetic: the ring waits a full interval before its first step, which IS the grace, and
+## it moves a whole metre at once rather than a fraction of one per second. The third was a
+## floor at 4.5m that the map does not have - it closes to nothing, which is what guarantees
+## a round ends rather than merely gets uncomfortable.
 
 ## Fraction of the radius the rim ring sits at, and how wide it and the molten shore are.
 @export var rim_width := 1.0
@@ -60,7 +76,11 @@ var radius: float = 0.0
 @onready var _shore: MeshInstance3D = $Lava/Shore
 @onready var _obstacles: Node3D = $Obstacles
 
+## Seconds since the last step, or since the round began.
 var _elapsed := 0.0
+
+## The size THIS match's rounds start at, from `size_to()`. Zero until the level says.
+var _round_start_radius := 0.0
 
 ## Where each obstacle stands, as a FRACTION of the radius, captured once from the scene. The
 ## cover shrinks with the ring rather than being swallowed by it - a ring that closes over its
@@ -86,29 +106,60 @@ func _ready() -> void:
 
 
 ## Back to full size, and the clock back to zero. The round system calls this.
+## The radius a round starts at for a given number of fighters. The map's `9 + players/2`
+## tiles, in metres, with the integer division it uses - so two and three fighters both start
+## at ten and four at eleven.
+func size_for(fighters: int) -> float:
+	return base_radius + float(int(maxi(fighters, 1) / 2))
+
+
+## Seconds until the next step, given how many are still standing. The map's `NN * sqrt(UH)`.
+##
+## Recomputed on every step rather than once at the start, which is the whole of why the ring
+## speeds up as a fight thins out.
+func step_delay(alive: int) -> float:
+	return seconds_per_step * sqrt(float(maxi(alive, 1)))
+
+
 func reset() -> void:
 	_elapsed = 0.0
-	_set_radius(start_radius)
+	_set_radius(_round_start_radius if _round_start_radius > 0.0 else start_radius)
+
+
+## Sets the size this and every following round begins at. The level calls it once the squad
+## is formed, because the arena does not know how many wizards there are and should not.
+func size_to(fighters: int) -> void:
+	_round_start_radius = size_for(fighters)
+	_set_radius(_round_start_radius)
 
 
 ## One tick of the round. The level calls this only while the round is live: a ring that
 ## closed through the countdown would take the interlude with it.
-func tick(delta: float) -> void:
-	if not shrinking or radius <= min_radius:
+## One tick of the round. The level calls this only while the round is live: a ring that
+## closed through the countdown would take the interlude with it.
+##
+## `alive` is handed in rather than looked up. The arena still knows nothing about fighters -
+## it takes a count, the same way it takes a delta.
+func tick(delta: float, alive: int = 2) -> void:
+	if not shrinking or radius <= 0.0:
 		return
 	_elapsed += delta
-	if _elapsed < grace_seconds:
+	# The first step lands a full interval in, which is the map's grace: it has no separate
+	# grace period, it simply has not stepped yet.
+	if _elapsed < step_delay(alive):
 		return
-	_set_radius(maxf(radius - shrink_per_second * delta, min_radius))
+	_elapsed = 0.0
+	_set_radius(maxf(radius - step_metres, 0.0))
 
 
-## Seconds until it starts closing, or 0 once it has.
-func grace_left() -> float:
-	return maxf(grace_seconds - _elapsed, 0.0)
+## Seconds until the NEXT step. Named `grace_left` still because that is what it is before the
+## first one, and the HUD and three suites already ask for it by that name.
+func grace_left(alive: int = 2) -> float:
+	return maxf(step_delay(alive) - _elapsed, 0.0)
 
 
 func is_closing() -> bool:
-	return shrinking and _elapsed >= grace_seconds and radius > min_radius
+	return shrinking and radius > 0.0
 
 
 func _set_radius(value: float) -> void:

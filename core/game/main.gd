@@ -217,7 +217,9 @@ func _process(_delta: float) -> void:
 
 func _physics_process(delta: float) -> void:
 	if _rounds.is_live():
-		_arena.tick(delta)
+		# The living count, not the roster: the map recomputes its interval from who is still
+		# standing, which is what makes the ring close faster as a fight thins out.
+		_arena.tick(delta, _rounds.alive_count())
 	_tick_lava(delta)
 	_tick_tethers(delta)
 
@@ -280,7 +282,7 @@ func _tick_lava(delta: float) -> void:
 const CAMERA_FRAMING := 3.14
 
 ## The camera stops coming in once the ring closes past this radius, even though the ring
-## itself keeps shrinking to `Arena.min_radius`. Framing the last few metres as tightly as the
+## itself keeps shrinking all the way to nothing. Framing the last few metres as tightly as the
 ## rest would zoom the camera in far enough to crowd the fight rather than clarify it - the
 ## squeeze is meant to be felt as the RING closing around two wizards who stay a readable size,
 ## not as the camera lunging at them.
@@ -899,6 +901,9 @@ func _begin_match(team_match: bool) -> void:
 	_squad_formed = true
 	_team_match = team_match
 	_form_squad(team_match)
+	# The map sizes its ring off the roster - `9 + players/2` tiles - so this has to happen
+	# after the squad is formed and before the first round is set up.
+	_arena.size_to(_fighters.size())
 	_wire_combat()
 	# The HUD reads instability and nothing else. It is handed its sources here rather than
 	# hunting for them, which is what makes a third and fourth fighter a loop rather than a
@@ -2145,8 +2150,19 @@ func _cast_at(seconds: float, slot: int) -> void:
 # ---------------------------------------------------------------------------------------
 
 ## Hits the bot with a known speed and returns how far it slid on the ground plane.
+## Where a slide is measured FROM: the middle, not a spawn.
+##
+## The spawns sit at 6m of radius, and the ring is 10m in a 1v1 now that it is sized off the
+## roster the way the map sizes it. A 4.5m slide from a spawn therefore ends up 10.5m out - in
+## the lava, where the bot burns down, is eliminated, and has `set_physics_process(false)`
+## called on it. Every later section then measured a body that could not be pushed anywhere,
+## and reported it as knockback that does not work. From the middle there is a whole radius to
+## slide into.
+const SLIDE_ORIGIN := Vector3(0.0, 1.2, 0.0)
+
+
 func _measure_slide(speed: float, instability: float) -> float:
-	_bot.respawn_at(bot_spawn)
+	_bot.respawn_at(SLIDE_ORIGIN)
 	for i in 20:
 		await get_tree().physics_frame
 	var start := _bot.global_position
@@ -2234,12 +2250,12 @@ func _run_knockback_tests() -> void:
 		"%.2fm vs %.2fm = %.2fx" % [at50, measured, ratio])
 
 	# --- and eventually it throws you off ------------------------------------------------
-	_bot.respawn_at(bot_spawn)
+	_bot.respawn_at(SLIDE_ORIGIN)
 	for i in 20:
 		await get_tree().physics_frame
 	# Sized off the arena rather than off a literal: this asserted `> 7.2` from the days of a
 	# seven-metre ring and has been passing for free on every larger board since. A hit that
-	# carries twice the diameter must clear any spawn, whichever way it points.
+	# carries twice the diameter must clear the rim from the middle.
 	var clear_it := 2.0 * _arena.radius * -log(_bot.drag_per_second)
 	var hard := Knockback.velocity(clear_it, Vector3(0, 0, -1), 0.0, knockback_rules)
 	_bot.apply_knockback(hard)
@@ -3753,65 +3769,85 @@ func _run_shrink_tests() -> void:
 	await _wait_for_live()
 	# Deliberately NOT frozen: this suite is the one that watches it move.
 	_arena.shrinking = true
+	_arena.size_to(_fighters.size())
 	_arena.reset()
-	print("[shrink-test] start=%.1fm min=%.1fm grace=%.0fs rate=%.2fm/s" % [
-		_arena.start_radius, _arena.min_radius, _arena.grace_seconds,
-		_arena.shrink_per_second])
+	print("[shrink-test] %d fighters, start=%.1fm, step=%.1fm every %.1fs at 2 alive" % [
+		_fighters.size(), _arena.radius, _arena.step_metres, _arena.step_delay(2)])
 
-	_expect("a round starts at full size",
-		is_equal_approx(_arena.radius, _arena.start_radius),
-		"%.2fm of %.2fm" % [_arena.radius, _arena.start_radius])
+	# --- the size comes off the roster, the way the map's does --------------------------------
+	_expect("a round starts at the size the roster asks for",
+		is_equal_approx(_arena.radius, _arena.size_for(_fighters.size())),
+		"%.2fm for %d fighters" % [_arena.radius, _fighters.size()])
+	_expect("and that is the map's 9 + players/2",
+		is_equal_approx(_arena.size_for(2), 10.0)
+			and is_equal_approx(_arena.size_for(4), 11.0)
+			and is_equal_approx(_arena.size_for(8), 13.0),
+		"2p %.0fm, 4p %.0fm, 8p %.0fm" % [
+			_arena.size_for(2), _arena.size_for(4), _arena.size_for(8)])
 	_expect("the lava rule and the arena agree", is_equal_approx(_arena_edge, _arena.radius),
 		"edge=%.2f arena=%.2f" % [_arena_edge, _arena.radius])
 	_expect("so does the bot", is_equal_approx(_brain.arena_radius, _arena.radius),
 		"bot=%.2f arena=%.2f" % [_brain.arena_radius, _arena.radius])
 
-	# --- it holds still while the fight opens -------------------------------------------------
+	# --- the clock is 10 * sqrt(alive), and it SPEEDS UP as a fight thins out ------------------
+	#
+	# The second half is the property that makes this the map's ring rather than a slower
+	# version of the old one: a fight that has lost half its wizards closes faster.
+	_expect("the step delay is 10 x root of the living count",
+		is_equal_approx(_arena.step_delay(2), 14.142136)
+			and is_equal_approx(_arena.step_delay(4), 20.0),
+		"2 alive %.2fs, 4 alive %.2fs" % [_arena.step_delay(2), _arena.step_delay(4)])
+	_expect("fewer alive closes it faster", _arena.step_delay(2) < _arena.step_delay(8),
+		"2 alive %.1fs vs 8 alive %.1fs" % [_arena.step_delay(2), _arena.step_delay(8)])
+
+	# --- it holds completely still until its first step ----------------------------------------
 	var held := _arena.radius
 	await _wait(1.0)
-	_expect("it does not move during the grace period",
-		is_equal_approx(_arena.radius, held) and _arena.grace_left() > 0.0,
-		"%.2fm, %.1fs of grace left" % [_arena.radius, _arena.grace_left()])
+	_expect("it does not move before its first step",
+		is_equal_approx(_arena.radius, held) and _arena.grace_left(2) > 0.0,
+		"%.2fm, %.1fs until the step" % [_arena.radius, _arena.grace_left(2)])
 
-	# --- then it closes, at the rate it says ---------------------------------------------------
+	# --- then it steps, by a WHOLE metre, at once ----------------------------------------------
 	#
-	# Rather than wait out the whole grace period in real time, spend it: the clock is the
-	# arena's own, and ticking it directly is the same thing the round does, only faster.
-	while _arena.grace_left() > 0.0:
-		_arena.tick(1.0 / 60.0)
-	var before := _arena.radius
+	# Rather than wait out the interval in real time, spend it: the clock is the arena's own and
+	# ticking it directly is what the round does, only faster.
 	var cover_before: Vector2 = _cover_points()[0]
 	var camera_before: float = _camera_rig.distance
-	await _wait(1.0)
-	var closed := before - _arena.radius
-	_expect("it closes once the grace runs out", closed > 0.0,
+	var before := _arena.radius
+	var ticks := 0
+	while is_equal_approx(_arena.radius, before) and ticks < 60 * 60:
+		_arena.tick(1.0 / 60.0, 2)
+		ticks += 1
+	_expect("it steps by a whole metre at once",
+		is_equal_approx(before - _arena.radius, _arena.step_metres),
 		"%.2fm -> %.2fm" % [before, _arena.radius])
-	_expect("at the rate it advertises",
-		absf(closed - _arena.shrink_per_second) < _arena.shrink_per_second * 0.25,
-		"%.2fm in 1s, rate is %.2fm/s" % [closed, _arena.shrink_per_second])
-	_expect("and it says it is closing", _arena.is_closing(), "is_closing=%s" % _arena.is_closing())
+	_expect("and it waited the interval to do it",
+		absf(float(ticks) / 60.0 - _arena.step_delay(2)) < 1.5,
+		"%.1fs, interval is %.1fs" % [float(ticks) / 60.0, _arena.step_delay(2)])
+	_expect("and it says it is closing", _arena.is_closing(),
+		"is_closing=%s" % _arena.is_closing())
 
 	# --- everything that reads the radius came with it -----------------------------------------
 	_expect("the lava rule followed it in", is_equal_approx(_arena_edge, _arena.radius),
 		"edge=%.2f arena=%.2f" % [_arena_edge, _arena.radius])
 	_expect("the bot followed it in", is_equal_approx(_brain.arena_radius, _arena.radius),
 		"bot=%.2f arena=%.2f" % [_brain.arena_radius, _arena.radius])
-	_expect("the camera came in with it", _camera_rig.distance < camera_before,
-		"%.2f -> %.2f" % [camera_before, _camera_rig.distance])
 	var cover_now: Vector2 = _cover_points()[0]
 	_expect("the cover came in with it", cover_now.length() < cover_before.length() - 0.01,
 		"%.2fm -> %.2fm from the centre" % [cover_before.length(), cover_now.length()])
 	_expect("and the cover is still inside the ring", cover_now.length() < _arena.radius,
 		"cover at %.2fm, rim at %.2fm" % [cover_now.length(), _arena.radius])
 
-	# --- it stops at the floor -----------------------------------------------------------------
+	# --- IT CLOSES ALL THE WAY. There is no floor ----------------------------------------------
+	#
+	# This is the assertion the old floor at 4.5m made impossible, and it is the whole reason
+	# the ring exists: a round that nobody wins has to end anyway.
 	var guard := 0
-	while _arena.radius > _arena.min_radius and guard < 60 * 120:
-		_arena.tick(1.0 / 60.0)
+	while _arena.radius > 0.0 and guard < 60 * 600:
+		_arena.tick(1.0 / 60.0, 2)
 		guard += 1
-	_arena.tick(1.0)
-	_expect("it stops at the minimum", is_equal_approx(_arena.radius, _arena.min_radius),
-		"%.2fm of a %.2fm floor" % [_arena.radius, _arena.min_radius])
+	_expect("it closes all the way to nothing", is_equal_approx(_arena.radius, 0.0),
+		"%.2fm left after %.0fs" % [_arena.radius, float(guard) / 60.0])
 	_expect("and stops saying it is closing", not _arena.is_closing(), "still closing")
 
 	# --- but the camera barely follows it at all -----------------------------------------------
@@ -3824,23 +3860,22 @@ func _run_shrink_tests() -> void:
 	#
 	# So the squeeze belongs to the GEOMETRY. The ring closes by the same amount it always did;
 	# the lens is asserted to stay put.
-	var opening := maxf(_arena.start_radius, CAMERA_FLOOR_RADIUS) * CAMERA_FRAMING
+	var opening := maxf(_arena.size_for(_fighters.size()), CAMERA_FLOOR_RADIUS) * CAMERA_FRAMING
 	var travelled := opening - _camera_rig.distance
-	_expect("the camera barely moves while the ring closes to its minimum",
+	_expect("the camera barely moves while the ring closes",
 		travelled >= 0.0 and travelled < opening * 0.2,
-		"lens moved %.2fm of %.2fm (%.0f%%), ring alone would have moved it %.2fm" % [
-			travelled, opening, 100.0 * travelled / opening,
-			opening - _arena.min_radius * CAMERA_FRAMING])
-	_expect("and it never follows the ring past its floor",
-		_camera_rig.distance > _arena.min_radius * CAMERA_FRAMING + 0.5,
-		"camera=%.2f, ring alone would put it at %.2f" % [
-			_camera_rig.distance, _arena.min_radius * CAMERA_FRAMING])
+		"lens moved %.2fm of %.2fm (%.0f%%)" % [
+			travelled, opening, 100.0 * travelled / opening])
+	_expect("and it never follows the ring past its own floor",
+		_camera_rig.distance > CAMERA_FLOOR_RADIUS * CAMERA_FRAMING - 0.5,
+		"camera=%.2f, floor would put it at %.2f" % [
+			_camera_rig.distance, CAMERA_FLOOR_RADIUS * CAMERA_FRAMING])
 
 	# --- a new round gives the whole board back ------------------------------------------------
 	_arena.reset()
 	_expect("a new round starts full size again",
-		is_equal_approx(_arena.radius, _arena.start_radius)
-			and is_equal_approx(_arena_edge, _arena.start_radius),
+		is_equal_approx(_arena.radius, _arena.size_for(_fighters.size()))
+			and is_equal_approx(_arena_edge, _arena.radius),
 		"%.2fm, edge %.2fm" % [_arena.radius, _arena_edge])
 
 	print("[shrink] %s (%d failure(s))" % [

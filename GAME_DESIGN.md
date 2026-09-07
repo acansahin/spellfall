@@ -404,25 +404,39 @@ version and stays on the roadmap.
 
 ## Arena
 
-One circular stone platform. It starts **11 metres in radius** — 22 across, thirteen and a
-half seconds of walking, which is the map's own ring at 128 units to the metre — and **closes
-during the round**. Around it, lava: a flat field you can be knocked
+One circular stone platform, sized off the roster the way the map sizes its own: **`9 +
+players/2` metres**, so a 1v1 opens at **10m** and a 2v2 at 11. Twenty metres across is about
+twelve seconds of walking. It **closes during the round**. Around it, lava: a flat field you can be knocked
 onto, stand on, and walk back off. The stone sits 8cm proud of it, which a wizard's capsule
 rides up without noticing.
 
 ## The ring closes
 
-Twelve seconds at full size, then the stone gives way at 0.3 metres a second until it is
-4.5m in radius. A round nobody wins outright is therefore over in well under a minute.
+**One whole metre at a time, every `10 × √alive` seconds, all the way to nothing.** In a 1v1
+that is a metre every 14.1 seconds from 10m, so a round nobody wins outright takes a little
+over two minutes to be decided by the ring alone.
 
-It closes **during** a round, not between rounds. The map this game takes after shrinks one
-step per round, which bounds a match but leaves a single round able to run forever - and that
-is the problem the lava created: now that being knocked out is survivable, nobody goes out by
-accident, and two careful players can circle each other indefinitely. A ring on a clock turns
-"hold your ground" into a decision with a deadline.
+That is the reference map's own shrink, read out of `PY()` and `WY()` in its script — see
+docs/warlock-reference.md §7c. **This section used to say the map shrinks between rounds and
+that closing during one was this port's own idea. Both were wrong**, and wrong because nobody
+had looked; what the port actually had was the right instinct at 4.2× the speed, with a
+12-second grace and a floor at 4.5m that the map does not have.
 
-The twelve seconds of grace are not padding. The opening exchange should happen on the whole
-board, or the squeeze arrives before there is anything to break.
+Three properties came with taking it properly, and each is the point rather than a detail:
+
+- **It steps.** A whole ring of ground becomes lava at one moment. That is a different kind of
+  pressure from a rim creeping inward — you can be standing somewhere safe and be standing in
+  lava a moment later without having moved, which makes the clock something you watch rather
+  than something you drift with.
+- **It speeds up as fighters die.** The interval is recomputed from the living count on every
+  step, so the last two alive in a 2v2 are on a 14.1s clock rather than a 20s one. The closing
+  ring is the loser's punishment and the winner's reward in one number.
+- **It goes to zero.** There is no minimum radius, so a round always ends — which is the job
+  the old continuous close was invented to do, and the map was already doing it.
+
+There is no separate grace period any more, and none is needed: the ring simply has not
+stepped yet, and the first interval is a full one. The opening exchange still happens on the
+whole board.
 
 **The camera very nearly does not come in with it**, and that is a reversal. It used to hold
 the same framing at every size, so the wizards grew on screen as the ring tightened - from

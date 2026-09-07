@@ -1259,3 +1259,48 @@ down is a failure somebody re-investigates from scratch in three months.
       `_tick_tethers` bleeds by the real delta, so anything that decouples those two would
       show up here first. If it recurs, print the tether's own accounting rather than
       re-deriving this
+
+### Session 24i - the ring is the map's ring
+
+"Warcraft 3 warlocktaki arena daralmasi bu sekilde hizli mi? Ayni seviyede mi daraliyoruz?"
+
+No: we were closing **4.2x faster**. And answering the question turned up a claim in this
+repo's own docs that was simply false.
+
+- [x] **`PY()` and `WY()` extracted.** `PY(radius)` paints ground out to a radius IN TILES and
+      leaves the rest as lava; `WY()` decrements it and re-arms a timer at `NN * sqrt(UH)`
+      where `NN` is 10 and `UH` is how many are still alive. A tile is 128 units, which is one
+      metre on this port's scale
+- [x] **GAME_DESIGN.md and warlock-reference.md both said the map shrinks BETWEEN rounds** and
+      that closing during one was this port's own idea. Both wrong, and wrong because nobody
+      had looked - not because the script hid it. Corrected in place, with the JASS quoted
+- [x] The ring now: start `9 + players/2` metres (10 in a 1v1, 11 in a 2v2), **one whole metre
+      per step**, every `10 * sqrt(alive)` seconds, **all the way to zero**
+- [x] `grace_seconds`, `shrink_per_second` and `min_radius` are gone. The first two are what
+      `step_delay()` does with the map's arithmetic - the ring waits a full interval before its
+      first step, which IS the grace. The floor at 4.5m the map does not have
+- [x] The interval is recomputed from the LIVING count every step, so the last two alive in a
+      2v2 drop from a 20s clock to a 14.1s one
+- [x] `--shrink-test` re-derived: the roster sizing, the `10 * sqrt` clock, that fewer alive
+      closes it faster, that a step is a whole metre taken at once, and that it reaches zero
+- [x] Measured: a 1v1 closes completely in **127 seconds**, where the old ring stopped at 4.5m
+      after 33.7
+
+### And the runner earned its keep on its first outing
+
+- [x] `--knockback-test` FAILED, twice, which is how the runner reports something real rather
+      than a flake - and the cause was this change. `_measure_slide` pushed the bot from a
+      spawn at 6m of radius; a 4.5m slide put it at 10.5m, which was inside an 11m ring and is
+      **outside a 10m one**. It burned in the lava, was eliminated, and an eliminated body has
+      `set_physics_process(false)`: every later section was measuring something that could not
+      be pushed anywhere and reporting it as knockback that does not work
+- [x] Slides are measured from the MIDDLE now (`SLIDE_ORIGIN`), where there is a whole radius
+      to slide into rather than four metres
+
+### Still open
+
+- [ ] **Does a 127-second close bring back the stall?** Closing during a round exists because
+      two careful players can circle each other forever now that the lava is survivable. At
+      4.2x the old speed that was never in doubt; at the map's speed it might be. If it comes
+      back the lever is `seconds_per_step`, and departing from the map would then be a
+      deliberate choice rather than an accident
