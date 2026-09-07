@@ -1304,3 +1304,28 @@ repo's own docs that was simply false.
       4.2x the old speed that was never in doubt; at the map's speed it might be. If it comes
       back the lever is `seconds_per_step`, and departing from the map would then be a
       deliberate choice rather than an accident
+
+### Session 24j - the ring closes smoothly again, and the step was never the design
+
+"Harita neden bir anda daraliyor? Onu surekli hale getir."
+
+The answer to the first half is the reason the second half is right: **the step is Warcraft
+III's ENGINE, not Warlock's design.** Its ground is a grid of 128-unit tiles and
+`SetTerrainType` paints whole ones - there is no way to say 9.5 tiles, so the ring must jump.
+This arena is a mesh with a float radius and has never had that constraint.
+
+- [x] `close_rate(alive)` = `step_metres / step_delay(alive)`, and `tick()` takes that off the
+      radius every frame. 0.0707 m/s at two alive
+- [x] **Everything else is unchanged and that is the point.** Same `9 + players/2` start, same
+      `10 * sqrt(alive)` schedule, same speed-up as fighters die, same close to zero, same 127
+      seconds for a 1v1. The two versions are at the same radius at every interval boundary;
+      this one is simply not lying about where the edge is in between
+- [x] `grace_left()` became `seconds_left()`. "How long until it starts" has no meaning on a
+      ring that never stops starting
+- [x] `--shrink-test` re-derived AGAIN, and this time it asserts the departure rather than the
+      behaviour: that it moves on every tick, that it never jumps a whole step, that one tick
+      is the map's rate, and that one full interval closes it by exactly one of the map's steps
+      (measured: 0.999m over 14.1s)
+- [x] There is still no grace period and still none needed - at 0.0707 m/s the ring gives up
+      one metre of ten in the first fourteen seconds, so the opening exchange happens on very
+      nearly the whole board without a rule saying so

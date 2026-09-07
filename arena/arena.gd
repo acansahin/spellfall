@@ -15,16 +15,24 @@ extends Node3D
 ## and that a continuous close was this port's own idea; both were wrong, and wrong because
 ## nobody had looked.
 ##
-## Three properties come with it and each is the point rather than a detail:
+## Two properties come from the map and each is the point rather than a detail:
 ##
-## - **It steps.** A whole ring of ground becomes lava at one moment. That is a different kind
-##   of pressure from a rim creeping inward: you can be standing somewhere safe and be standing
-##   in lava a moment later without having moved.
-## - **It speeds up as fighters die**, because the interval is `10 * sqrt(alive)` and `alive`
-##   is recomputed on every step. The closing ring is the loser's punishment and the winner's
+## - **It speeds up as fighters die**, because the rate is `1 metre / (10 * sqrt(alive))` and
+##   `alive` is read every tick. The closing ring is the loser's punishment and the winner's
 ##   reward in one number.
-## - **It goes to zero.** There is no minimum, so a round always ends - which is the job the
-##   old continuous close was invented to do, and the map was already doing it.
+## - **It goes to zero.** There is no minimum, so a round always ends.
+##
+## **The third thing the map does, this deliberately does not: it does not STEP.**
+##
+## The map moves its ring one whole tile at a time, and that is not a design decision - it is
+## its engine. Warcraft III's ground is a grid of 128-unit tiles and `SetTerrainType` paints
+## whole ones; there is no way to express a radius of 9.5 tiles, so the ring has to jump. This
+## arena is a `CylinderMesh` with a float radius and has no such constraint, so it closes
+## smoothly at exactly the rate the map's steps average out to: the two are at the same radius
+## at every step boundary, and this one is simply not lying about where the edge is in between.
+##
+## The schedule is still stated in the map's own terms - a metre per `10 * sqrt(alive)` seconds
+## - because that is where the number came from and how it should be re-derived if it moves.
 ##
 ## Nothing here knows what a fighter is. It moves geometry and emits a number.
 
@@ -42,12 +50,14 @@ signal radius_changed(radius: float)
 ## The map's `9 +` term, in metres.
 @export var base_radius := 9.0
 
-## Seconds per step at ONE fighter alive. The map's `NN`, and the interval is this times the
-## square root of how many are still standing.
+## Seconds the map takes to lose `step_metres` at ONE fighter alive. Its `NN`, and the real
+## interval is this times the square root of how many are still standing.
 @export var seconds_per_step := 10.0
 
-## Metres the ring loses per step. The map moves one terrain tile at a time and a Warcraft III
-## tile is 128 units, which is exactly one metre on this port's scale.
+## Metres of radius the schedule is quoted in. The map moves one terrain tile at a time and a
+## Warcraft III tile is 128 units, which is exactly one metre on this port's scale - so this
+## is what one of its steps is worth, spread smoothly across the interval rather than taken
+## all at once.
 @export var step_metres := 1.0
 
 ## THERE IS NO `grace_seconds` AND NO `shrink_per_second` ANY MORE, and no `min_radius`.
@@ -113,12 +123,19 @@ func size_for(fighters: int) -> float:
 	return base_radius + float(int(maxi(fighters, 1) / 2))
 
 
-## Seconds until the next step, given how many are still standing. The map's `NN * sqrt(UH)`.
+## Seconds the map would take to move one whole step, given how many are still standing. Its
+## `NN * sqrt(UH)`.
 ##
-## Recomputed on every step rather than once at the start, which is the whole of why the ring
-## speeds up as a fight thins out.
+## Read every tick rather than once at the start, which is the whole of why the ring speeds up
+## as a fight thins out.
 func step_delay(alive: int) -> float:
 	return seconds_per_step * sqrt(float(maxi(alive, 1)))
+
+
+## Metres of radius lost per second, at `alive` fighters still standing. The map's schedule,
+## divided out into a rate instead of a jump.
+func close_rate(alive: int) -> float:
+	return step_metres / maxf(step_delay(alive), 0.001)
 
 
 func reset() -> void:
@@ -144,18 +161,13 @@ func tick(delta: float, alive: int = 2) -> void:
 	if not shrinking or radius <= 0.0:
 		return
 	_elapsed += delta
-	# The first step lands a full interval in, which is the map's grace: it has no separate
-	# grace period, it simply has not stepped yet.
-	if _elapsed < step_delay(alive):
-		return
-	_elapsed = 0.0
-	_set_radius(maxf(radius - step_metres, 0.0))
+	_set_radius(maxf(radius - close_rate(alive) * delta, 0.0))
 
 
-## Seconds until the NEXT step. Named `grace_left` still because that is what it is before the
-## first one, and the HUD and three suites already ask for it by that name.
-func grace_left(alive: int = 2) -> float:
-	return maxf(step_delay(alive) - _elapsed, 0.0)
+## Seconds until the ring has closed completely, at the current rate. What `grace_left` used
+## to answer - "how long until it starts" - has no meaning on a ring that never stops starting.
+func seconds_left(alive: int = 2) -> float:
+	return radius / maxf(close_rate(alive), 0.0001)
 
 
 func is_closing() -> bool:

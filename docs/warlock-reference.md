@@ -253,15 +253,21 @@ Three things in there are worth more than the numbers:
 - **It speeds up as people die.** The interval is recomputed from `UH` on every tick, so the
   last two alive in an eight-player game are on a 14.1s clock rather than a 28.3s one. The
   closing ring is the loser's punishment and the winner's reward in one number.
-- **It STEPS.** A whole ring of ground turns to lava at one moment. That is a different kind
-  of pressure from a rim creeping inward - you can be standing somewhere safe and be standing
-  in lava a moment later without having moved.
+- **It STEPS** - and that is the map's ENGINE rather than its design. Warcraft III's ground is
+  a grid of 128-unit tiles and `SetTerrainType` paints whole ones, so there is no way for it to
+  express a radius of 9.5 tiles. This is the one property of the shrink the port deliberately
+  does not copy: its arena is a mesh with a float radius, so it closes smoothly at the rate
+  these jumps average to, and the two are at the same radius at every interval boundary.
 - **It never stops.** There is no minimum radius, so a round always ends.
 
-**This port closes 4.2x faster than the map.** Ours takes 11m down to 4.5m in 21.7 seconds of
-shrinking (0.3 m/s after 12s of grace); at the map's two-player rate the same 6.5 metres takes
-91.7 seconds. Whether to match that is a design decision rather than a porting one - this game
-shrinks during a round for a reason of its own, recorded in GAME_DESIGN.md.
+**The port now runs this schedule exactly**, one departure aside: it closes smoothly rather
+than in steps, for the engine reason above. Same start radius, same `10 * sqrt(alive)` rate,
+same speed-up as fighters die, same close all the way to zero. A 1v1 takes 127 seconds.
+
+It used to close **4.2x faster** - 11m down to a 4.5m floor in 21.7 seconds at 0.3 m/s, after
+12 seconds of grace. None of those three numbers survived: the rate, the floor and the grace
+were all invented here, and the grace turned out to be something the map gets for free by not
+having stepped yet.
 
 ## 8. What is NOT in here
 

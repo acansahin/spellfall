@@ -3771,8 +3771,9 @@ func _run_shrink_tests() -> void:
 	_arena.shrinking = true
 	_arena.size_to(_fighters.size())
 	_arena.reset()
-	print("[shrink-test] %d fighters, start=%.1fm, step=%.1fm every %.1fs at 2 alive" % [
-		_fighters.size(), _arena.radius, _arena.step_metres, _arena.step_delay(2)])
+	print("[shrink-test] %d fighters, start=%.1fm, %.4f m/s at 2 alive (a %.1fm step every %.1fs)" % [
+		_fighters.size(), _arena.radius, _arena.close_rate(2), _arena.step_metres,
+		_arena.step_delay(2)])
 
 	# --- the size comes off the roster, the way the map's does --------------------------------
 	_expect("a round starts at the size the roster asks for",
@@ -3789,41 +3790,46 @@ func _run_shrink_tests() -> void:
 	_expect("so does the bot", is_equal_approx(_brain.arena_radius, _arena.radius),
 		"bot=%.2f arena=%.2f" % [_brain.arena_radius, _arena.radius])
 
-	# --- the clock is 10 * sqrt(alive), and it SPEEDS UP as a fight thins out ------------------
+	# --- the schedule is the map's, and it SPEEDS UP as a fight thins out ---------------------
 	#
 	# The second half is the property that makes this the map's ring rather than a slower
 	# version of the old one: a fight that has lost half its wizards closes faster.
-	_expect("the step delay is 10 x root of the living count",
+	_expect("the schedule is a metre per 10 x root of the living count",
 		is_equal_approx(_arena.step_delay(2), 14.142136)
 			and is_equal_approx(_arena.step_delay(4), 20.0),
 		"2 alive %.2fs, 4 alive %.2fs" % [_arena.step_delay(2), _arena.step_delay(4)])
-	_expect("fewer alive closes it faster", _arena.step_delay(2) < _arena.step_delay(8),
-		"2 alive %.1fs vs 8 alive %.1fs" % [_arena.step_delay(2), _arena.step_delay(8)])
+	_expect("fewer alive closes it faster", _arena.close_rate(2) > _arena.close_rate(8),
+		"2 alive %.4f m/s vs 8 alive %.4f m/s" % [_arena.close_rate(2), _arena.close_rate(8)])
 
-	# --- it holds completely still until its first step ----------------------------------------
-	var held := _arena.radius
-	await _wait(1.0)
-	_expect("it does not move before its first step",
-		is_equal_approx(_arena.radius, held) and _arena.grace_left(2) > 0.0,
-		"%.2fm, %.1fs until the step" % [_arena.radius, _arena.grace_left(2)])
-
-	# --- then it steps, by a WHOLE metre, at once ----------------------------------------------
+	# --- IT DOES NOT STEP. That is the one thing here the map does and this does not -----------
 	#
-	# Rather than wait out the interval in real time, spend it: the clock is the arena's own and
-	# ticking it directly is what the round does, only faster.
+	# The map jumps a whole tile at a time because Warcraft III's ground is a grid of 128-unit
+	# tiles and `SetTerrainType` paints whole ones - it has no way to say 9.5 tiles. This arena
+	# is a mesh with a float radius, so it closes smoothly at the rate those jumps average to.
+	# What is asserted is exactly that: it moves EVERY tick, and never by a whole metre at once.
 	var cover_before: Vector2 = _cover_points()[0]
 	var camera_before: float = _camera_rig.distance
 	var before := _arena.radius
+	_arena.tick(1.0 / 60.0, 2)
+	var one_tick := before - _arena.radius
+	_expect("it moves on every tick, not once an interval", one_tick > 0.0,
+		"%.5fm in one tick" % one_tick)
+	_expect("and it never jumps a whole step", one_tick < _arena.step_metres * 0.5,
+		"%.5fm against a %.1fm step" % [one_tick, _arena.step_metres])
+	_expect("at the rate the map's steps average to",
+		absf(one_tick * 60.0 - _arena.close_rate(2)) < _arena.close_rate(2) * 0.05,
+		"%.4f m/s measured, %.4f expected" % [one_tick * 60.0, _arena.close_rate(2)])
+
+	# --- and one interval of it is exactly one of the map's steps ------------------------------
+	var mark := _arena.radius
 	var ticks := 0
-	while is_equal_approx(_arena.radius, before) and ticks < 60 * 60:
+	while ticks < int(_arena.step_delay(2) * 60.0):
 		_arena.tick(1.0 / 60.0, 2)
 		ticks += 1
-	_expect("it steps by a whole metre at once",
-		is_equal_approx(before - _arena.radius, _arena.step_metres),
-		"%.2fm -> %.2fm" % [before, _arena.radius])
-	_expect("and it waited the interval to do it",
-		absf(float(ticks) / 60.0 - _arena.step_delay(2)) < 1.5,
-		"%.1fs, interval is %.1fs" % [float(ticks) / 60.0, _arena.step_delay(2)])
+	_expect("one interval closes it by exactly one step",
+		absf((mark - _arena.radius) - _arena.step_metres) < 0.02,
+		"%.3fm over %.1fs, a step is %.1fm" % [
+			mark - _arena.radius, float(ticks) / 60.0, _arena.step_metres])
 	_expect("and it says it is closing", _arena.is_closing(),
 		"is_closing=%s" % _arena.is_closing())
 

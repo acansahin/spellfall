@@ -412,9 +412,9 @@ rides up without noticing.
 
 ## The ring closes
 
-**One whole metre at a time, every `10 × √alive` seconds, all the way to nothing.** In a 1v1
-that is a metre every 14.1 seconds from 10m, so a round nobody wins outright takes a little
-over two minutes to be decided by the ring alone.
+**Smoothly, at a metre per `10 × √alive` seconds, all the way to nothing.** In a 1v1 that is
+0.0707 m/s from 10m, so a round nobody wins outright takes a little over two minutes — 127
+seconds — to be decided by the ring alone.
 
 That is the reference map's own shrink, read out of `PY()` and `WY()` in its script — see
 docs/warlock-reference.md §7c. **This section used to say the map shrinks between rounds and
@@ -422,21 +422,25 @@ that closing during one was this port's own idea. Both were wrong**, and wrong b
 had looked; what the port actually had was the right instinct at 4.2× the speed, with a
 12-second grace and a floor at 4.5m that the map does not have.
 
-Three properties came with taking it properly, and each is the point rather than a detail:
+Two properties came with taking it properly, and each is the point rather than a detail:
 
-- **It steps.** A whole ring of ground becomes lava at one moment. That is a different kind of
-  pressure from a rim creeping inward — you can be standing somewhere safe and be standing in
-  lava a moment later without having moved, which makes the clock something you watch rather
-  than something you drift with.
-- **It speeds up as fighters die.** The interval is recomputed from the living count on every
-  step, so the last two alive in a 2v2 are on a 14.1s clock rather than a 20s one. The closing
-  ring is the loser's punishment and the winner's reward in one number.
+- **It speeds up as fighters die.** The rate is read from the living count every tick, so the
+  last two alive in a 2v2 close at 0.0707 m/s rather than 0.05. The closing ring is the loser's
+  punishment and the winner's reward in one number.
 - **It goes to zero.** There is no minimum radius, so a round always ends — which is the job
-  the old continuous close was invented to do, and the map was already doing it.
+  the old close was invented to do, and the map was already doing it.
 
-There is no separate grace period any more, and none is needed: the ring simply has not
-stepped yet, and the first interval is a full one. The opening exchange still happens on the
-whole board.
+**The map also STEPS, a whole tile at a time, and this deliberately does not.** That was tried
+and then undone on purpose, because the step is not the map's design — it is its engine.
+Warcraft III's ground is a grid of 128-unit tiles and `SetTerrainType` paints whole ones; there
+is no way to express a radius of 9.5 tiles, so its ring has to jump. This arena is a mesh with
+a float radius and has no such constraint, so it closes smoothly at exactly the rate those
+jumps average to. The two are at the same radius at every interval boundary; ours simply is not
+lying about where the edge is in between.
+
+There is no separate grace period. At 0.0707 m/s the ring gives up one metre of ten in the
+first fourteen seconds, so the opening exchange still happens on very nearly the whole board
+without a rule having to say so.
 
 **The camera very nearly does not come in with it**, and that is a reversal. It used to hold
 the same framing at every size, so the wizards grew on screen as the ring tightened - from
