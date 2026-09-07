@@ -241,7 +241,66 @@ put on the ground while the disc closes over it.
 The rocks and trees do not shrink, so they need no such thing - only a `uv1_scale` that makes
 the texture the right size on the mesh.
 
+## Checking one WITHOUT looking at it
+
+    python tools/check_texture.py <image.png> --expect 55,104,43         --preview tile.png --seam-strip seam.png
+
+Four of the five checks above are numbers, so they are done with numbers. It reports the
+size, how much worse the wrap seam is than an ordinary neighbouring column, the brightness
+spread across a 3x3 grid (a baked sun shows up here and nowhere else), the darkest tone, and
+how far the mean colour is from the one the game uses now.
+
+Two images come out of it and both are worth looking at:
+
+- `--preview` tiles it 2x2, which is the classic seam check.
+- `--seam-strip` butts the last hundred columns against the first hundred **at full
+  resolution**, so the join is the vertical line down the middle. The 2x2 preview is
+  downscaled and a one-pixel seam vanishes into it - which is exactly the seam that then
+  shows up as a faint grid on the ground.
+
+**The seam ratio's thresholds are advisory and they run hot on painted textures.** The first
+pair this repo received measured 2.0 to 2.8 - "marginal" by the tool - and both are invisible
+in the full-resolution strip, because an ordinary step between neighbouring columns in a
+busy hand-painted texture is only 7 to 13 out of 765. Read the ratio, then look at the strip.
+
+## Bringing one in
+
+    python tools/fit_texture.py <in.png> assets/materials/<name>.png --size 1024
+
+Generators return whatever size they like - 1254 square, the first time. `fit_texture.py`
+area-averages it down to a power of two. **Area-average, not nearest**: sampling one pixel
+out of each block is what makes hand-painted art sparkle at distance, and sparkle reads to a
+player as "low resolution", which is the opposite of the point.
+
+Then, and this bites every single time:
+
+1. Run `Godot.exe --headless --path . --import`.
+2. **Open the `.import` file and set `mipmaps/generate=true`.** It arrives `false`. On a
+   ground plane seen at a 55 degree slant across the whole screen, no mipmaps means the grass
+   crawls and shimmers whenever anything moves.
+3. Set `compress/mode=2` (VRAM compressed) while you are in there. These are phone builds.
+4. Re-import.
+
+## What the first pair needed after it was in the scene
+
+Both textures passed every check and still needed tuning, because a texture is only half of
+how it looks - the other half is `uv1_scale`, and no measurement of the file can tell you
+that.
+
+- **The lava tiled every 8 metres and the repeat was obvious** across a 120-metre field. It
+  is 22 metres now (`uv1_scale` 0.045) and reads as a surface rather than as wallpaper.
+- **The lava was brighter than the ring.** Its material is `shading_mode = 0`, unshaded, so
+  the painted brightness goes straight to the screen with no light to dim it - while the
+  grass beside it is lit and therefore darker than its own file. `albedo_color` multiplies
+  down to (0.62, 0.56, 0.56) to put the ring back in charge of the screen.
+- **The spell buttons stopped being readable.** They are translucent discs, which was fine
+  over a flat orange background and stopped being fine the moment the background had a
+  pattern in it. They have a dark plate under them now - `AbilityButton.backdrop`. Worth
+  knowing before the next texture lands: **anything drawn over the world gets harder to read
+  every time the world gets more detailed.**
+
 ## Where the file lands
 
 ChatGPT downloads arrive in `Downloads` named as a GUID, and often with an **uppercase
-`.PNG`** that a `*.png` glob misses. Rename on the way in.
+`.PNG`** that a `*.png` glob misses. Codex writes its own into
+`~/.codex/generated_images/<session>/exec-<guid>.png` instead. Rename on the way in.

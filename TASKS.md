@@ -1020,3 +1020,45 @@ should become is easier to answer once the world around it has a look.
       keeps every bit of the 3D lighting and costs no code, or a billboard sprite that gives a
       real character and costs a Sprite3D, a facing rule and a walk cycle. The camera is fixed
       at 55 degrees and never rotates, so a pre-rendered sprite would fit it exactly
+
+### Session 24d - the first two textures, checked and in
+
+Ground and lava came back from the generator. Both were good; the checking still found things.
+
+- [x] `tools/check_texture.py` - four of the doc's five checks as numbers: size, how much
+      worse the wrap seam is than an ordinary neighbouring column, the brightness spread over
+      a 3x3 grid (a baked sun shows up here and nowhere else), the darkest tone, and the
+      distance from the colour the game uses now
+- [x] `--seam-strip` butts the last hundred columns against the first hundred **at full
+      resolution**. The 2x2 preview is downscaled and a one-pixel seam vanishes into it -
+      which is exactly the seam that shows up as a faint grid on the ground
+- [x] `tools/fit_texture.py` - area-average down to a power of two. 1254 is what the generator
+      returned; nearest-neighbour downscaling is what makes hand-painted art sparkle
+- [x] Both files measured clean: brightness spread 2.4% and 1.9% (no baked sun), darkest tone
+      luma 26 and 38 (no black), mean colour 22 and 21 away from the game's own
+
+### What the check found anyway
+
+- [x] **`mipmaps/generate=false` on a fresh import.** On a ground plane seen at a 55 degree
+      slant across the whole screen, that is grass that crawls whenever anything moves. Also
+      set `compress/mode=2`; these are phone builds
+- [x] **The seam ratio runs hot on painted textures.** Both measured "marginal" at 2.0-2.8x
+      and both are invisible in the full-resolution strip, because an ordinary step between
+      neighbouring columns in a busy texture is only 7 to 13 out of 765. Read the ratio, then
+      look at the strip
+- [x] **A texture is only half of how it looks.** The lava tiled every 8m and the repeat was
+      obvious across a 120m field - 22m now. And it was brighter than the ring, because its
+      material is unshaded so the painted brightness goes straight to the screen while the
+      grass beside it is lit and therefore darker than its own file. `albedo_color` multiplies
+      it down
+- [x] **The spell buttons stopped being readable.** Translucent discs were fine over a flat
+      orange background and stopped being fine the moment the background had a pattern in it.
+      `AbilityButton.backdrop` is a dark plate under them now. The general form of this is
+      worth remembering: anything drawn over the world gets harder to read every time the
+      world gets more detailed
+- [x] Seven suites re-run, all green
+
+### Still open
+
+- [ ] Rock, bark and canopy are still flat colours. Their prompts are written
+- [ ] The wizards are still capsules, and the decision about what they become is still open
