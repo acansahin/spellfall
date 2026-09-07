@@ -52,13 +52,14 @@ res://
     loadout/       spell_catalogue.gd + spell_column.gd (the roster, as data) +
                    loadout_store.gd (user://loadout.cfg, by spell id)
     spawn/         (planned)
-  data/            abilities/*.tres (eleven spells), spell_catalogue.tres, knockback_rules.tres
+  data/            abilities/*.tres (22 spells + one fragment), spell_catalogue.tres,
+                   knockback_rules.tres
   network/         (planned) Phase C onward
   .github/workflows/  pages.yml - exports the Web preset and publishes it to GitHub Pages
-  vfx/             spell_glyph.gd - the eleven icons, as vector shapes in a unit box;
-                   ground_shapes.gd - flat meshes; spell_flash.gd - the fan Force Wave
+  vfx/             spell_glyph.gd - 22 icons, as vector shapes in a unit box;
+                   ground_shapes.gd - flat meshes; spell_flash.gd - the fan Scourge
                    draws; aim_indicator.gd - what a spell will do, before it does it;
-                   impact_burst.gd - sparks; ground_streak.gd - the smear a Blink leaves
+                   impact_burst.gd - sparks; ground_streak.gd - the smear a Teleport leaves
   audio/           sound_bank.gd - every sound, synthesized. There are no audio files
   tests/  assets/
 ```
@@ -324,14 +325,59 @@ Movement tuning lives in exports on `player.gd`:
 
 | Export | Now | Why |
 |---|---|---|
-| `move_speed` | 6.5 m/s | Crosses the 14m arena in ~2.2s |
-| `accel_time` | 0.0 | Instant. A brawler wants direction changes to be immediate |
-| `decel_time` | 0.0 | Instant, predictable stops |
+| `move_speed` | 1.641 m/s | The map's 210 units/s at 128 units/m. Crosses the 11m arena in 13.4s |
+| `acceleration` | 2.734 m/s² | The map's `IA/20` per tick: top speed in 0.6s, at any speed |
+| `drag_per_second` | 0.51 | The map's `*.98` per 0.03s tick. **The only thing that slows you down** |
 | `air_control` | 0.25 | Knocked off you feel committed, but recovery skill still exists |
 | `turn_speed` | 14 rad/s | Cosmetic only - turning never gates movement |
 
-`accel_time` and `decel_time` at 0.0 mean instant; the ramp exists so adding weight later is a
-tuning change and not a rewrite.
+There is **no deceleration term**. `drag_per_second` is what stops a wizard, and it governs
+knockback too, because in the map a hit and a step are the same velocity. See
+docs/warlock-reference.md section 3.
+
+### The wizard is a figure, not a capsule
+
+`characters/player/wizard_rig.gd` builds a hooded wizard with a staff out of cylinders, boxes
+and spheres, and poses it every physics tick. It replaced a capsule, which was honest
+placeholder art right up until the ground and the lava had textures on them - a painted world
+with a pill standing in it reads as unfinished in a way that a painted world with a walking
+figure does not, however simple the figure is.
+
+**Built in code rather than modelled or downloaded**, which is the third time this project has
+made that call: every sound is synthesised in `audio/`, every spell icon is a vector shape in
+`vfx/spell_glyph.gd`. The reason here is a measurement rather than a preference. **The wizard
+is about a twelfth of the screen's height** - sixty pixels on a phone - and at sixty pixels a
+silhouette and a walk cycle carry the whole reading while polygon count carries none of it. A
+downloaded character would be detail delivered to a size that cannot show it, arriving with a
+licence, an import pipeline and a rig to keep working.
+
+Four things in it are load-bearing:
+
+- **The proportions are for a camera looking DOWN at 55 degrees, and the first attempt's were
+  not.** Built as a figure you would see from the side - tall hood, floor-length robe, arms at
+  the sides - it came out as a coloured cone with a bead on top, because from above a cone is
+  all you can see of a cone. What reads from up there is WIDTH: the span of the shoulders, the
+  arms held out from the body by a resting `rotation.z`, and the staff as a line across the
+  ground plan. Height is the one dimension this camera throws away.
+- **The mantle.** One wide, shallow cone at the shoulders is the single part that makes the
+  figure legible from above: it puts a disc where the shoulders are, so the head reads as a
+  separate spot sitting on a body rather than as the top of one long cone.
+- **The cycle is advanced by DISTANCE, not by time.** `STRIDE` is how far the body travels in
+  one two-step cycle, so a wizard slowed to a crawl takes slow steps of the same length rather
+  than fast steps that go nowhere. The rig is handed the speed it is ACTUALLY travelling at,
+  knockback included - a wizard sliding out of a hit is going somewhere and its legs should say
+  so.
+- **The swing is exaggerated.** `LEG_SWING` is 33 degrees where a real walk is about 20,
+  because at sixty pixels a true swing is three pixels of foot travel and reads as a slide.
+
+The rig owns which of its parts are cloth, so `main.gd._tint_fighter` calls `Player.set_tint`
+and knows nothing about the figure. It used to build a material and push it onto `Visual/Body`,
+which worked while a body was one capsule and stopped working the moment it was a dozen parts
+in four materials.
+
+The `Facing` block - a yellow bar poking out of the capsule's front - is gone. The staff does
+that job now, and it does it better: it is longer, it is asymmetric, and it is the part of the
+figure a player is already watching.
 
 ## Camera
 
@@ -433,39 +479,56 @@ on `player.gd`, because a heavier character should travel less from the identica
 1x at 0%, 2x at 100%, 2.5x at 150%. Linear because a player has to be able to look at a number
 and predict what the next hit does; an exponential curve makes that guesswork.
 
-Distance goes as **speed squared**, so 50% instability (1.5x speed) carries 2.25x as far. That
-quadratic is the tension curve — the numbers climb gently and the consequences climb fast.
+Distance is **linear in the impulse** under exponential drag, so 50% instability (1.5x speed)
+carries 1.5x as far. That used to be a quadratic 2.25x, under the linear friction this port
+replaced; the escalation is gentler now and the absolute distances are far larger - a clean
+Fireball crosses most of the ring at zero instability. See docs/warlock-reference.md section 4.
 
-### The legs have a ramp now
+### The legs carry momentum
 
-`accel_time` and `decel_time` were 0.0 - movement was assigned outright, which is instant and,
-on a phone, weightless: the wizard teleports between directions and a hit you walk out of reads
-as a hiccup. They are now **0.16 and 0.34**, asymmetric on purpose: getting going is nearly as
-quick as it was, stopping takes twice as long, and reversing costs about a third of a second.
-That third of a second is the whole of "momentum" as a player feels it.
+Three models have stood here. Movement was **assigned outright** first, which is instant and,
+on a phone, weightless. Then it was an **asymmetric ramp** (0.16s to start, 0.34s to stop),
+which bought weight while keeping a closed form for the slide. It is now the reference map's
+own integrator, which is neither:
 
-The reference map reaches the same place by different arithmetic - it damps one velocity per
-tick and adds the walk on top of whatever is left, rather than ramping toward a target. **The
-exponential half of that model was deliberately not copied.** Knockback here decays linearly,
-which is what gives the slide a closed form (below); exponential decay never quite stops, and
-the question "how far does this hit throw someone" would stop having an answer. The ramp buys
-the feel; the linear drag keeps the mathematics.
+```
+if the speed already carried along the wished direction is under top speed:
+    velocity += acceleration * direction * delta
+velocity *= drag_per_second ^ delta          # every tick, wish or no wish
+```
 
-### Drag is linear on purpose too
+**There is no braking term at all.** Releasing the stick leaves you coasting, halving your
+speed about once a second. That is the map's signature feel and the thing its own Time Shift
+means when it restores your "momentum" alongside your position and health.
 
-`knockback_friction` bleeds the hit off at a constant m/s², which gives the slide a closed
-form: **v² / 2f**. So "how much knockback throws someone off a 7m arena?" has an answer
-instead of a playtest, and the harness can check that the measured slide is the intended one.
-Exponential decay never quite stops and makes the same question unanswerable.
+The gate reads the **combined** velocity - steering plus knockback - along the wished
+direction. That is what the map tests, and it is why steering out of a slide works: flying
+backwards, your speed along "forward" is negative, so you are under the cap and you accelerate.
+
+### Exponential drag, and the closed form that survived it
+
+The previous section here argued that drag must be LINEAR, because `v² / 2f` gives the slide a
+closed form and exponential decay never quite stops. Half of that was right and half of it was
+a false dilemma. Exponential decay integrates perfectly well:
+
+**distance = v / -ln(drag)**
+
+`Knockback.slide_distance()` is that, and `--knockback-test` still asserts a measured slide
+against it - to within a hundredth of a metre, in practice. What genuinely changed is the
+SHAPE: distance is now linear in the impulse where it used to be quadratic, and the tail never
+formally reaches zero, so both `_input_velocity` and `_knockback` snap to zero below 0.01 m/s.
+Without that snap a wizard is forever "moving" at 1e-30 m/s and every is-it-still test fails.
 
 ### Two velocity accumulators
 
 `player.gd` keeps `_input_velocity` and `_knockback` **separate**, summing them once per tick.
-This is load-bearing, not tidiness. It was written when `accel_time` was 0 and the input path
-assigned `velocity.x` outright every tick, which erased any knockback folded into `velocity` on
-the very next frame. The ramp softens that particular failure without removing the need for the
-split: the two decay by different rules - the walk ramps toward what the thumb asks for, the
-hit bleeds off at a constant m/s² - and a single accumulator cannot obey both.
+This is load-bearing, not tidiness. It was written when movement was assigned outright every
+tick, which erased any knockback folded into `velocity` on the very next frame.
+
+The map itself keeps ONE velocity and adds a hit straight into it, and that is no longer a
+disagreement: both accumulators now carry the same drag, so the sum behaves exactly as one
+would. What the split still buys is that the steering path can never assign over a hit. The
+one place the two must meet is the acceleration gate above, which reads the combined speed.
 Worse, reading `velocity` back after `move_and_slide()` as "what I was doing" folds the last
 frame's knockback into this frame's input, and any reduced-authority path (hitstun, airborne)
 then keeps a fraction of it *and* adds the knockback again — the hit compounds with itself and
@@ -488,9 +551,15 @@ setting can leave a residue that outlives the hitstun.
 
 ### Who applies a hit
 
-`main.gd._on_projectile_hit` is the single place. Instability is raised **first** and the
-knockback reads the new value, so a landed hit is amplified by the destabilisation it just
-caused and combos escalate. Reading the pre-hit value is defensible and duller.
+`main.gd._apply_hit` is the single place, and it now spends **one** number three ways. The map
+has no separate knockback stat: `Ability.damage` drains health, raises damage points and sets
+the push, with `push_mult` the only lever between them. Damage points are raised **before** the
+push reads them, so a landed hit is amplified by the destabilisation it just caused and combos
+escalate. Reading the pre-hit value is defensible and duller.
+
+`Ability.push_along_travel` picks between the map's two hit functions: `SW()` shoves along the
+missile's line, `WW()` away from whoever cast it. A hit with no known caster falls back to the
+travel line, so the field can never leave a spell with no direction at all.
 
 ## Abilities
 
@@ -534,33 +603,36 @@ indexing `_cooldowns` crashed once, because the bounds that were tested were not
 that were used; `abilities` now resizes the cooldown array through its setter, so a spellbook
 assigned at runtime cannot desync the two.
 
-### The eleven spells
+### The twenty-two spells
 
-All eleven are `.tres` files in `data/abilities/`. None of them has a script. What differs
-between them is numbers and which **cast type** they select, and each cast type has exactly
-one runtime, in `main.gd`, at the seam where a cast request becomes something in the world.
+All of them are `.tres` files in `data/abilities/`. None has a script. What differs between
+them is numbers and which **mechanic** they select, and each mechanic is one field read at one
+seam in `main.gd`.
 
-| Spell | Cast type | Runtime | The rule that makes it that spell |
+Eight mechanics are the whole of the new runtime; every other spell is existing fields in a
+new arrangement. `--roster-test` has one section per mechanic for exactly that reason.
+
+| Mechanic | Field | Where it is read | The rule that makes it that spell |
 |---|---|---|---|
-| Fireball | `PROJECTILE` | `ProjectilePool.fire` | travels, hits the first body, expires |
-| Arc Lance | `PROJECTILE` | the same | no drag and three times the speed — it is Fireball's numbers, nothing more |
-| Seeker | `PROJECTILE` | the same + `Projectile._home` | turns at `homing_turn` deg/s toward the nearest fighter |
-| Loopshot | `PROJECTILE` | the same + `_turn_for_home` | turns at `returns_after` of its life and flies at the caster; `pierces` lets it catch the same wizard twice |
-| Warp Bolt | `PROJECTILE` | the same + `_swap_places` | `swaps_places` — the caster and the target exchange positions |
-| Force Wave | `CONE` | `_cast_cone` → `ConeCast.targets` | thrown **away from the caster**, not along the aim |
-| Blink | `DASH` | `_cast_dash` | landing point **clamped inside the arena** |
-| Lunge | `DASH` | the same + `_dash_targets` | `dash_hits` — the corridor is swept and everyone in it goes through `_apply_hit` |
-| Arcane Shield | `BUFF` | `_cast_buff` → `Player.apply_shield` | a multiplier on incoming knockback, not a block |
-| Momentum | `BUFF` | the same | `speed_per_absorbed` — what the ward swallowed is paid back as walking speed |
-| Rewind | `BUFF` | `_cast_buff` → `Player.begin_rewind` | position and health recorded at CAST time, restored at resolve time |
+| blast | `area` on a PROJECTILE | `_on_projectile_spent` → `_burst` | resolves at the SPOT it died, so a meteor that lands on empty ground still lands. The direct hit is skipped for these, or the first target takes it twice |
+| falloff | `falloff_over` | `_falloff`, inside `_burst` and `_cast_cone` | damage scales to nothing at the rim of a burst, so its centre is the worst place to stand |
+| self-hit | `hits_caster` | `_cast_cone` routes to `_burst` instead | a burst has no direction, so it stops being a cone at all — and catching yourself is the map's price for a two-second cooldown |
+| split | `splits_into` + `split_child` | `_on_projectile_spent` → `_split` | fragments are a whole Ability of their own, so a weak shot can leave a dangerous cloud |
+| stream | `stream_count` / `stream_interval` | `_fire_stream`, an `await` loop | the aim is frozen at the cast: you commit to a line and they get to walk out of it |
+| bounce | `bounces` / `bounce_falloff` | `_bounce_onward` | fires a DUPLICATED ability, one bounce poorer. Duplicating keeps `hit`'s signature, which has broken two harnesses silently once already |
+| root | `root_seconds` | `_apply_hit` → `Player.apply_root` | takes the legs, not the body: knockback still lands and the lava still burns |
+| drain / mend | `heal_caster`, `ally_heal` | `_apply_hit`, `_burst` | the only healing in the game, and neither works alone — one needs a victim, the other an ally |
+| pull | `pull_force` / `pull_radius` | `Projectile._pull` → `Player.apply_pull` | an acceleration on the knockback channel, ACCUMULATED rather than replaced |
+| tether | `tether_seconds` / `tether_dps` | `_tick_tethers` in `main.gd` | health only, keyed by the victim, so a second link refreshes rather than stacks |
 
-**Eleven spells need eleven SHAPES, not eleven tints.** `Ability.glyph` picks one of
-`SpellGlyph`'s vector icons, drawn straight into the spell button and into each menu row.
-Four spells were four tinted discs and that read; eleven are eleven tinted discs, three of them
-some shade of blue, under a thumb, mid-fight. The shapes are named for what they look like
-(`FLAME`, `FAN`, `BOLT`, …) rather than for the spell that uses one, so a twelfth spell reaches
-for the closest fit before anybody draws a new one — and `--loadout-test` asserts that no two
-spells in the roster share a shape.
+**Twenty-two spells need twenty-two SHAPES, and that is more drawing than the comparison is
+worth.** `Ability.glyph` picks one of `SpellGlyph`'s vector icons, drawn into the spell button
+and into each menu row. The rule used to be "unique across the roster"; it is now **unique
+within a column, plus the primary unique against all of them**, and that is a better rule
+rather than a weaker one: what a player compares is a column while picking, and what they
+carry is Fireball plus one spell from each column — so the bar is always four different shapes.
+`--loadout-test` asserts both halves, and the same rule applies to `Ability.bolt`, the shape a
+spell wears in flight.
 
 Two details are worth keeping:
 
@@ -578,7 +650,7 @@ Two details are worth keeping:
 
 **In the air, shape carries the identity too.** `Ability.bolt` picks one of five meshes built
 once and shared by every projectile that ever flies with it: an `ORB` (Fireball), a `SHARD`
-(Arc Lance), a `DART` (Seeker), a spinning `BLADE` (Loopshot) and a flat `RING` (Warp Bolt).
+(Lightning), a `DART` (Homing), a spinning `BLADE` (Boomerang) and a flat `RING` (Swap).
 `--bolt-pose` fires all five down parallel lanes so one screenshot compares them.
 
 Three rules hold it together:
@@ -606,11 +678,11 @@ Four details are load-bearing:
   stays taken, so the escalation curve survives the spell. `Ability.rewind` says so in its own
   doc comment, and `--loadout-test` asserts it rather than trusting it.
 
-- **Force Wave pushes outward, not forward.** A wave shoves what it touches, so someone caught
+- **Scourge pushes outward, not forward.** A wave shoves what it touches, so someone caught
   at the shoulder of the fan is thrown sideways — which near a rim is off it. That is the
   whole reason it is the finisher, and `--spells-test` asserts the direction rather than
   trusting it.
-- **Blink is clamped by the LEVEL, not by the spell.** `main.gd` is the only thing that knows
+- **Teleport is clamped by the LEVEL, not by the spell.** `main.gd` is the only thing that knows
   where the edge is, and it already reads the radius off the platform's collision shape. A
   spell that could drop you in the void is a spell nobody would ever press.
 - **The shield is applied in `Player.apply_knockback`, not in `Knockback.velocity`.** The
@@ -711,7 +783,7 @@ fifth spell is a node and an angle.
 
 `AbilityButton` tests a **disc**, not its bounding box. A round button with a square hit area
 claims the corners of a square nobody can see, and in a cluster those invisible corners overlap
-— which turns "tap Blink" into "cast whichever button happens to sit earlier in the scene
+— which turns "tap Teleport" into "cast whichever button happens to sit earlier in the scene
 tree", with nothing on screen looking wrong. Matching the hit area to the drawing is what lets
 the cluster be tight enough to reach without moving your hand. `--twothumb-test` asserts no two
 buttons can share a finger, and `--button-test` asserts a tap in the gap between two of them
@@ -798,7 +870,7 @@ Two of those are decisions rather than drawings:
 
 The level drives the indicator every rendered frame, rather than on a signal, because the thing
 being previewed moves: you walk while you aim. It is driven by `main.gd` and not by the fighter
-for the same reason Blink is clamped there — the arena's size is the level's knowledge.
+for the same reason Teleport is clamped there — the arena's size is the level's knowledge.
 
 ### Casting is latched, not sampled
 
@@ -845,14 +917,14 @@ reaction time is a gameplay number: it must not sharpen on a 144Hz desktop and d
 | Hold a range | closes outside `preferred_range + range_slack`, backs off inside `preferred_range - range_slack`, circles in between |
 | Aim | at where the target is *going* — led by the projectile's flight time |
 | Shoot | once the spell is ready and it has dawdled for `cast_gap` |
-| Choose a spell | get back on the arena (Blink), shove off whoever is in its face (Force Wave), brace if it is nearly gone (Shield), otherwise Fireball |
+| Choose a spell | get back on the arena (Teleport), shove off whoever is in its face (Scourge), brace if it is nearly gone (Shield), otherwise Fireball |
 | Stay on the arena | never *asks* to move outward past `arena_radius - edge_margin`, and the further past that line it is, the more of its steering goes to getting back |
 
 Being thrown off is the game; walking off is a bug. Knockback still removes it exactly as it
 removes the player.
 
 It finds its spells **by cast type, not by slot index**, so a wizard with a different loadout -
-or with only two spells - is playable by the same bot with nothing changed here. Blink is the
+or with only two spells - is playable by the same bot with nothing changed here. Teleport is the
 one cast it does not aim at you: it is the escape, so it is aimed at the middle of the arena,
 and because facing follows aim the wizard visibly runs for safety rather than moonwalking.
 
@@ -950,7 +1022,7 @@ lens lunging at them - `_on_arena_resized()` clamps what it hands the camera:
 ## The ring, and who owns its size
 
 `arena/arena.gd` owns the radius. It used to be a number typed into a collision shape and read
-once at startup; it moves now, so five readers ask instead of copying: Blink clamps against
+once at startup; it moves now, so five readers ask instead of copying: Teleport clamps against
 it, the bot keeps clear of it, the aim lane stops at it, the lava burns whoever is outside it,
 and the camera frames it. It arrives by `radius_changed` rather than being fetched, because a
 stale copy would put the bot's idea of the edge, the lava's idea of it and the drawn rim in
@@ -982,7 +1054,7 @@ rounds is the only way back to full, which is what turns the number into a budge
 a bar that tops up between exchanges.
 
 Who is burning is decided by `main.gd._tick_lava()` with a **radius test**, not an `Area3D`.
-The arena is a circle and every other rule in the file already knows it - Blink clamps against
+The arena is a circle and every other rule in the file already knows it - Teleport clamps against
 it, the bot keeps clear of it, the aim lane stops at it - so a fifth way of asking "am I inside
 the ring" would be a fifth thing to keep in step.
 
@@ -1016,7 +1088,7 @@ Four obstacles stand in the arena - two rocks and two trees - and they do three 
 it, so a Fireball dies against a rock. The level's `_apply_hit` then finds the body is not a
 `Player` and does nothing, which is exactly what hitting a rock should mean. `ConeCast` casts
 a sight line against the same layer for the same reason: **cover has to mean one thing**, and
-a rock that stops a Fireball but not a Force Wave teaches a rule and then breaks it.
+a rock that stops a Fireball but not a Scourge teaches a rule and then breaks it.
 
 The sight line runs between two fighters' ORIGINS, which sit at chest height on a 2m capsule -
 so an obstacle has to be about that tall to be cover, and both of these are. It is cast against
@@ -1120,7 +1192,7 @@ argument-gated harness. Everything after a bare `--` reaches `OS.get_cmdline_use
 | `--bot-test` | Asserts the bot: range, aim, facing, edge safety, difficulty, and that it does not cheat |
 | `--bot:off` | Parks the bot, for a screenshot or a suite that measures something else |
 | `--bot-skill:S` | `calm`, `steady` or `sharp`, to play a different difficulty |
-| `--spells-test` | Asserts Force Wave, Blink and Arcane Shield do what they claim |
+| `--spells-test` | Asserts Scourge, Teleport and Shield do what they claim |
 | `--button-test` | Asserts a finger on button N casts spell N and nothing else |
 | `--aim-test` | Asserts drag-to-aim: the indicator, the direction, the latch, and the dash clamp |
 | `--aim-hold:S,X,Y` | Holds a drag on button S toward X,Y and never lifts, so a shot catches the indicator |

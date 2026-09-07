@@ -800,3 +800,374 @@ the previous session's theory outright.
 - [ ] The spell bar is still laid out for a right thumb - a big button bottom-right with three
       satellites. For a desk a centred row would be conventional.
 
+
+---
+
+## Session 24 - The map's own physics
+
+"Su anki oyun biraz hizli geliyor bana." That report was exact, and the cause was arithmetic
+rather than feel: Session 11 moved three numbers across from the reference map at two
+different scales - walk speed at 52.5 units/metre while the arena was laid out at 140 - so a
+wizard that should cross its ring in 13.4 seconds crossed it in 5. Everything below follows
+from picking ONE scale and applying it.
+
+**1 metre = 128 Warcraft III units**, the map's own terrain cell.
+
+- [x] `tools/w3x.py` - an MPQ reader that can open the map. Every file in it is encrypted and
+      the sibling tower-defense repo's reader refuses all of them; the forty lines that fix
+      that have now been written twice and lost twice, both times to a scratchpad. Committed
+- [x] `tools/warlock_dump.py` - `units`, `abilities`, `hits`, `speeds`, `metres`. Two of those
+      survive the script being obfuscated, which is the whole trick: every hit in the map goes
+      through `WW()`/`SW()`, whose call sites carry each spell's damage and push in the clear,
+      and every speed is written `N*.03` because the map integrates at a 0.03s tick
+- [x] `docs/warlock-reference.md` - what the tool prints, written up. **This is the file a
+      balance argument happens against from now on**
+
+### Movement is momentum, not a ramp
+
+- [x] `move_speed` 4.0 -> **1.641 m/s** (the map's 210 units/s). 13.4s to cross an 11m ring
+- [x] `accel_time`/`decel_time` -> `acceleration` 2.734 m/s^2 and `drag_per_second` 0.51.
+      **There is no braking term**: releasing the stick leaves you coasting, halving your
+      speed about once a second. That coast is what the map's own Time Shift means when it
+      restores your "momentum" alongside your position and health
+- [x] The acceleration gate reads the COMBINED velocity - steering plus knockback - along the
+      wished direction, which is what the map tests and is why steering out of a slide works
+- [x] `knockback_friction` gone. A hit decays under the same drag a walk does, because in the
+      map a hit IS a walk - one velocity, one rule
+- [x] `Knockback.slide_distance()` is `v / -ln(drag)`. The old comment argued drag must be
+      LINEAR or the slide would have no closed form; that was a false dilemma, and the
+      measured slide matches the new form to within a hundredth of a metre
+- [x] Both accumulators snap to zero below 0.01 m/s. Exponential decay never reaches zero and
+      a wizard forever "moving" at 1e-30 m/s keeps every is-it-still test awake
+
+### Damage and knockback are ONE number
+
+- [x] `Ability.instability` / `knockback` / `health_damage` -> `damage` + `push_mult` +
+      `push_along_travel`. The map has no separate knockback stat:
+      `dv = (100 + damage_points) * damage * push_mult * 0.03`
+- [x] **The instability curve was already the map's, which nobody knew.** It keeps accumulated
+      damage in the unit's mana pool, so 100 points doubles the push - and
+      `data/knockback_rules.tres` has shipped at `base 1.0, per_100 1.0` since session 4.
+      Not one number in that file changed
+- [x] `Knockback.base_impulse()` and `Knockback.UNITS_PER_METRE`. The 128 appears once
+- [x] `push_along_travel` picks between the map's two hit doors - `SW()` shoves along the
+      missile's line, `WW()` away from the caster. A hit with no known caster falls back to
+      the travel line, so the field can never leave a spell with no direction
+- [x] Consequence, stated rather than hidden: **most of the roster chips health now**, where
+      five spells did. The ten-hit floor survives anyway - the map's heaviest single hit is 10
+      out of 100, exactly ten
+
+### The eleven spells, on the map's numbers
+
+- [x] Every `.tres` re-derived from its counterpart in `war3map.w3a`, at level 1: Fireball
+      7.0 damage / 4.8s, Force Wave 10.0 / 3.0, Arc Lance 7.0 / 16.5, Seeker 7.0 / 14.0,
+      Loopshot 7.2 / 16.0, Lunge 5.4 / 17.0, and the guards at 25 / 22 / 21
+- [x] Projectiles fly FLAT. `projectile_drag` 1.0 everywhere - the map's missiles do not
+      decelerate, and Fireball's 15.5-arriving-at-9 was this repo's invention
+- [x] Fireball 15.5 -> **5.86 m/s** over 5.9m, which is half way to the rim
+- [x] Arena `start_radius` 12.0 -> **11.0m**. Barely a move, and worth saying out loud: the
+      arena was the right size all along and the wizard was crossing it 2.4x too fast
+
+### The suites, re-derived rather than loosened
+
+All seventeen green. Five had to change, and every one of them was measuring the old numbers:
+
+- [x] `--knockback-test`: the slide's closed form, and **50% instability now carries 1.5x, not
+      2.25x**. Distance is linear in the impulse under exponential drag where it was quadratic
+      under linear friction. It also prints the Fireball-at-each-stage table every run, because
+      no assertion can tell "far" from "too far"
+- [x] `--knockback-test`: the throw-off-the-arena hit is sized off `_arena.radius` instead of a
+      literal `7.2` left over from a seven-metre ring, which had been passing for free since
+- [x] `--twothumb-test` / `--round-test`: ten and fifteen ticks cannot see a 0.6s acceleration
+      ramp. The wizard covered eight centimetres and these read it as "not moving"
+- [x] `--bot-test`: five seconds is ONE Fireball at a 4.8s cooldown, and this asserted two
+      casts. The window derives from the spell now
+- [x] `--lava-test`: the Fireball it fires at the bot early on carries the bot **eight metres**
+      now, into the lava, where it burned down and ended the round - which healed the player
+      and restarted the clock under the burn measurement that runs later. The burn came out at
+      a third of its real rate and the elimination that fired belonged to the wrong fighter
+
+### The other eleven spells
+
+The roster is the map's whole roster now: twenty-two spells, and the eleven that were missing
+are **Meteor, Splitter, Fire Spray, Bouncer, Drain, WindWalk, Entangle, Gravity, Link,
+Cataclysm and Pious**.
+
+Eight mechanics cover all eleven; everything else is existing fields rearranged.
+`--roster-test` has one section per MECHANIC rather than per spell, for that reason.
+
+- [x] **blast** - `area` on a projectile, resolved at the spot it DIED rather than on what it
+      touched, so a meteor that lands on empty ground still lands. `Projectile.spent` is the
+      new signal that makes it possible. The direct hit is skipped for these, or the first
+      target takes the same spell twice
+- [x] **falloff** - `falloff_over`, so the centre of a blast is the worst place to stand. The
+      map states its meteor as "7-14 depending on range" and the direction is the point
+- [x] **self-hit** - `hits_caster` routes a CONE through the blast door instead, because a
+      burst has no direction to fan along. Catching yourself is the map's price for a
+      two-second cooldown
+- [x] **split** - `splits_into` + `split_child`, a whole Ability of its own rather than a
+      fraction of the parent. `splinter.tres` is in `data/abilities/` and in no column: nobody
+      picks it
+- [x] **stream** - `stream_count` / `stream_interval`, with the aim FROZEN at the cast. Re-aiming
+      per shot would turn six missiles into six free hits
+- [x] **bounce** - fires a DUPLICATED ability, one bounce poorer and a fifth weaker. Duplicating
+      rather than tracking a scale on the projectile keeps `hit`'s signature, which has already
+      broken two harnesses silently once
+- [x] **root** - takes the legs, not the body. Knockback still lands and the lava still burns
+- [x] **drain / mend** - the first healing in the game, and neither half works alone: one needs
+      a victim, the other an ally
+- [x] **pull** - an acceleration ADDED to the knockback channel rather than replacing it, which
+      is the opposite rule to a hit and has to be, or a field leaves you carrying one tick of it
+- [x] **tether** - health only, keyed by the VICTIM, so a second link refreshes rather than
+      stacks
+- [x] Eleven more glyphs and four more bolt shapes, all vector, all in the unit box
+- [x] `--roster-test`, thirty assertions
+
+### Traps this half hit
+
+- [x] **`_equip(strike, motion, guard)` matches ids to COLUMNS.** Passing a CONTROL spell as its
+      first argument leaves that column on its default and casts something else entirely - and
+      it fails as "the root does not work", "the tether does not work", "gravity does not pull",
+      three separate bugs that were one typo each
+- [x] **The default loadout lost its cone**, and four suites that look for one by cast type
+      broke at once with `Nil`. Force Wave had been STRIKE's first entry and the regroup moved
+      it. It is back at the head of STRIKE, and the rule is now explicit: **the first entry of
+      each column has to leave the default bar holding all four cast types**
+- [x] **Eight rows in a column do not fit on a 720-tall screen** - the last two options AND the
+      FIGHT button were below the bottom edge, which is a menu with no way out. The columns
+      scroll now, and `--loadout-test` asserts the FIGHT button is on the screen. Shrinking the
+      rows was measured and rejected: about 360px are left for a list, which at eight rows is
+      thirty pixels each
+- [x] **Twenty-two spells do not need twenty-two glyphs.** The uniqueness rule is now per
+      COLUMN plus the primary against all of them, which is what a player actually compares -
+      and it still guarantees four different shapes on the bar, because you carry one spell
+      from each column
+
+### Still open
+
+- [ ] **Nobody has played it yet.** The number to judge is the 8.1m a clean Fireball carries on
+      an 11m ring - three quarters of the way to the rim, from the first exchange. If that is
+      too swingy the honest lever is each spell's `push_mult`, never the drag: the drag is the
+      walk
+- [ ] **Cooldowns are long now** - 14 to 30 seconds outside Fireball and the two self-bursts -
+      and the player carries four spells where the map's player carries eight. A round may read
+      as sparse
+- [x] **The spells carry the map's names now.** Force Wave -> Scourge, Arc Lance -> Lightning,
+      Seeker -> Homing, Loopshot -> Boomerang, Blink -> Teleport, Lunge -> Thrust, Warp Bolt ->
+      Swap, Arcane Shield -> Shield, Rewind -> Time Shift, Momentum -> Rush. **Display names
+      and prose only** - the `id` keys stayed, because four of the map's names collide with
+      fields this code already has (`swaps_places`, `homing_turn`, `apply_shield`,
+      `begin_rewind`) and those are named after behaviours on purpose
+- [ ] **Three columns, not seven.** The map offers seven and you carry eight spells; four thumb
+      buttons and four keys is why this offers three. It is the one structural departure
+- [ ] `bounce` has never been seen doing the interesting half of its job, because
+      `--roster-test` is 1v1 and a bounce needs somebody else to reach
+- [ ] Lava damage per second is still ours (22). The map's is behind the script's obfuscation
+- [ ] Meteor is the one number not taken at face value - 10 at the centre where the map says up
+      to 14 - because 14 breaks the ten-hit floor. Recorded in docs/warlock-reference.md
+
+### Session 24b - the lens stops chasing the ring
+
+Reported on sight: "harita daralirken kamera cok fazla yaklasiyor... oyuncu karakteri buyuk
+kalirken diger objeler kuculuyor ve guzel gorunmuyor."
+
+That is a precise description of what the framing did. `CAMERA_FRAMING` held the same picture
+at every ring size, so over one close the lens travelled **34.5m to 20.4m - 41% - and the
+wizard grew 69% on screen**. Two things then move in opposite directions at once: the
+character inflates while the island shrinks under them.
+
+- [x] `CAMERA_SHRINK_FOLLOW`, 0.25. The lens is lerped between the framing the round opened at
+      and the framing this radius would ask for, so it follows a quarter of the shrink: 3.5m
+      of travel and 11% of growth over twenty seconds, which is slow enough not to be seen
+      happening. 0.0 pins it outright
+- [x] **The ring closes by exactly as much as it always did.** The squeeze moved into the
+      geometry, where a player can read it, rather than being split between the geometry and
+      the lens
+- [x] `--shrink-test` asserts the travel stays under a fifth of the opening distance. The
+      assertion it replaced - "the camera holds its floor" - was true before and after, so it
+      could never have caught this; `CAMERA_FLOOR_RADIUS` was stopping the last few metres
+      while the first fifteen went unchallenged
+- [x] GAME_DESIGN.md's "The camera comes in with it" section rewritten. It argued the opposite
+      and the argument was reasoned rather than watched
+
+### Session 24c - the arena's textures, as prompts
+
+Everything on screen is still an untextured primitive with a flat colour.
+`docs/arena-art-prompt.md` is the prompt set for the WORLD half of that: ground, lava, rock,
+bark, canopy. The wizards are deliberately not in it - they are capsules, and what a capsule
+should become is easier to answer once the world around it has a look.
+
+- [x] Five prompts, generated one at a time. Ground and lava first: between them they are
+      every pixel of the screen
+- [x] **Every one asks for a SEAMLESS TILE, because the ground shrinks.** The platform closes
+      from 11m to 4.5m during a round, so a painted island would be squashed as it went. A
+      tile stays the same size on the grass whatever the ring does
+- [x] **Every one forbids a baked light direction.** There is a real DirectionalLight3D
+      casting real shadows; a sun painted into the texture means every rock is lit twice and
+      its own shadow falls the wrong way. Baked darkness in the crevices is wanted, a baked
+      sun is not
+- [x] Every measured number the generator needs is in the doc's table - camera pitch, the
+      wizard's height on screen, the current colour of each material - so a prompt can be
+      re-derived rather than re-guessed
+- [x] The wiring note carries the trap: the platform's UVs run 0..1 across the cap whatever
+      its radius, so a texture on it SCALES as the ring closes. `uv1_triplanar` is the fix,
+      and it is the same "everything changes size but the wizard" problem the camera had
+
+### Still open
+
+- [ ] No texture has been generated yet. Nothing is wired in
+- [ ] **The wizards.** Two routes and the doc names neither yet: a texture on the capsule that
+      keeps every bit of the 3D lighting and costs no code, or a billboard sprite that gives a
+      real character and costs a Sprite3D, a facing rule and a walk cycle. The camera is fixed
+      at 55 degrees and never rotates, so a pre-rendered sprite would fit it exactly
+
+### Session 24d - the first two textures, checked and in
+
+Ground and lava came back from the generator. Both were good; the checking still found things.
+
+- [x] `tools/check_texture.py` - four of the doc's five checks as numbers: size, how much
+      worse the wrap seam is than an ordinary neighbouring column, the brightness spread over
+      a 3x3 grid (a baked sun shows up here and nowhere else), the darkest tone, and the
+      distance from the colour the game uses now
+- [x] `--seam-strip` butts the last hundred columns against the first hundred **at full
+      resolution**. The 2x2 preview is downscaled and a one-pixel seam vanishes into it -
+      which is exactly the seam that shows up as a faint grid on the ground
+- [x] `tools/fit_texture.py` - area-average down to a power of two. 1254 is what the generator
+      returned; nearest-neighbour downscaling is what makes hand-painted art sparkle
+- [x] Both files measured clean: brightness spread 2.4% and 1.9% (no baked sun), darkest tone
+      luma 26 and 38 (no black), mean colour 22 and 21 away from the game's own
+
+### What the check found anyway
+
+- [x] **`mipmaps/generate=false` on a fresh import.** On a ground plane seen at a 55 degree
+      slant across the whole screen, that is grass that crawls whenever anything moves. Also
+      set `compress/mode=2`; these are phone builds
+- [x] **The seam ratio runs hot on painted textures.** Both measured "marginal" at 2.0-2.8x
+      and both are invisible in the full-resolution strip, because an ordinary step between
+      neighbouring columns in a busy texture is only 7 to 13 out of 765. Read the ratio, then
+      look at the strip
+- [x] **A texture is only half of how it looks.** The lava tiled every 8m and the repeat was
+      obvious across a 120m field - 22m now. And it was brighter than the ring, because its
+      material is unshaded so the painted brightness goes straight to the screen while the
+      grass beside it is lit and therefore darker than its own file. `albedo_color` multiplies
+      it down
+- [x] **The spell buttons stopped being readable.** Translucent discs were fine over a flat
+      orange background and stopped being fine the moment the background had a pattern in it.
+      `AbilityButton.backdrop` is a dark plate under them now. The general form of this is
+      worth remembering: anything drawn over the world gets harder to read every time the
+      world gets more detailed
+- [x] Seven suites re-run, all green
+
+### Still open
+
+- [ ] Rock, bark and canopy are still flat colours. Their prompts are written
+- [ ] The wizards are still capsules, and the decision about what they become is still open
+
+### Session 24e - the wizard is a figure now
+
+"Kapsul istemiyorum. Baya hareket eden bir insan modeli istiyorum asasi ile."
+
+`characters/player/wizard_rig.gd` builds a hooded wizard with a staff out of cylinders, boxes
+and spheres and poses it every physics tick. Hood, hood-shadow, shoulder mantle, two arms, two
+legs, boots, a sash, a robe, and a staff with a lit orb.
+
+- [x] Legs swing, knees bend one way only, the body rises on each step, the hem lags a beat
+      behind, the figure leans into a walk and breathes when it stops
+- [x] **The staff comes up on the frame a spell LEAVES**, and the orb brightens with it, so
+      the pose is a tell rather than a reaction. `Player.tell_cast()`, called from
+      `_on_cast_requested`
+- [x] Built in code, not modelled or downloaded, and the reason is a measurement: the wizard is
+      about a twelfth of the screen's height - sixty pixels on a phone - where silhouette and
+      motion are the whole reading and polygon count is none of it
+
+### The two things that had to be learnt the hard way
+
+- [x] **The proportions have to be for a camera looking DOWN at 55 degrees.** The first attempt
+      was a figure you would see from the side - tall hood, floor-length robe, arms at the
+      sides - and it rendered as a coloured cone with a bead on top, because from above a cone
+      is all you can see of a cone. What reads from up there is WIDTH: shoulder span, arms held
+      out by a resting `rotation.z`, and the staff as a line across the ground plan
+- [x] **The mantle is the part that made it legible.** One wide shallow cone at the shoulders
+      puts a disc where the shoulders are, so the head reads as a separate spot on a body
+      rather than as the top of one long cone
+- [x] The cycle advances by DISTANCE, not time, so a slowed wizard takes slow steps of the same
+      length. It is handed the speed it is ACTUALLY travelling at, knockback included
+- [x] `LEG_SWING` is 33 degrees where a real walk is 20: at sixty pixels a true swing is three
+      pixels of foot travel and reads as a slide
+- [x] The staff had to be thickened and lightened twice - it spends half its time inside the
+      wizard's own shadow, where a thin dark line is nothing
+
+### Knock-on
+
+- [x] The `Facing` block is gone. The staff does that job and does it better - longer,
+      asymmetric, and the part of the figure a player is already watching
+- [x] `_tint_fighter` goes through `Player.set_tint` now. It used to push a material onto
+      `Visual/Body`, which worked while a body was one capsule and stopped working the moment
+      it was a dozen parts in four materials
+- [x] Eighteen suites green
+
+### Still open
+
+- [ ] `AbilityButton.cooldown_veil` is pure black, against this project's own "no black
+      anywhere" rule. It was easy to miss over a flat background and is not any more
+- [ ] Rock, bark and canopy are still flat colours. Their prompts are written
+
+### Session 24f - the two small ones
+
+- [x] **`AbilityButton.cooldown_veil` is no longer black.** It was the last place breaking this
+      project's one colour rule - no black anywhere, because black reads as a hole punched in
+      the picture rather than as a dark thing in it. The same deep blue-violet the scene
+      clears to, so a spell on cooldown reads as covered over rather than burnt out. It got
+      away with it while the background was flat orange
+- [x] **Rock, bark and canopy are textured**, and they are GENERATED - `tools/make_texture.py`,
+      stdlib, seeded, seamless. Worley cells for the rock's facets and the canopy's clumps,
+      anisotropic value noise for the bark's ridges
+- [x] The reasoning is the same measurement the wizard rig used: a boulder is thirty pixels on
+      this screen and a canopy fifty, and at that size a texture breaks a flat colour into
+      facets, which is arithmetic. The ground and the lava were right to come from a painter -
+      they are every pixel of the screen
+- [x] All three triplanar, mipmapped, VRAM-compressed, and through `check_texture.py`
+
+### What the checker found this time - in my own generator
+
+- [x] **The first bark did not tile at all**: 13x seam left-to-right, 67x top-to-bottom, where
+      the rock and the canopy measured 1.01x and 1.00x. The cause was real and worth writing
+      down: an fBm octave only wraps if its sample frequency is a whole number of its lattice's
+      cells, and an 18-wide sweep against an 8-wide lattice is not. `octaves()` now builds each
+      band's lattice AT its own frequency, in both axes independently - which is also what lets
+      bark be eighteen bands across and three down, and that stretch is the ridges
+- [x] Worth noting for its own sake: the tool was written to check downloads and caught a bug
+      in code instead. It has no idea where an image came from, which is the point
+
+### Session 24g - the obstacles have shapes, and the staff is the right length
+
+- [x] **`arena/obstacles/rock.gd`** - three angular lumps at different sizes and angles rather
+      than one seven-sided cylinder. Every sphere is cut with SIX segments and THREE rings, so
+      the facets read as the flat planes of broken stone, which is the same job the painted
+      highlight does in a Warcraft III texture
+- [x] **`arena/obstacles/tree.gd`** - a trunk in two segments with a bend and a flare at the
+      root, under FIVE overlapping leaf masses. One sphere has the most regular outline there
+      is, and an irregular outline is the whole of what reads as a tree from above
+- [x] Both seeded from where they STAND, so two rocks are two rocks and neither changes shape
+      between runs - a screenshot taken twice has to be the same screenshot
+- [x] **The collision shapes are untouched.** What an obstacle blocks is a gameplay number that
+      four suites measure and it must not drift because the art changed
+
+### The staff
+
+- [x] **As tall as the wizard, ground to head.** It was 2.07m against a 1.64m figure. The hand
+      sits 0.77m up, so the shaft runs 0.72 below it and 0.78 above - deliberately asymmetric,
+      because more of a staff is below the hand than above it
+- [x] **Both arms had their Z sign backwards**, and that was the real bug behind three rounds
+      of the staff hiding. A limb hangs along -Y and rotating about +Z carries it toward +X,
+      which is the wizard's RIGHT - so the right arm swings out on a POSITIVE z. They were
+      reversed, which crossed both arms over the chest, buried them in the robe's outline and
+      put the staff's whole length inside the skirt. It read as a wizard holding a floating
+      bead, and no amount of adjusting the staff's own angle was ever going to fix it
+
+### Still open
+
+- [ ] `--pc-test` failed three assertions in one unattended batch and passed alone immediately
+      after. It is the suite documented as needing a REAL WINDOW and a real mouse warp, and it
+      loses the focus it needs during a long run. Not a regression - but it means a batch of
+      eighteen cannot be read as eighteen without re-running that one

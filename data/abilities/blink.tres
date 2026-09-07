@@ -5,21 +5,12 @@
 [resource]
 script = ExtResource("1_ability")
 id = &"blink"
-display_name = "Blink"
+display_name = "Teleport"
 blurb = "Straight out of trouble. Never off the edge."
 colour = Color(0.756863, 0.552941, 1, 1)
 glyph = 5
 cast_type = 2
-cooldown = 5.0
+cooldown = 16.0
 charges = 1
-instability = 0.0
-knockback = 0.0
-projectile_speed = 0.0
-projectile_radius = 0.0
-lifetime = 0.0
-spawn_offset = 0.0
-area = 0.0
-cone_angle = 45.0
-dash_distance = 5.0
-duration = 0.0
-knockback_resist = 1.0
+damage = 0.0
+dash_distance = 6.02

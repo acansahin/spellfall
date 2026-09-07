@@ -1,0 +1,26 @@
+[gd_resource type="Resource" script_class="Ability" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://combat/abilities/ability.gd" id="1_ability"]
+[ext_resource type="Resource" path="res://data/abilities/splinter.tres" id="2_splinter"]
+
+[resource]
+script = ExtResource("1_ability")
+id = &"splitter"
+display_name = "Splitter"
+blurb = "Breaks into six, and the six are the spell."
+colour = Color(1, 0.756863, 0.309804, 1)
+glyph = 12
+cast_type = 0
+cooldown = 30.0
+charges = 1
+damage = 3.0
+push_mult = 1.4
+projectile_speed = 6.25
+projectile_radius = 0.34
+bolt = 7
+lifetime = 0.9
+spawn_offset = 0.9
+projectile_drag = 1.0
+splits_into = 6
+split_child = ExtResource("2_splinter")
+split_spread = 150.0

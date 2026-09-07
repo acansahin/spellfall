@@ -29,6 +29,15 @@ extends Area3D
 ## last is the difference between a rule and a guess - two bolts can be in the air at once.
 signal hit(body: Node3D, direction: Vector3, ability: Ability, shooter: Node3D)
 
+## Emitted when this is done, for any reason, BEFORE it is reclaimed - so the combat layer
+## still has the position it died at.
+##
+## Two spells are about that spot rather than about what was touched: a blast damages
+## everything standing around it, and a splitter breaks into fragments from it. Both must fire
+## when nothing was hit at all, which is why this is "done" and not "hit" - a meteor that
+## lands on empty ground has still landed.
+signal spent(at: Vector3, direction: Vector3, ability: Ability, shooter: Node3D)
+
 ## Emitted when this is done, for any reason. The pool listens to reclaim it.
 signal finished(projectile: Projectile)
 
@@ -129,7 +138,7 @@ func _ready() -> void:
 	# hundred fireballs are one SphereMesh. Duplicating it per projectile would be a hundred
 	# meshes for no difference on screen.
 	_shape.shape = _shape.shape.duplicate()
-	# Likewise one material per instance, so tinting a Fireball cannot recolour a Force Wave.
+	# Likewise one material per instance, so tinting a Fireball cannot recolour a Scourge.
 	_material = StandardMaterial3D.new()
 	_material.emission_enabled = true
 	# Was 2.2, which blew every tint toward white. That was survivable while all five spells
@@ -150,6 +159,7 @@ func _physics_process(delta: float) -> void:
 	# direction it turned to. Moving first would leave every seeker one tick behind its own aim,
 	# which reads as a spell that consistently trails its target.
 	_steer(delta)
+	_pull(delta)
 	global_position += _direction * _speed * delta
 	# Framerate-independent decay: `drag` is stated per SECOND, so a 30fps phone and a 144fps
 	# desktop agree on where the spell lands. Multiplying by the raw factor once per tick would
@@ -267,7 +277,10 @@ func _aim_mesh() -> void:
 	# path - which is what "aim it" would do - the camera looks down its edge and a ring becomes
 	# a vertical sliver indistinguishable from a small capsule. Flat, it reads as a ring from
 	# the only angle this game is ever seen from.
-	if _ability.bolt == Ability.Bolt.ORB or _ability.bolt == Ability.Bolt.RING:
+	# A lump and a speck have no direction either, for the same reason a ball does not: aiming
+	# a shape whose silhouette is the same from every side is work that changes nothing.
+	if _ability.bolt in [Ability.Bolt.ORB, Ability.Bolt.RING, Ability.Bolt.STONE,
+			Ability.Bolt.MOTE]:
 		return
 	if _ability.bolt == Ability.Bolt.BLADE:
 		# Flat and spinning about the vertical, the way a thrown bar actually flies. It does
@@ -323,6 +336,42 @@ static func _bolt_mesh(bolt: Ability.Bolt) -> Mesh:
 			hoop.rings = 12
 			hoop.ring_segments = 8
 			mesh = hoop
+		Ability.Bolt.STONE:
+			# A ball with almost no subdivision, so its facets read as a lump rather than as a
+			# low-quality sphere. Four segments is the fewest that still has a silhouette.
+			var lump := SphereMesh.new()
+			lump.radius = 1.0
+			lump.height = 1.7
+			lump.radial_segments = 5
+			lump.rings = 3
+			mesh = lump
+		Ability.Bolt.MOTE:
+			# Small and round. It is the only shape whose job is to look like there are several
+			# of it, so it must not have an orientation the eye can read.
+			var speck := SphereMesh.new()
+			speck.radius = 0.62
+			speck.height = 1.24
+			speck.radial_segments = 8
+			speck.rings = 4
+			mesh = speck
+		Ability.Bolt.FUNNEL:
+			# DART's cone the other way up, so the two read as opposites rather than as the
+			# same shape at two sizes: this one arrives mouth first.
+			var mouth := CylinderMesh.new()
+			mouth.top_radius = 1.0
+			mouth.bottom_radius = 0.04
+			mouth.height = 2.2
+			mouth.radial_segments = 10
+			mesh = mouth
+		Ability.Bolt.PRISM:
+			# A four-sided sliver along the flight. A cylinder with four segments, not a box:
+			# the box is already BLADE's, and two rectangles in the air are not two shapes.
+			var sliver := CylinderMesh.new()
+			sliver.top_radius = 0.45
+			sliver.bottom_radius = 0.45
+			sliver.height = 3.0
+			sliver.radial_segments = 4
+			mesh = sliver
 		_:
 			var ball := SphereMesh.new()
 			ball.radius = 1.0
@@ -401,8 +450,47 @@ func _finish() -> void:
 	if not _active:
 		return
 	_active = false
+	# `spent` goes out BEFORE `_park()` moves the node a thousand metres under the arena.
+	# Emitting it after would put every blast in the same spot far below the world, where it
+	# would hit nothing and read as a field that does not work.
+	spent.emit(global_position, _direction, _ability, _shooter)
 	_park()
 	finished.emit(self)
+
+
+## Drags nearby fighters toward this projectile. Gravity, and nothing else.
+##
+## An ACCELERATION added to the knockback channel, not a position set: caught in one, you can
+## still walk out if you start early, which is the difference between a field and a stun. The
+## knockback channel rather than the steering one because that is the half a fighter cannot
+## cancel by letting go.
+##
+## It reuses the seeker's shape query rather than a group, because a group would be a second
+## register of who is fighting and this file already has a way to ask.
+func _pull(delta: float) -> void:
+	if _ability.pull_force <= 0.0:
+		return
+	var space := get_world_3d().direct_space_state
+	if space == null:
+		return
+	_seek_probe.radius = maxf(_ability.pull_radius, 0.01)
+	_seek_query.shape = _seek_probe
+	_seek_query.transform = Transform3D(Basis.IDENTITY, global_position)
+	_seek_query.collision_mask = PLAYERS_MASK
+	_seek_query.collide_with_bodies = true
+	_seek_query.collide_with_areas = false
+	for found in space.intersect_shape(_seek_query, MAX_SEEK):
+		var fighter := found.get("collider") as Player
+		if fighter == null or not is_instance_valid(fighter):
+			continue
+		var gap := global_position - fighter.global_position
+		gap.y = 0.0
+		var distance := gap.length()
+		# Inside the eye it stops pulling. Without the floor the normalised direction flips
+		# sign every tick as the field passes over somebody, and they judder in place.
+		if distance < 0.3:
+			continue
+		fighter.apply_pull(gap.normalized() * _ability.pull_force * delta)
 
 
 ## Makes the node inert without freeing it, so the pool can hand it out again.

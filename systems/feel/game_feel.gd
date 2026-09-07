@@ -42,7 +42,7 @@ extends Node
 
 ## Knockback speed, in m/s, at which a hit is "heavy" - full stop, full shake, the heavier
 ## sound. Fireball at 0% instability lands around 6.7 m/s, so this sits just above a clean
-## opening hit and is reached by Force Wave, or by anything landing on a destabilised target.
+## opening hit and is reached by Scourge, or by anything landing on a destabilised target.
 @export var heavy_speed := 9.0
 
 @export_group("Shake")

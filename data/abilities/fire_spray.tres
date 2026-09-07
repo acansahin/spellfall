@@ -1,0 +1,25 @@
+[gd_resource type="Resource" script_class="Ability" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://combat/abilities/ability.gd" id="1_ability"]
+
+[resource]
+script = ExtResource("1_ability")
+id = &"fire_spray"
+display_name = "Fire Spray"
+blurb = "Six shots down one line. Aim where they are going."
+colour = Color(1, 0.560784, 0.239216, 1)
+glyph = 13
+cast_type = 0
+cooldown = 16.0
+charges = 1
+stream_count = 6
+stream_interval = 0.16
+damage = 2.6
+push_mult = 0.6
+push_along_travel = true
+projectile_speed = 5.47
+projectile_radius = 0.26
+bolt = 6
+lifetime = 1.1
+spawn_offset = 0.9
+projectile_drag = 1.0

@@ -1,4 +1,4 @@
-[gd_scene load_steps=20 format=3]
+[gd_scene load_steps=21 format=3]
 
 [ext_resource type="Script" path="res://characters/player/player.gd" id="1_player"]
 [ext_resource type="Script" path="res://combat/abilities/ability_component.gd" id="2_abilities"]
@@ -12,6 +12,7 @@
 [ext_resource type="Script" path="res://vfx/aim_indicator.gd" id="10_aim"]
 [ext_resource type="Script" path="res://characters/components/health_component.gd" id="11_health"]
 [ext_resource type="Script" path="res://vfx/health_bar.gd" id="12_bar"]
+[ext_resource type="Script" path="res://characters/player/wizard_rig.gd" id="13_rig"]
 
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_body"]
 radius = 0.5
@@ -61,14 +62,9 @@ shape = SubResource("CapsuleShape3D_body")
 
 [node name="Visual" type="Node3D" parent="."]
 
-[node name="Body" type="MeshInstance3D" parent="Visual"]
-mesh = SubResource("CapsuleMesh_body")
-surface_material_override/0 = SubResource("Mat_body")
-
-[node name="Facing" type="MeshInstance3D" parent="Visual"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.3, -0.75)
-mesh = SubResource("BoxMesh_facing")
-surface_material_override/0 = SubResource("Mat_facing")
+[node name="Body" type="Node3D" parent="Visual"]
+script = ExtResource("13_rig")
+tint = Color(0.309804, 0.678431, 0.933333, 1)
 
 [node name="Shield" type="MeshInstance3D" parent="Visual"]
 visible = false

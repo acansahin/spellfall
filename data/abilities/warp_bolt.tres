@@ -5,22 +5,18 @@
 [resource]
 script = ExtResource("1_ability")
 id = &"warp_bolt"
-display_name = "Warp Bolt"
+display_name = "Swap"
 blurb = "Trades places with whoever it hits."
 colour = Color(0.450980, 0.549020, 1, 1)
 glyph = 7
 cast_type = 0
-cooldown = 5.0
+cooldown = 16.0
 charges = 1
-instability = 0.0
-health_damage = 0.0
-knockback = 0.0
-projectile_speed = 18.0
+damage = 0.0
+projectile_speed = 6.25
 projectile_radius = 0.45
 bolt = 4
-lifetime = 0.9
+lifetime = 1.0
 spawn_offset = 0.9
 projectile_drag = 1.0
 swaps_places = true
-area = 0.0
-cone_angle = 45.0

@@ -50,8 +50,23 @@ signal cast_released(slot: int)
 @export var activation_padding := 16.0
 
 @export_group("Appearance")
+## The dark plate under a button, so the world behind it cannot be read through it.
+##
+## Deliberately not black, like everything else on this screen: a black disc reads as a hole
+## punched in the picture. This is the same deep blue-violet the scene's background clears to.
+@export var backdrop := Color(0.07, 0.06, 0.13, 0.62)
+
 @export var idle_ring := Color(1, 1, 1, 0.45)
-@export var cooldown_veil := Color(0, 0, 0, 0.55)
+## The wedge that sweeps over a spell that is not ready yet.
+##
+## NOT BLACK, though it was for a long time. This project has one rule about colour - there is
+## no black anywhere on screen, because black reads as a hole punched in the picture rather
+## than as a dark thing in it - and this was the last place breaking it. It got away with it
+## while the background behind the buttons was flat orange; a textured world made it obvious.
+##
+## The same deep blue-violet the scene clears to, so a spell on cooldown reads as "covered
+## over" rather than as "burnt out".
+@export var cooldown_veil := Color(0.07, 0.06, 0.13, 0.68)
 @export var press_flash := Color(1, 1, 1, 0.22)
 ## The little marker that follows the drag, so the player can see the aim they are giving
 ## without looking away from their wizard.
@@ -183,7 +198,7 @@ func _track(global_pos: Vector2) -> void:
 ##
 ## A DISC, not the bounding box. The button is drawn as a circle, so a square hit area claims
 ## the corners of a square nobody can see - and with four buttons in a cluster those invisible
-## corners overlap, which turns "tap Blink" into "cast whichever button sits earlier in the
+## corners overlap, which turns "tap Teleport" into "cast whichever button sits earlier in the
 ## scene tree". Matching the hit area to the drawing is what lets the cluster be tight enough
 ## to reach with one thumb.
 func _claims(point: Vector2) -> bool:
@@ -214,7 +229,15 @@ func _draw() -> void:
 	var ability: Ability = source.ability_in(slot) if source != null else null
 	var tint := ability.colour if ability != null else Color(0.5, 0.5, 0.5)
 
-	draw_circle(_centre, radius, Color(tint.r, tint.g, tint.b, 0.30))
+	# Two discs, not one: a dark plate first, then the spell's colour over it.
+	#
+	# The single 30%-alpha disc that used to be here was fine over a flat orange background and
+	# stopped being fine the moment the lava had a TEXTURE in it - the crust pattern read
+	# straight through the button and the glyph sat in the middle of it. A button has to be a
+	# button whatever happens to be behind it, and what was behind it was always going to
+	# change. The plate is the fix; the tint on top is what still says which spell this is.
+	draw_circle(_centre, radius, backdrop)
+	draw_circle(_centre, radius, Color(tint.r, tint.g, tint.b, 0.34))
 	if _touch_index != -1:
 		draw_circle(_centre, radius, press_flash)
 	draw_arc(_centre, radius, 0.0, TAU, 40, idle_ring, 3.0, true)
@@ -234,7 +257,7 @@ func _draw() -> void:
 		# letter over them would be a reminder of a keyboard nobody is holding.
 		if key_label != "":
 			# Placed against the BUTTON's rim rather than the glyph's corner. At the glyph's
-			# size it landed on top of the drawing - the E sat inside Blink's own dot - and a
+			# size it landed on top of the drawing - the E sat inside Teleport's own dot - and a
 			# reminder that obscures the thing it is reminding you of is worth less than
 			# nothing.
 			SpellGlyph.draw_key(self, key_label, _centre, radius * 0.74,

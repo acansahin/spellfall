@@ -5,8 +5,11 @@ extends Node
 ##
 ## This used to be lava-only, on the rule that no spell may ever touch it - keeping combat
 ## entirely in instability and knockback, so the fight stayed a positioning game and not a
-## damage race. Spells may chip it now (`Ability.health_damage`, applied in `_apply_hit()`),
-## but the rule behind that original decision is intact and is the one to defend:
+## damage race. Then five spells were allowed to chip it. Now MOST of the roster does, because
+## the reference map has one number per spell that drains health, raises damage points and
+## sets the push all at once - see `Ability.damage` and docs/warlock-reference.md.
+##
+## The rule behind the original decision survives all of that, and is the one to defend:
 ## **THIS BAR IS THE LAVA'S CURRENCY.**
 ##
 ## A trip into the lava empties a full bar in about four and a half seconds. The fastest spell
@@ -18,6 +21,10 @@ extends Node
 ## Fireball spent a session at five hits to a full bar, and at five it was a damage race with a
 ## knockback theme - the ring stopped mattering. `--loadout-test` now asserts both halves: ten
 ## clean hits minimum for any spell, and the lava faster than all of them.
+##
+## The map agrees with the ten, which is the pleasant part: its own heaviest single hit is
+## Scourge at 10 out of 100, exactly ten hits, and its Fireball at 7 needs fifteen. The floor
+## only comes under pressure at the shop levels this port does not build.
 ##
 ## What has NOT changed is that standing on stone no longer heals it. A trip into the lava, or
 ## a spell taken to the face, costs something for the rest of the round - `reset()` between
@@ -74,6 +81,26 @@ func damage(amount: float) -> void:
 		changed.emit(current, previous)
 	if current <= 0.0:
 		emptied.emit()
+
+
+## Gives health back. Two spells in the roster do it and nothing else in the game does.
+##
+## The doc below on `restore_to` says "nothing in this game heals - stone does not mend a burn,
+## and a Fireball taken stays taken". That was true of everything the game had, and the two
+## spells that break it are the map's own and break it in a way that keeps the rule's point:
+## **you cannot heal on your own.** Drain takes the health off somebody else, and Pious hands
+## it to an ally. Both cost a cast, both need a target, and neither does anything for a wizard
+## standing alone in the lava - which is the situation the no-healing rule exists to make
+## frightening.
+##
+## Clamped to the maximum, so neither can bank health nobody had.
+func heal(amount: float) -> void:
+	if amount <= 0.0:
+		return
+	var previous := current
+	current = minf(current + amount, maximum)
+	if current != previous:
+		changed.emit(current, previous)
 
 
 ## Puts the bar back to a value it held earlier, for a spell that rewinds its caster.

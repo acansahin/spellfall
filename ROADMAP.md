@@ -27,7 +27,7 @@ progression, no shop, no cosmetics. If that rule gets bent, the project is off t
 | 4 | Instability component + HUD readout | **done** |
 | 5 | Knockback system, wired to instability | **done** |
 | 6 | Fall detection and elimination | **done** |
-| 7 | Force Wave, Blink, Arcane Shield | **done** |
+| 7 | Scourge, Teleport, Shield | **done** |
 | 8 | Drag-to-aim + aim indicators | **done** |
 | 9 | Round manager: countdown, spawn, win, reset, score | **done** (landed early with #6) |
 | 10 | One simple bot opponent | **done** |
@@ -37,7 +37,7 @@ progression, no shop, no cosmetics. If that rule gets bent, the project is off t
 
 **Gate to Phase 2 — now the only thing standing between here and Phase 2.** Every question in
 `GAME_DESIGN.md` under "What Phase 1 must prove" answers yes. Specifically — movement feels good, aiming feels good on a touchscreen,
-Fireball and Force Wave are satisfying, knockback is predictable, instability creates real
+Fireball and Scourge are satisfying, knockback is predictable, instability creates real
 tension, falling off is reliable, the bot is a useful sparring partner, rounds reset cleanly,
 and the loop is fun enough that you keep playing after you stop testing.
 

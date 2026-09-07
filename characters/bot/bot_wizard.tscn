@@ -1,13 +1,9 @@
-[gd_scene load_steps=3 format=3]
+[gd_scene load_steps=2 format=3]
 
 [ext_resource type="PackedScene" path="res://characters/player/player.tscn" id="1_base"]
-
-[sub_resource type="StandardMaterial3D" id="Mat_bot"]
-albedo_color = Color(0.882353, 0.32549, 0.4, 1)
-roughness = 0.55
 
 [node name="BotWizard" instance=ExtResource("1_base")]
 team = 1
 
 [node name="Body" parent="Visual" index="0"]
-surface_material_override/0 = SubResource("Mat_bot")
+tint = Color(0.882353, 0.32549, 0.4, 1)

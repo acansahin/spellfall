@@ -13,6 +13,27 @@ extends RefCounted
 ## testable and trivially re-runnable, which is what reconciliation will need.
 
 
+## Warcraft III units to one metre. The reference map's terrain cell is 128 units, and this
+## port lays everything out on that one scale - the arena, the ranges, the walk speed and the
+## line below. It appears HERE and nowhere else; see docs/warlock-reference.md.
+const UNITS_PER_METRE := 128.0
+
+
+## The impulse a spell of this damage imparts to a target at zero instability, in m/s.
+##
+## The map has no separate knockback stat. One number is the damage, the instability gained
+## and the push, and its hit function reads
+##
+##     dv = (100 + damage_points) * damage * push_mult * 0.03      [units per 0.03s tick]
+##
+## Divide out the tick and you have units per second; divide by 128 and you have this. The
+## leading 100 is the map's own base, and `(100 + points)/100` is exactly the multiplier
+## below - which is why `KnockbackRules` ships at base 1.0 and per_100 1.0 and needs no
+## change: that curve was arrived at independently and it is the map's own curve.
+static func base_impulse(damage: float, push_mult: float) -> float:
+	return damage * push_mult * 100.0 / UNITS_PER_METRE
+
+
 ## How much the target's instability amplifies a hit.
 static func multiplier(instability: float, rules: KnockbackRules) -> float:
 	var raw := rules.base_multiplier + (instability / 100.0) * rules.per_100_instability
@@ -34,11 +55,17 @@ static func velocity(base: float, direction: Vector3, instability: float,
 	return flat.normalized() * speed + Vector3.UP * rules.lift
 
 
-## How far a hit of this speed will carry, given the receiver's friction. Closed form, because
-## the decay is linear: v^2 / 2f. Used by the harness to check that the measured slide matches
-## the intended one, and useful for answering "how much knockback clears a 7m arena?" without
-## playing it.
-static func slide_distance(speed: float, friction: float) -> float:
-	if friction <= 0.0:
+## How far a hit of this speed will carry, given the receiver's drag. Still a closed form,
+## which is the part worth protecting: "how much knockback clears an 11m arena?" has an
+## answer instead of a playtest.
+##
+## The decay is EXPONENTIAL now - the reference map multiplies a velocity by 0.98 every 0.03s
+## tick and does nothing else - so the integral is `v / -ln(drag)` where it used to be the
+## `v^2 / 2f` of linear friction. Two consequences to know before reading a number out of it:
+## the carry is now LINEAR in the impulse rather than quadratic, so doubling the instability
+## doubles the distance instead of quadrupling it; and the tail never formally reaches zero,
+## so this is total travel, not distance to a full stop.
+static func slide_distance(speed: float, drag_per_second: float) -> float:
+	if drag_per_second <= 0.0 or drag_per_second >= 1.0:
 		return INF
-	return (speed * speed) / (2.0 * friction)
+	return speed / -log(drag_per_second)

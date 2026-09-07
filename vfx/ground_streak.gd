@@ -1,9 +1,9 @@
 class_name GroundStreak
 extends MeshInstance3D
 
-## The smear a Blink leaves between where you were and where you are.
+## The smear a Teleport leaves between where you were and where you are.
 ##
-## Blink was the one spell with no visual at all: the wizard simply appeared elsewhere. It
+## Teleport was the one spell with no visual at all: the wizard simply appeared elsewhere. It
 ## read, in the sense that you could tell what had happened - but only afterwards, and never
 ## from the other side of the arena, where an opponent vanishing is indistinguishable from a
 ## dropped frame. This draws the line they took.
@@ -66,7 +66,7 @@ func _process(delta: float) -> void:
 	_material.albedo_color.a = peak_alpha * (_life / maxf(duration, 0.0001))
 
 
-## Rebuilt only when the distance changes, which for a clamped Blink is most casts - but a
+## Rebuilt only when the distance changes, which for a clamped Teleport is most casts - but a
 ## strip is four vertices, so this is cheap in a way the fan is not.
 func _rebuild(length: float) -> void:
 	if is_equal_approx(length, _built_length):

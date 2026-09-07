@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="Ability" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://combat/abilities/ability.gd" id="1_ability"]
+
+[resource]
+script = ExtResource("1_ability")
+id = &"cataclysm"
+display_name = "Cataclysm"
+blurb = "Everything around you, yourself included."
+colour = Color(1, 0.376471, 0.376471, 1)
+glyph = 20
+cast_type = 1
+cooldown = 2.0
+charges = 1
+damage = 6.0
+push_mult = 1.0
+push_along_travel = false
+area = 5.0
+cone_angle = 180.0
+falloff_over = 5.0
+hits_caster = true

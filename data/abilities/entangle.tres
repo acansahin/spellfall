@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="Ability" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://combat/abilities/ability.gd" id="1_ability"]
+
+[resource]
+script = ExtResource("1_ability")
+id = &"entangle"
+display_name = "Entangle"
+blurb = "Takes their legs. The lava does the rest."
+colour = Color(0.529412, 0.780392, 0.396078, 1)
+glyph = 16
+cast_type = 0
+cooldown = 27.0
+charges = 1
+damage = 0.0
+root_seconds = 4.5
+projectile_speed = 5.86
+projectile_radius = 0.34
+bolt = 3
+lifetime = 1.2
+spawn_offset = 0.9
+projectile_drag = 1.0

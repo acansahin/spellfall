@@ -31,19 +31,40 @@ after: its list was read straight out of the map file - see `docs` on `extract_w
 sibling tower-defense repo - and eleven spells were built from what it does, not from what a
 wiki says about it. What each spell *is* comes from there.
 
-What still does not, and is not negotiable:
+**Session 24 narrowed it again, and much further.** The rule about numbers is gone. The map's
+own movement, damage, knockback, cooldowns, ranges, health and arena size are what this game
+runs on now, and its roster is the roster this game is building toward. That was decided
+deliberately and it is recorded here rather than quietly applied.
 
-- **No names.** Every spell in this repo is named here. `Fireball` is a word, not a borrowing.
+Why: every attempt to keep "the shape but not the numbers" produced a game that felt wrong in
+ways nobody could name. The proportions section below shows the last one - three numbers moved
+across at two different scales, leaving a wizard walking its ring 2.4x faster than the map's
+does. There is one scale now, **1 metre = 128 Warcraft III units**, it is written down in
+`docs/warlock-reference.md`, and every measurement in the game derives from it.
+
+**The spell names are the map's too**, as of the same session. Ten of them had invented
+names here - Force Wave, Arc Lance, Seeker, Loopshot, Blink, Lunge, Warp Bolt, Arcane Shield,
+Rewind, Momentum - and they are now Scourge, Lightning, Homing, Boomerang, Teleport, Thrust,
+Swap, Shield, Time Shift and Rush. The other eleven arrived carrying the map's names already.
+
+**Their `id` keys did not follow, deliberately.** `Ability.id` is a stable key in code and in
+save data and is never shown to a player, and four of the map's names collide head-on with
+fields this code already has: `swaps_places` for Swap, `homing_turn` for Homing,
+`apply_shield` for Shield, `begin_rewind` for Time Shift. Those fields are named after
+BEHAVIOURS on purpose, so that whatever spell uses one can be called anything - renaming them
+to match would undo exactly that. So `force_wave.tres` holds a spell called Scourge, and that
+is the field doing its job rather than drift.
+
+What still does not come from the map, and is not negotiable:
+
 - **No art, sound, models, text or UI layouts.** All of it is original and all of it is
-  placeholder.
-- **No numbers.** The map's cooldowns are a set of RATIOS - its main spell recharges in 4.8s
-  and its lightning in 16.5s - and those ratios were mapped onto our own Fireball. Nothing was
-  copied at face value onto an arena a fifth the size.
-- **No code.** Nothing was decompiled and nothing was ported.
+  placeholder. The spells are coloured shapes drawn in code.
+- **No code.** Nothing was decompiled and nothing was ported. `tools/w3x.py` reads the
+  archive's file format; what it prints is a table of numbers and the map's own tooltips.
 
-The trade is the same one the proportions section below already made and says out loud: this
-game is a small original arena brawler standing on a design that fifteen years of players have
-already sanded smooth, and pretending otherwise produced worse spells, not more original ones.
+The trade is the one the proportions section already made, taken to its end: this is a small
+arena brawler standing on a design that fifteen years of players have already sanded smooth,
+and pretending otherwise produced worse spells, not more original ones.
 
 ## Core loop
 
@@ -87,20 +108,41 @@ Why this instead of health:
 - **It reads without a tutorial.** A number that goes up and makes you fly further is easier
   to grasp than armour types or damage mitigation.
 
+**This mechanic is the reference map's, and that was discovered rather than designed.** The
+map keeps a wizard's accumulated damage in the unit's mana pool, and its hit function reads
+
+```
+dv = (100 + damage_points) * damage * push_mult * 0.03
+```
+
+which is exactly the curve below, arrived at here independently: 100 points doubles the push.
+`data/knockback_rules.tres` needed no change at all when the port landed.
+
 Knockback is computed as a modular formula:
 
 ```
-final_knockback = ability_base_knockback * instability_multiplier
+final_knockback = base_impulse(damage, push_mult) * instability_multiplier
+base_impulse    = damage * push_mult * 100 / 128        (128 units to the metre)
 instability_multiplier = base + (instability / 100) * per_100      (clamped)
 ```
 
 It deliberately does **not** live inside individual spell scripts. One place to read, one
 place to tune, one place a future server has to agree with — `combat/knockback/knockback.gd`.
 
-At the shipped values the multiplier is 1x at 0%, 2x at 100% and 2.5x at 150%. Because the
-distance you travel goes as speed *squared*, 50% instability carries you **2.25x** as far.
-That quadratic is the whole tension curve: the number climbs gently, the consequences climb
-fast. Tuning lives in `data/knockback_rules.tres`.
+At the shipped values the multiplier is 1x at 0%, 2x at 100% and 2.5x at 150%. Distance under
+the map's exponential drag is **linear** in the impulse, so 50% instability carries you 1.5x as
+far and not the 2.25x the old linear friction gave. The escalation is gentler; the absolute
+distances are much larger:
+
+| damage points | one Fireball | carries |
+|---|---|---|
+| 0 | 5.47 m/s | **8.1 m** |
+| 50 | 8.20 m/s | 12.2 m |
+| 100 | 10.94 m/s | 16.2 m |
+
+On an 11 m ring. So the pressure comes from EVERY exchange rather than only from late ones,
+and the first clean hit of a round is already a threat. Tuning lives in
+`data/knockback_rules.tres`; `--knockback-test` prints that table on every run.
 
 ## Controls
 
@@ -125,32 +167,45 @@ The first phone build played cramped: the wizard crossed the whole arena in two 
 Fireball reached everywhere from anywhere, so position meant nothing and a shot was a click.
 
 Rather than guess at better numbers, the ones from the Warcraft III custom map this game takes
-after were measured out of the map file itself. **Proportions and physics only** - no names, no
-spell designs, no art, no code. What matters is the shape of the relationships:
+after were measured out of the map file itself.
 
-| | The original | Spellfall before | Spellfall now |
+**Session 11 did that with three numbers and no stated scale, and that is the bug.** It moved
+the walk speed across at 52.5 units per metre and laid the arena out at 140, so a wizard that
+was supposed to take thirteen seconds to cross its ring took five. Every "the game feels too
+fast" report since is that one inconsistency.
+
+There is one scale now: **1 metre = 128 units**, the map's own terrain cell. It is written down
+in `docs/warlock-reference.md` and everything derives from it.
+
+| | The map | Session 11 | Now |
 |---|---|---|---|
-| Walk speed | 210 units/s | 6.5 m/s | **4.0 m/s** |
-| Arena radius | 1408 units (shrinks each round) | 7 m | **10 m** |
-| **Seconds to walk across** | **~13.4** | 2.2 | **5.0** |
-| Main projectile | 750 units/s, 1s | 18 m/s, 1.2s | **12 m/s, 0.45s** |
-| Projectile / walk speed | 3.6x | 2.8x | **3.0x** |
-| **Projectile range / arena radius** | **0.53** | 3.1 | **0.54** |
+| Walk speed | 210 units/s | 4.0 m/s (at 52.5 u/m) | **1.641 m/s** (at 128) |
+| Arena radius | 1408 units | 10 m (at 140 u/m) | **11.0 m** |
+| **Seconds to walk across** | **13.4** | 5.0 | **13.4** |
+| Main projectile | 750 units/s | 12 m/s | **5.86 m/s** |
+| Projectile / walk speed | 3.6x | 3.0x | **3.6x** |
+| Projectile range / arena radius | 0.53 | 0.54 | **0.53** |
+| Getting going | ~0.6 s | 0.16 s | **0.6 s** |
+| Stopping | coast, no brake | 0.34 s | **coast, no brake** |
+| Health | 100, no regen | 100, no regen | 100, no regen |
 
-The last row is the one that was wrong. In the original a bolt reaches barely half way to the
-rim, so **threatening someone means walking to them** - and walking is the whole game. Ours
-out-ranged the entire board three times over, which is why standing still worked.
+The projectile row was already right in ratio, and that is worth noticing: Session 11 fixed the
+relationship and left the absolute pace wrong, which is exactly the kind of error a ratio table
+hides. In the map a bolt reaches barely half way to the rim, so **threatening someone means
+walking to them** - and walking is the whole game.
 
-The arena is not the original's 13 seconds across, and deliberately so: that map's camera
-follows the player, and this one shows the whole ring at once because in a knockback game the
-edge is the most important thing on screen. Five seconds is what fits on one screen while
-still leaving the wizard readable on a phone - it costs the wizard about 3% of screen height.
+**The arena is now the map's thirteen seconds across, which it deliberately was not before.**
+The old argument was that this game shows the whole ring at once where the map's camera follows
+the player, so a thirteen-second board would leave the wizard too small to read. That is still
+true and it is the cost being paid: the wizard is a smaller figure on a bigger-feeling board.
+The trade was taken on purpose, because the alternative was a fight that resolves before the
+player has made a decision.
 
-**What this changed that nobody asked for:** knockback now moves you less relative to the ring.
-A clean Force Wave at 0% instability slides you 4.8m, which used to be 69% of the way to the
-rim and is now 48%. The escalation still bites - the same hit at 100% instability throws you
-19m - but early exchanges are survivable and rounds run longer. That is the tension curve
-stretching, not breaking, and it is the first thing to re-measure after a play session.
+**What this changes that nobody asked for:** knockback moves you a great deal MORE relative to
+the ring, because the map's drag is exponential and its impulses are large. A clean Fireball at
+zero damage points carries 8.1 m on an 11 m ring - three quarters of the way to the rim, from
+the very first exchange. That is the number to re-measure after a play session, and if it is
+wrong the honest lever is each spell's `push_mult`, not the drag: the drag is the walk.
 
 ## Cover
 
@@ -166,23 +221,46 @@ They are placed point-symmetrically, and the lane between the two spawns is left
 is decoration: an arena that favours one spawn is a fight decided before it starts, and an
 opening lane full of rock is a round that starts with both players walking sideways.
 
+## What a wizard looks like
+
+A hooded figure in a coloured robe, carrying a staff with a lit orb on it, and it walks: legs
+that swing, a body that rises on each step, a hem that lags a beat behind, and a staff that
+comes up the instant a spell leaves. It is built out of cylinders and spheres in
+`characters/player/wizard_rig.gd` rather than modelled, for the same reason the sounds are
+synthesised and the spell icons are vector shapes - and for one specific to it: **the wizard
+is about a twelfth of the screen's height.** At sixty pixels, silhouette and motion are the
+whole of what a player can see, and neither of them is bought with polygons.
+
+Everything cloth-coloured takes the side's tint and everything skin-, wood- or metal-coloured
+deliberately does not, so four wizards in four tints are still four PEOPLE rather than four
+swatches.
+
+**The staff is also the facing indicator.** A yellow bar used to stick out of the capsule's
+front to say which way it was looking; the staff does that job now and does it better, being
+longer, asymmetric, and the part of the figure a player is already watching.
+
 ## Weight
 
-Movement has a ramp: about a sixth of a second to get going, a third to stop, and a third to
-reverse. It was instant before, and instant is what made the wizard feel like a cursor rather
-than a body. Now a direction is a small commitment, stopping is a decision made slightly in
-advance, and a slide from a hit is something you steer out of rather than something you cancel.
+Movement is **momentum**, which is the reference map's own model rather than a ramp toward a
+target. About six tenths of a second to reach walking speed, and **no brake at all**: let go
+and you coast, halving your speed roughly once a second. A direction is a commitment, stopping
+is a decision made a full second in advance, and a slide from a hit is something you steer out
+of rather than something you cancel.
 
-Fireball leaves at 15.5 m/s and arrives at 9. The shot is a punch up close and a lob at the
-end of its reach, which means the answer to "am I close enough" is now visible in the flight
-itself. Neither of these is a new mechanic; both are the same spells with weight added.
+Three models have stood here - instant, then an asymmetric 0.16/0.34 ramp, now this. The ramp
+was an attempt to buy the map's feel with different arithmetic and it got most of the way
+there; what it could not reproduce is the coast, because a ramp toward zero *stops*.
+
+Fireball flies at a **constant 5.86 m/s** now, where it used to leave at 15.5 and arrive at 9.
+That deceleration was this repo's invention and the map has none - its missiles fly flat. What
+answers "am I close enough" is the range itself, which reaches half way to the rim.
 
 ## What a hit feels like
 
 Knockback is the mechanic; this is how the game says so. A hit stops the world for a few
 hundredths of a second, throws a spray of sparks at the contact point, jolts the camera,
 thumps, and buzzes the handset — all scaled by the same number, the knockback that actually
-landed. A hit somebody shrugged off with Arcane Shield feels shrugged off, because the reading
+landed. A hit somebody shrugged off with Shield feels shrugged off, because the reading
 is taken after the shield, not before.
 
 None of it is information the player did not already have. It is the same event the HUD
@@ -194,70 +272,80 @@ from tones rather than recorded, the sparks are untextured spheres, and the shak
 That is deliberate at this phase: the feel is meant to be tuned by playing, and none of it
 should cost anything to throw away.
 
-## The eleven spells, and the four you take
+## The twenty-two spells, and the four you take
 
 You carry **four**. Fireball is one of them, always, and the other three are chosen before the
-match from three columns of three or four. Nine choices in, that is 36 loadouts, and every one
-of them still opens with the same spell — which is what keeps the game teachable while the
-build is yours.
+match from three columns. Twenty-one choices in, that is 336 loadouts, and every one of them
+still opens with the same spell — which is what keeps the game teachable while the build is
+yours.
 
-All eleven are **built**. Numbers are placeholders to be tuned in playtesting, and they live in
+The roster is the reference map's, all of it. **The map offers seven columns and you pick one
+from each, carrying eight spells; this offers three columns and you carry four.** That is the
+one structural departure and it is a UI limit rather than a design choice: four thumb buttons,
+four keys. The twenty-one are grouped by what they DO rather than by the map's own column
+letters, which is why Scourge and Cataclysm sit under GUARD - a burst centred on yourself that
+hurts you too is a defensive decision, whatever else it is.
+
+All twenty-two are **built**. Numbers are the map's own level-1 values and they live in
 `data/abilities/*.tres` — one file each, no scripts. The roster is
 `data/spell_catalogue.tres`; adding a spell is a file and a line, never a code change.
 
-**Spell damage is a chip, and there is a hard floor under it: no spell may empty a full health
-bar in under ten clean hits.** Five spells drain health at all; the other six do nothing to it.
-This is the one balance number in the game that is a rule rather than a taste, because it
-decides what the game IS. Fireball shipped at five hits for a session and that was long enough
-to see the problem: at five, the fastest way to win is to stand still and shoot, the ring stops
-mattering, and the instability curve that is supposed to be the escalation never gets used. The
-comparison that keeps it honest — **a trip into the lava empties a bar in 4.5 seconds; the
-fastest spell needs 9 seconds of perfect uptime to do the same.** `--loadout-test` asserts both.
+Eight of them needed genuinely new runtime and the rest are existing fields in new
+combinations. `--roster-test` is one section per MECHANIC rather than per spell, for that
+reason: a blast, a split, a stream, a bounce, a root, a drain, a pull and a tether.
 
 ### Always with you
 
-| Spell | Type | Inst | Knock | Role |
+| Spell | Type | Dmg | Push | Role |
 |---|---|---|---|---|
-| **Fireball** | Aimed projectile, dies on hit | 12 | 6 | Your main threat, and the only spell that is a habit rather than a decision. Ten clean hits to empty a bar. 0.9s. |
+| **Fireball** | Aimed projectile, dies on hit | 7.0 | 1.0 | Your main threat, and the only spell that is a habit rather than a decision. 5.9 m/s over 5.9 m, which is half way to the rim. Fifteen clean hits to empty a bar. 4.8s. |
 
 ### STRIKE — your second way to land one
 
-| Spell | Type | Inst | Knock | Role |
+| Spell | Type | Dmg | Push | Role |
 |---|---|---|---|---|
-| **Force Wave** | 110° cone, 4m, instant | 5 | 11 | The finisher. Weak in the open, lethal near an edge. Throws away from YOU, not along the aim. 3.5s. |
-| **Arc Lance** | Flat, fast, 15m | 10 | 5 | Crosses the ring almost instantly and barely pushes. The answer to someone who will not come close. 3.1s. |
-| **Seeker** | Slow projectile, turns 220°/s | 14 | 7 | Corrects an aim that was wrong, and still loses somebody who walks across its nose. 2.6s. |
-| **Loopshot** | Flies out 11m, returns, pierces | 9 | 8 | Two chances at the same wizard from one cast — if you are still standing where it comes home. 3.0s. |
+| **Lightning** | Flat, 13.3 m/s, 12m | 7.0 | 1.2 | Crosses the ring almost instantly and shoves hard. The answer to someone who will not come close, and it costs you a sixteen-second wait. 16.5s. |
+| **Homing** | Slow projectile, turns 220°/s, 9.4m | 7.0 | 1.0 | Corrects an aim that was wrong, and still loses somebody who walks across its nose. 14.0s. |
+| **Boomerang** | Flies out 8.4m, returns, pierces | 7.2 | 1.2 | Two chances at the same wizard from one cast — if you are still standing where it comes home. 16.0s. |
+| **Meteor** | Lands at 6.3m, 3.2m blast | 10.0 | 1.0 | The only spell that does not need to touch anybody. Falls off to nothing at the edge of its own blast, so the middle is the worst place to stand. 20.0s. |
+| **Splitter** | Breaks into six at the end of its flight | 3.0 | 1.4 | Weak on its own and dangerous where it lands. The six carry the heaviest push in the roster. 30.0s. |
+| **Fire Spray** | Six shots down one line, 0.16s apart | 2.6 | **0.6** | One cast, six chances, and an aim you committed to before the first one left. The map's own "60% knockback". 16.0s. |
+| **Bouncer** | Finds the next enemy within 7m, three times | 6.0 | 1.0 | A single-target spell in a 1v1 and the best spell in the column in a 2v2. A fifth weaker each hop. 20.0s. |
+| **Drain** | Slow projectile | 6.0 | 0.6 | Takes their health and gives it to you. The only way in the game to undo a trip into the lava. 22.0s. |
 
-### MOTION — how you close a gap, or leave one
+### CONTROL — where the two of you are standing
 
-| Spell | Type | Inst | Knock | Role |
+| Spell | Type | Dmg | Push | Role |
 |---|---|---|---|---|
-| **Blink** | 5m teleport | — | — | Dodge and reposition. Clamped inside the arena, cancels the slide you are in, keeps the hitstun. 5s. |
-| **Lunge** | 6m charge that hits | 10 | 9 | The same escape, spent as an attack. It shoves what it runs through, and it puts you where they are. 5.3s. |
-| **Warp Bolt** | Projectile, trades places | — | — | Hurts nobody. It takes the ground they were standing on — including the ground over the lava. 5s. |
+| **Teleport** | 6.0m teleport | — | — | Dodge and reposition. Clamped inside the arena, cancels the slide you are in, keeps the hitstun. 16.0s. |
+| **Thrust** | 5.5m charge that hits | 5.4 | 1.15 | The same escape, spent as an attack. It shoves what it runs through, and it puts you where they are. 17.0s. |
+| **Swap** | Projectile, 6.25m, trades places | — | — | Hurts nobody. It takes the ground they were standing on — including the ground over the lava. 16.0s. |
+| **WindWalk** | 7.0m charge that hits | 5.4 | 1.15 | Thrust with a longer run and a much longer wait. The map's own charge form. 30.0s. |
+| **Entangle** | Projectile, roots for 4.5s | — | — | Takes their legs and nothing else. Knockback still moves them and the lava still burns them, which is the whole spell: it is only lethal where they are already standing. 27.0s. |
+| **Gravity** | Slow projectile dragging everything within 4.5m | 3.0 | **0.1** | Barely pushes and pulls constantly. It is the one spell that moves people without hitting them, and it moves you too. 26.0s. |
+| **Link** | Projectile, then 8s of 2.5/s | 0.2 | 0.2 | A commitment you make early and forget about. Twenty points over eight seconds, from a spell that does nothing on arrival. 16.0s. |
 
 ### GUARD — what you do about the hit you saw coming
 
-| Spell | Type | Inst | Knock | Role |
+| Spell | Type | Dmg | Push | Role |
 |---|---|---|---|---|
-| **Arcane Shield** | 1.2s ward | — | — | 35% of a hit gets through. Measured: a hit that carries 2.35m carries 0.30m through it. 8s. |
-| **Rewind** | Undo, 3.2s later | — | — | Puts you back where you cast it, with the health you had. It does NOT give back instability — the round still remembers. 7s. |
-| **Momentum** | 6s, converts | — | — | Half of every hit is swallowed and paid back as walking speed, up to +2.5 m/s. The only guard that rewards standing in a fight. 6.5s. |
+| **Shield** | 2.8s ward | — | — | 35% of a hit gets through. Measured: a hit that carries 5.05m carries 2.53m through it. 25.0s. |
+| **Time Shift** | Undo, 3.6s later | — | — | Puts you back where you cast it, with the health you had. It does NOT give back damage points — the round still remembers. 22.0s. |
+| **Rush** | 7s, converts | — | — | Half of every hit is swallowed and paid back as walking speed, up to +2.5 m/s — which on a 1.64 m/s walk is more than doubling it. The only guard that rewards standing in a fight. 21.0s. |
+| **Scourge** | Cone, 4m, instant | 10.0 | 0.8 | The map's heaviest single hit, and the ten-hit floor in person. Weak in the open, lethal near an edge. Throws away from YOU, not along the aim. 3.0s. |
+| **Cataclysm** | 5m burst around you, **you included** | 6.0 | 1.0 | Everything nearby, yourself at the centre taking the worst of it. Two-second cooldown, and the self-hit near a rim is a way to travel rather than only a cost. 2.0s. |
+| **Pious** | 3.6m burst around you, **you included**, allies mended 5 | 10.0 | 0.8 | Costs a lone caster five health and pays for itself the moment somebody is standing with you. 3.0s. |
 
-The intended tension is unchanged and now has three shapes instead of one: something builds
-instability from range, something converts it into a kill but costs you position, something
-moves you, and something is a read — spend it early and it is gone when the real hit lands.
+Each spell has its own **shape** on the button, not just its own colour. Twenty-two spells and
+twenty-two drawings would be a lot of drawing to protect a comparison nobody makes, so the
+rule is now **unique within a column** plus the primary being unique against all of them: what
+you compare is a column while picking, and what you carry is Fireball plus one from each
+column, so your four buttons are always four different shapes. `--loadout-test` asserts it.
 
-Each spell has its own **shape** on the button, not just its own colour — a flame, a fan, a
-bolt, a spiral, a boomerang, a hop, three chevrons, two swapping arrows, a shield, a clock, a
-surge. All eleven are drawn in code and all eleven are placeholder, like everything else here.
-Colour alone carried four spells and stopped carrying eleven.
-
-In flight they differ too: Fireball is a ball, Arc Lance a long spike, Seeker a dart with its
-point forward, Loopshot a flat bar spinning as it goes, and Warp Bolt a hoop lying flat. What a
-spell HITS with is still the same sphere for all five — the shape is what it looks like, never
-what it catches you with.
+In flight they differ too, under the same per-column rule: a ball, a spike, a dart, a spinning
+bar, a hoop, a lump, a speck, a four-sided sliver and a cone arriving mouth-first. What a
+spell HITS with is still the same sphere for all of them — the shape is what it looks like,
+never what it catches you with.
 
 ## Playing at a desk
 
@@ -277,7 +365,7 @@ ability, and the base ability says whether it needs a place to go.
 the map's own model, and it costs a mis-typed key nothing — a wrong spell is put back with the
 key you already have a finger on.
 
-**A ward needs no click.** Arcane Shield, Rewind and Momentum fire the instant you press their
+**A ward needs no click.** Shield, Time Shift and Rush fire the instant you press their
 key, because they are not pointed at anything. That is not a convenience anybody invented: the
 map's own three wards — Shield, Time Shift, Rush — are exactly the abilities there that take no
 target either, and the split falls out of a field this game already had.
@@ -309,15 +397,16 @@ you — reading your side matters, and finding yourself matters more.
 **The bot brings a random loadout every match.** Not for difficulty: it is the cheapest way to
 make sure a spell you never chose is still a spell you have had used against you.
 
-Arcane Shield ships as **knockback reduction** rather than projectile-blocking. Reduction is
+Shield ships as **knockback reduction** rather than projectile-blocking. Reduction is
 one number multiplied into the existing knockback formula; blocking needs projectile
 ownership, hit cancellation and its own visual language. Blocking is the better long-term
 version and stays on the roadmap.
 
 ## Arena
 
-One circular stone platform. It starts **12 metres in radius** — 24 across, six seconds of
-walking — and **closes during the round**. Around it, lava: a flat field you can be knocked
+One circular stone platform. It starts **11 metres in radius** — 22 across, thirteen and a
+half seconds of walking, which is the map's own ring at 128 units to the metre — and **closes
+during the round**. Around it, lava: a flat field you can be knocked
 onto, stand on, and walk back off. The stone sits 8cm proud of it, which a wizard's capsule
 rides up without noticing.
 
@@ -335,11 +424,20 @@ accident, and two careful players can circle each other indefinitely. A ring on 
 The twelve seconds of grace are not padding. The opening exchange should happen on the whole
 board, or the squeeze arrives before there is anything to break.
 
-**The camera comes in with it**, holding the same framing at every size. So the wizards grow
-on screen as the ring tightens - from about a fifteenth of the screen's height to nearly a
-fifth - which puts the most readable picture of the fight exactly where the fight is hardest.
-The cover moves in too, at a fixed fraction of the radius: a ring that closed over its own
-rocks would spend its second half as a bare plate.
+**The camera very nearly does not come in with it**, and that is a reversal. It used to hold
+the same framing at every size, so the wizards grew on screen as the ring tightened - from
+about a fifteenth of the screen's height to nearly a fifth. The argument was that this puts
+the most readable picture of the fight where the fight is hardest.
+
+Watched rather than reasoned about, it does something else: the wizard inflates while the
+island shrinks under them, and two things moving in opposite directions is what makes it look
+wrong. The lens travelled 41% of its own distance over one close.
+
+It follows a **quarter** of the shrink now - about 3.5m of travel and 11% of growth over
+twenty seconds, slow enough not to be seen happening. The ring closes by exactly as much as it
+always did; the squeeze is entirely in the geometry, which is where a player can read it. The
+cover still moves in at a fixed fraction of the radius: a ring that closed over its own rocks
+would spend its second half as a bare plate.
 
 There are **no walls.** Being pushed off is the entire point, so the boundary is communicated
 by colour rather than by physics: **green grass inside, orange lava everywhere outside**, with
@@ -358,8 +456,8 @@ the way. Stone mends 10 a second, deliberately less than half the burn: a dunk s
 something that lasts.
 
 **Fireball is the only spell that touches it directly** - 20 points a hit, on a 100-point
-total, so five landed shots end a fighter the way five seconds in the lava does. Force Wave,
-Blink and Arcane Shield still say nothing to it; the fight is still mostly about instability
+total, so five landed shots end a fighter the way five seconds in the lava does. Scourge,
+Teleport and Shield still say nothing to it; the fight is still mostly about instability
 and position, with one straight-line threat that skips the knockback question entirely.
 
 **Standing on stone no longer heals it.** A trip into the lava or a Fireball to the face costs
@@ -406,7 +504,7 @@ Not a feature list. These are the questions the prototype has to answer "yes" to
 - Does moving feel immediate and precise?
 - Does aiming feel good with a thumb?
 - Is landing a Fireball satisfying?
-- Is Force Wave near an edge exciting?
+- Is Scourge near an edge exciting?
 - Is knockback predictable enough to plan around?
 - Does rising instability actually create tension?
 - Does falling off work reliably and read clearly?

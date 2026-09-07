@@ -78,7 +78,7 @@ static func targets(space: PhysicsDirectSpaceState3D, from: Vector3, aim: Vector
 
 ## True if nothing solid stands between the caster and `body`.
 ##
-## Cover has to mean ONE thing. A rock that stops a Fireball and not a Force Wave teaches the
+## Cover has to mean ONE thing. A rock that stops a Fireball and not a Scourge teaches the
 ## player a rule and then breaks it, and "I was behind a rock and it hit me anyway" reads as a
 ## bug whatever the physics of an imaginary shockwave might argue.
 ##

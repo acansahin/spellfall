@@ -20,7 +20,7 @@ extends RefCounted
 ## The shapes are named for what they LOOK like, not for the spell that uses them, so two
 ## spells may share one and a new spell picks the closest fit rather than forcing a new
 ## drawing - the same reason `Ability.returns_after` is named after the behaviour and not
-## after Loopshot.
+## after Boomerang.
 
 ## How far the arrowheads stick out, in unit-box terms.
 const HEAD := 0.28
@@ -58,6 +58,28 @@ static func draw_into(canvas: CanvasItem, glyph: Ability.Glyph, centre: Vector2,
 			_clock(canvas, centre, size, tint, width)
 		Ability.Glyph.SURGE:
 			_surge(canvas, centre, size, tint, width)
+		Ability.Glyph.ROCK:
+			_rock(canvas, centre, size, tint, width)
+		Ability.Glyph.BURST:
+			_burst(canvas, centre, size, tint, width)
+		Ability.Glyph.STREAM:
+			_stream(canvas, centre, size, tint)
+		Ability.Glyph.BOUNCE:
+			_bounce(canvas, centre, size, tint, width)
+		Ability.Glyph.DROP:
+			_drop(canvas, centre, size, tint, width)
+		Ability.Glyph.WEB:
+			_web(canvas, centre, size, tint, width)
+		Ability.Glyph.VORTEX:
+			_vortex(canvas, centre, size, tint, width)
+		Ability.Glyph.CHAIN:
+			_chain(canvas, centre, size, tint, width)
+		Ability.Glyph.GHOST:
+			_ghost(canvas, centre, size, tint)
+		Ability.Glyph.STAR:
+			_star(canvas, centre, size, tint, width)
+		Ability.Glyph.CROSS:
+			_cross(canvas, centre, size, tint, width)
 
 
 ## Prints a key's letter in the corner of a glyph's box.
@@ -112,7 +134,7 @@ static func _flame(canvas: CanvasItem, centre: Vector2, size: float, tint: Color
 	], centre, size, core)
 
 
-## Force Wave. Three arcs spreading from a point on the left: the fan, drawn as the fan.
+## Scourge. Three arcs spreading from a point on the left: the fan, drawn as the fan.
 static func _fan(canvas: CanvasItem, centre: Vector2, size: float, tint: Color,
 		width: float) -> void:
 	var origin := centre + Vector2(-0.85, 0.0) * size
@@ -122,7 +144,7 @@ static func _fan(canvas: CanvasItem, centre: Vector2, size: float, tint: Color,
 			width, true)
 
 
-## Arc Lance. A lightning zigzag - the only glyph made of one unbroken hard-angled line.
+## Lightning. A lightning zigzag - the only glyph made of one unbroken hard-angled line.
 static func _bolt(canvas: CanvasItem, centre: Vector2, size: float, tint: Color,
 		width: float) -> void:
 	_stroke(canvas, [
@@ -130,7 +152,7 @@ static func _bolt(canvas: CanvasItem, centre: Vector2, size: float, tint: Color,
 	], centre, size, tint, width)
 
 
-## Seeker. A curl tightening inward, with a head on the end: a path that changed its mind.
+## Homing. A curl tightening inward, with a head on the end: a path that changed its mind.
 static func _spiral(canvas: CanvasItem, centre: Vector2, size: float, tint: Color,
 		width: float) -> void:
 	var points: Array = []
@@ -147,7 +169,7 @@ static func _spiral(canvas: CanvasItem, centre: Vector2, size: float, tint: Colo
 	_head(canvas, centre, size, tint, width, last, (last - before).normalized())
 
 
-## Loopshot. A boomerang: the one glyph with a corner in it, so it cannot be mistaken for the
+## Boomerang. A boomerang: the one glyph with a corner in it, so it cannot be mistaken for the
 ## two round ones. Filled, because a thrown object is an object.
 static func _boomerang(canvas: CanvasItem, centre: Vector2, size: float, tint: Color) -> void:
 	_fill(canvas, [
@@ -156,7 +178,7 @@ static func _boomerang(canvas: CanvasItem, centre: Vector2, size: float, tint: C
 	], centre, size, tint)
 
 
-## Blink. Two feet and nothing in between but a dashed hop - the spell is the gap.
+## Teleport. Two feet and nothing in between but a dashed hop - the spell is the gap.
 static func _jump(canvas: CanvasItem, centre: Vector2, size: float, tint: Color,
 		width: float) -> void:
 	canvas.draw_circle(centre + Vector2(-0.78, 0.58) * size, maxf(size * 0.15, 2.0), tint)
@@ -170,7 +192,7 @@ static func _jump(canvas: CanvasItem, centre: Vector2, size: float, tint: Color,
 		canvas.draw_arc(pivot, radius, from, from + deg_to_rad(34.0), 8, tint, width, true)
 
 
-## Lunge. Three chevrons: the shape every game has ever used for "forward, fast".
+## Thrust. Three chevrons: the shape every game has ever used for "forward, fast".
 static func _chevron(canvas: CanvasItem, centre: Vector2, size: float, tint: Color,
 		width: float) -> void:
 	for step in 3:
@@ -180,7 +202,7 @@ static func _chevron(canvas: CanvasItem, centre: Vector2, size: float, tint: Col
 		], centre, size, tint, width)
 
 
-## Warp Bolt. Two arrows passing each other. It says "exchange" and it says nothing about
+## Swap. Two arrows passing each other. It says "exchange" and it says nothing about
 ## damage, which is exactly what the spell does.
 static func _swap(canvas: CanvasItem, centre: Vector2, size: float, tint: Color,
 		width: float) -> void:
@@ -190,7 +212,7 @@ static func _swap(canvas: CanvasItem, centre: Vector2, size: float, tint: Color,
 	_head(canvas, centre, size, tint, width, Vector2(-0.85, 0.45), Vector2.LEFT)
 
 
-## Arcane Shield. A heraldic shield. There is no cleverer answer and no need for one.
+## Shield. A heraldic shield. There is no cleverer answer and no need for one.
 static func _shield(canvas: CanvasItem, centre: Vector2, size: float, tint: Color,
 		width: float) -> void:
 	_stroke(canvas, [
@@ -199,7 +221,7 @@ static func _shield(canvas: CanvasItem, centre: Vector2, size: float, tint: Colo
 	], centre, size, tint, width)
 
 
-## Rewind. A clock with its hands set back, and a gap in the rim with the head pointing
+## Time Shift. A clock with its hands set back, and a gap in the rim with the head pointing
 ## ANTICLOCKWISE - which is the only part of the drawing that says "back" rather than "time".
 static func _clock(canvas: CanvasItem, centre: Vector2, size: float, tint: Color,
 		width: float) -> void:
@@ -212,8 +234,8 @@ static func _clock(canvas: CanvasItem, centre: Vector2, size: float, tint: Color
 	_stroke(canvas, [Vector2(0.0, 0.0), Vector2(-0.44, 0.22)], centre, size, tint, width)
 
 
-## Momentum. A wall on the left, three lines leaving it longer each time, and a head: the hit
-## arrives and turns into speed. Deliberately not a chevron - Lunge already owns that.
+## Rush. A wall on the left, three lines leaving it longer each time, and a head: the hit
+## arrives and turns into speed. Deliberately not a chevron - Thrust already owns that.
 static func _surge(canvas: CanvasItem, centre: Vector2, size: float, tint: Color,
 		width: float) -> void:
 	_stroke(canvas, [Vector2(-0.86, -0.7), Vector2(-0.86, 0.7)], centre, size, tint, width)
@@ -225,6 +247,126 @@ static func _surge(canvas: CanvasItem, centre: Vector2, size: float, tint: Color
 	# On the END of the middle line, not floating past it. Drawn detached first, and it read as
 	# a list icon rather than as something leaving.
 	_head(canvas, centre, size, tint, width, Vector2(0.86, 0.0), Vector2.RIGHT)
+
+
+## Meteor. A lump with a streak trailing up-left, so the icon says "falling" and not "rock".
+##
+## The lump is deliberately irregular and deliberately CONVEX - `draw_colored_polygon`
+## triangulates without checking, so a concave outline comes out with pieces missing rather
+## than with an error. See `_flame`.
+static func _rock(canvas: CanvasItem, centre: Vector2, size: float, tint: Color,
+		width: float) -> void:
+	_fill(canvas, [
+		Vector2(0.10, -0.16), Vector2(0.62, 0.06), Vector2(0.54, 0.62), Vector2(0.02, 0.86),
+		Vector2(-0.48, 0.56), Vector2(-0.44, 0.02),
+	], centre, size, tint)
+	for lane in [-0.34, 0.02, 0.36]:
+		_stroke(canvas, [
+			Vector2(lane - 0.34, -1.0), Vector2(lane - 0.10, -0.42),
+		], centre, size, Color(tint.r, tint.g, tint.b, 0.7), width)
+
+
+## Splitter. A core with six short rays leaving it - the spell drawn as what it becomes.
+static func _burst(canvas: CanvasItem, centre: Vector2, size: float, tint: Color,
+		width: float) -> void:
+	canvas.draw_circle(centre, size * 0.24, tint)
+	for step in 6:
+		var angle := TAU * float(step) / 6.0
+		var direction := Vector2(cos(angle), sin(angle))
+		_stroke(canvas, [direction * 0.44, direction * 0.94], centre, size, tint, width)
+
+
+## Fire Spray. Three dots growing along a line: one cast, arriving in pieces, over time.
+static func _stream(canvas: CanvasItem, centre: Vector2, size: float, tint: Color) -> void:
+	var along := Vector2(0.62, -0.52).normalized()
+	var steps := [-0.78, -0.10, 0.62]
+	for index in steps.size():
+		var at := centre + along * float(steps[index]) * size
+		canvas.draw_circle(at, size * (0.13 + 0.07 * float(index)), tint)
+
+
+## Bouncer. A zigzag with a mark at each corner - the path, not the missile.
+static func _bounce(canvas: CanvasItem, centre: Vector2, size: float, tint: Color,
+		width: float) -> void:
+	var corners := [
+		Vector2(-0.88, 0.56), Vector2(-0.30, -0.62), Vector2(0.28, 0.50), Vector2(0.88, -0.58),
+	]
+	_stroke(canvas, corners, centre, size, tint, width)
+	for corner in corners:
+		canvas.draw_circle(centre + (corner as Vector2) * size, size * 0.11, tint)
+
+
+## Drain. A droplet with an arrow running INTO it: the spell takes rather than gives.
+static func _drop(canvas: CanvasItem, centre: Vector2, size: float, tint: Color,
+		width: float) -> void:
+	_fill(canvas, [
+		Vector2(0.34, -0.28), Vector2(0.62, 0.24), Vector2(0.40, 0.76), Vector2(-0.02, 0.90),
+		Vector2(-0.24, 0.42), Vector2(-0.06, -0.10),
+	], centre, size, tint)
+	_stroke(canvas, [Vector2(-0.92, -0.72), Vector2(-0.22, -0.30)], centre, size, tint, width)
+	_head(canvas, centre, size, tint, width, Vector2(-0.16, -0.26), Vector2(0.86, 0.52))
+
+
+## Entangle. A ring with four spokes closing on its centre - a thing held, not a thing thrown.
+static func _web(canvas: CanvasItem, centre: Vector2, size: float, tint: Color,
+		width: float) -> void:
+	canvas.draw_arc(centre, size * 0.86, 0.0, TAU, 28, tint, width, true)
+	for step in 4:
+		var angle := TAU * float(step) / 4.0 + PI * 0.25
+		var direction := Vector2(cos(angle), sin(angle))
+		_stroke(canvas, [direction * 0.84, direction * 0.22], centre, size, tint, width)
+	canvas.draw_circle(centre, size * 0.14, tint)
+
+
+## Gravity. Three arcs winding inward, each shorter and tighter than the last.
+static func _vortex(canvas: CanvasItem, centre: Vector2, size: float, tint: Color,
+		width: float) -> void:
+	for step in 3:
+		var radius := (0.92 - 0.28 * float(step)) * size
+		var from := deg_to_rad(-30.0 + 100.0 * float(step))
+		canvas.draw_arc(centre, radius, from, from + deg_to_rad(230.0), 20, tint, width, true)
+
+
+## Link. Two rings joined by a line - the spell is the line, and it is between two people.
+static func _chain(canvas: CanvasItem, centre: Vector2, size: float, tint: Color,
+		width: float) -> void:
+	var left := centre + Vector2(-0.62, 0.32) * size
+	var right := centre + Vector2(0.62, -0.32) * size
+	canvas.draw_arc(left, size * 0.30, 0.0, TAU, 18, tint, width, true)
+	canvas.draw_arc(right, size * 0.30, 0.0, TAU, 18, tint, width, true)
+	_stroke(canvas, [Vector2(-0.42, 0.20), Vector2(0.42, -0.20)], centre, size, tint, width)
+
+
+## WindWalk. A shape and its two trailing copies, each fainter: something that was here.
+static func _ghost(canvas: CanvasItem, centre: Vector2, size: float, tint: Color) -> void:
+	var lanes := [0.72, 0.06, -0.62]
+	for index in lanes.size():
+		var shade := Color(tint.r, tint.g, tint.b, 0.28 + 0.36 * float(index))
+		var x := float(lanes[index])
+		_fill(canvas, [
+			Vector2(x, -0.74), Vector2(x + 0.26, -0.10), Vector2(x + 0.22, 0.72),
+			Vector2(x - 0.22, 0.72), Vector2(x - 0.26, -0.10),
+		], centre, size, shade)
+
+
+## Cataclysm. Eight rays out of the centre, and no outline: everything at once, from you.
+static func _star(canvas: CanvasItem, centre: Vector2, size: float, tint: Color,
+		width: float) -> void:
+	for step in 8:
+		var angle := TAU * float(step) / 8.0
+		var direction := Vector2(cos(angle), sin(angle))
+		var reach := 0.98 if step % 2 == 0 else 0.66
+		_stroke(canvas, [direction * 0.14, direction * reach], centre, size, tint, width)
+
+
+## Pious. A cross under an arc - the one spell in the roster that helps somebody.
+static func _cross(canvas: CanvasItem, centre: Vector2, size: float, tint: Color,
+		width: float) -> void:
+	_stroke(canvas, [Vector2(0.0, -0.30), Vector2(0.0, 0.88)], centre, size, tint, width)
+	_stroke(canvas, [Vector2(-0.46, 0.16), Vector2(0.46, 0.16)], centre, size, tint, width)
+	canvas.draw_arc(centre + Vector2(0.0, -0.30) * size, size * 0.44,
+		deg_to_rad(190.0), deg_to_rad(350.0), 18, Color(tint.r, tint.g, tint.b, 0.75),
+		width, true)
 
 
 # ---------------------------------------------------------------------------------------
