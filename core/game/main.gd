@@ -284,6 +284,25 @@ const CAMERA_FRAMING := 3.14
 ## not as the camera lunging at them.
 const CAMERA_FLOOR_RADIUS := 6.5
 
+## How much of the ring's shrink the camera actually follows. 0 pins it; 1 frames every size
+## identically.
+##
+## It was effectively 1, and that was too much to look at. From an 11m ring down to the camera
+## floor the lens travelled 34.5m to 20.4m - a 41% zoom, which grows the wizard by 69% on
+## screen over about twenty seconds. What that reads as is not "the ring is closing"; it reads
+## as the character inflating while the island under them shrinks, and the two moving in
+## opposite directions is what looks wrong.
+##
+## At 0.25 the same close moves the lens 34.5m to 31.0m and grows the wizard 11%, which is
+## slow enough not to be seen happening. **The ring still shrinks by the same amount** - the
+## squeeze is now entirely in the geometry, where it belongs, and the wizard stays the size
+## the framing was solved for.
+##
+## Set it to 0.0 for a lens that never moves at all. `--shrink-test` asserts the travel stays
+## under a fifth of the opening distance, so raising this back toward 1 is a decision somebody
+## has to make on purpose.
+const CAMERA_SHRINK_FOLLOW := 0.25
+
 
 ## Points everything that needs a radius at the radius the arena currently has.
 ##
@@ -295,7 +314,19 @@ func _on_arena_resized(value: float) -> void:
 	if _brain != null:
 		_brain.arena_radius = value
 	if _camera_rig != null:
-		_camera_rig.distance = maxf(value, CAMERA_FLOOR_RADIUS) * CAMERA_FRAMING
+		_camera_rig.distance = _camera_distance_for(value)
+
+
+## Where the lens stands for a ring of this radius.
+##
+## Blended between the framing the round OPENED at and the framing this radius would ask for,
+## so the camera moves a fraction of the way rather than all of it. See
+## `CAMERA_SHRINK_FOLLOW`; the opening distance is read off `start_radius` rather than cached,
+## so a retuned arena cannot leave a stale number here.
+func _camera_distance_for(value: float) -> float:
+	var framed := maxf(value, CAMERA_FLOOR_RADIUS) * CAMERA_FRAMING
+	var opening := maxf(_arena.start_radius, CAMERA_FLOOR_RADIUS) * CAMERA_FRAMING
+	return lerpf(opening, framed, CAMERA_SHRINK_FOLLOW)
 
 
 func _parse_harness_args() -> void:
@@ -3765,12 +3796,24 @@ func _run_shrink_tests() -> void:
 		"%.2fm of a %.2fm floor" % [_arena.radius, _arena.min_radius])
 	_expect("and stops saying it is closing", not _arena.is_closing(), "still closing")
 
-	# --- but the camera does not follow it all the way in --------------------------------------
+	# --- but the camera barely follows it at all -----------------------------------------------
 	#
-	# The ring keeps closing to min_radius; the camera stops coming in once the ring passes
-	# CAMERA_FLOOR_RADIUS, so the last few metres of squeeze are felt as the RING tightening
-	# around two wizards who stay a readable size, not as the lens lunging at them.
-	_expect("the camera holds its floor rather than following the ring to the minimum",
+	# Two things hold it back and this asserts the one that matters. CAMERA_FLOOR_RADIUS stops
+	# it framing the last few metres; CAMERA_SHRINK_FOLLOW stops it framing ANY of them
+	# tightly. Without the second, the lens travelled 41% of its own distance over a close, the
+	# wizard grew by 69% on screen, and what that reads as is the character inflating while the
+	# island shrinks under them - two things moving opposite ways.
+	#
+	# So the squeeze belongs to the GEOMETRY. The ring closes by the same amount it always did;
+	# the lens is asserted to stay put.
+	var opening := maxf(_arena.start_radius, CAMERA_FLOOR_RADIUS) * CAMERA_FRAMING
+	var travelled := opening - _camera_rig.distance
+	_expect("the camera barely moves while the ring closes to its minimum",
+		travelled >= 0.0 and travelled < opening * 0.2,
+		"lens moved %.2fm of %.2fm (%.0f%%), ring alone would have moved it %.2fm" % [
+			travelled, opening, 100.0 * travelled / opening,
+			opening - _arena.min_radius * CAMERA_FRAMING])
+	_expect("and it never follows the ring past its floor",
 		_camera_rig.distance > _arena.min_radius * CAMERA_FRAMING + 0.5,
 		"camera=%.2f, ring alone would put it at %.2f" % [
 			_camera_rig.distance, _arena.min_radius * CAMERA_FRAMING])

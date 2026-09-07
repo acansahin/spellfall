@@ -406,11 +406,20 @@ accident, and two careful players can circle each other indefinitely. A ring on 
 The twelve seconds of grace are not padding. The opening exchange should happen on the whole
 board, or the squeeze arrives before there is anything to break.
 
-**The camera comes in with it**, holding the same framing at every size. So the wizards grow
-on screen as the ring tightens - from about a fifteenth of the screen's height to nearly a
-fifth - which puts the most readable picture of the fight exactly where the fight is hardest.
-The cover moves in too, at a fixed fraction of the radius: a ring that closed over its own
-rocks would spend its second half as a bare plate.
+**The camera very nearly does not come in with it**, and that is a reversal. It used to hold
+the same framing at every size, so the wizards grew on screen as the ring tightened - from
+about a fifteenth of the screen's height to nearly a fifth. The argument was that this puts
+the most readable picture of the fight where the fight is hardest.
+
+Watched rather than reasoned about, it does something else: the wizard inflates while the
+island shrinks under them, and two things moving in opposite directions is what makes it look
+wrong. The lens travelled 41% of its own distance over one close.
+
+It follows a **quarter** of the shrink now - about 3.5m of travel and 11% of growth over
+twenty seconds, slow enough not to be seen happening. The ring closes by exactly as much as it
+always did; the squeeze is entirely in the geometry, which is where a player can read it. The
+cover still moves in at a fixed fraction of the radius: a ring that closed over its own rocks
+would spend its second half as a bare plate.
 
 There are **no walls.** Being pushed off is the entire point, so the boundary is communicated
 by colour rather than by physics: **green grass inside, orange lava everywhere outside**, with

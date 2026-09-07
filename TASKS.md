@@ -965,3 +965,27 @@ Eight mechanics cover all eleven; everything else is existing fields rearranged.
 - [ ] Lava damage per second is still ours (22). The map's is behind the script's obfuscation
 - [ ] Meteor is the one number not taken at face value - 10 at the centre where the map says up
       to 14 - because 14 breaks the ten-hit floor. Recorded in docs/warlock-reference.md
+
+### Session 24b - the lens stops chasing the ring
+
+Reported on sight: "harita daralirken kamera cok fazla yaklasiyor... oyuncu karakteri buyuk
+kalirken diger objeler kuculuyor ve guzel gorunmuyor."
+
+That is a precise description of what the framing did. `CAMERA_FRAMING` held the same picture
+at every ring size, so over one close the lens travelled **34.5m to 20.4m - 41% - and the
+wizard grew 69% on screen**. Two things then move in opposite directions at once: the
+character inflates while the island shrinks under them.
+
+- [x] `CAMERA_SHRINK_FOLLOW`, 0.25. The lens is lerped between the framing the round opened at
+      and the framing this radius would ask for, so it follows a quarter of the shrink: 3.5m
+      of travel and 11% of growth over twenty seconds, which is slow enough not to be seen
+      happening. 0.0 pins it outright
+- [x] **The ring closes by exactly as much as it always did.** The squeeze moved into the
+      geometry, where a player can read it, rather than being split between the geometry and
+      the lens
+- [x] `--shrink-test` asserts the travel stays under a fifth of the opening distance. The
+      assertion it replaced - "the camera holds its floor" - was true before and after, so it
+      could never have caught this; `CAMERA_FLOOR_RADIUS` was stopping the last few metres
+      while the first fifteen went unchallenged
+- [x] GAME_DESIGN.md's "The camera comes in with it" section rewritten. It argued the opposite
+      and the argument was reasoned rather than watched
