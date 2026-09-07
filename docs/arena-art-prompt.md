@@ -1,9 +1,12 @@
 # Generating the arena's textures
 
-Everything on screen is an untextured primitive with a flat `albedo_color`. This file is how
-that stops being true for the WORLD - the ground, the lava, the rocks and the trees. The
-wizards are a separate decision and are deliberately not here yet: they are capsules, and what
-a capsule should become depends on what the world around it looks like first.
+Everything on screen was an untextured primitive with a flat `albedo_color`. This file is how
+that stops being true for the WORLD - the ground, the lava, the rocks and the trees.
+
+**The wizards are not in this file and never will be.** They were capsules when it was
+written, and the answer to what a capsule should become turned out not to be a generated
+image at all: they are a jointed figure built out of primitives and animated in code, in
+`characters/player/wizard_rig.gd`. See ARCHITECTURE.md for why.
 
 **The target look is Warcraft III's**, and the reason is not nostalgia. That game is simple
 geometry wearing hand-painted textures, which is exactly the shape this project is already in:

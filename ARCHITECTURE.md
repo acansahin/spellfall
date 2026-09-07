@@ -335,6 +335,50 @@ There is **no deceleration term**. `drag_per_second` is what stops a wizard, and
 knockback too, because in the map a hit and a step are the same velocity. See
 docs/warlock-reference.md section 3.
 
+### The wizard is a figure, not a capsule
+
+`characters/player/wizard_rig.gd` builds a hooded wizard with a staff out of cylinders, boxes
+and spheres, and poses it every physics tick. It replaced a capsule, which was honest
+placeholder art right up until the ground and the lava had textures on them - a painted world
+with a pill standing in it reads as unfinished in a way that a painted world with a walking
+figure does not, however simple the figure is.
+
+**Built in code rather than modelled or downloaded**, which is the third time this project has
+made that call: every sound is synthesised in `audio/`, every spell icon is a vector shape in
+`vfx/spell_glyph.gd`. The reason here is a measurement rather than a preference. **The wizard
+is about a twelfth of the screen's height** - sixty pixels on a phone - and at sixty pixels a
+silhouette and a walk cycle carry the whole reading while polygon count carries none of it. A
+downloaded character would be detail delivered to a size that cannot show it, arriving with a
+licence, an import pipeline and a rig to keep working.
+
+Four things in it are load-bearing:
+
+- **The proportions are for a camera looking DOWN at 55 degrees, and the first attempt's were
+  not.** Built as a figure you would see from the side - tall hood, floor-length robe, arms at
+  the sides - it came out as a coloured cone with a bead on top, because from above a cone is
+  all you can see of a cone. What reads from up there is WIDTH: the span of the shoulders, the
+  arms held out from the body by a resting `rotation.z`, and the staff as a line across the
+  ground plan. Height is the one dimension this camera throws away.
+- **The mantle.** One wide, shallow cone at the shoulders is the single part that makes the
+  figure legible from above: it puts a disc where the shoulders are, so the head reads as a
+  separate spot sitting on a body rather than as the top of one long cone.
+- **The cycle is advanced by DISTANCE, not by time.** `STRIDE` is how far the body travels in
+  one two-step cycle, so a wizard slowed to a crawl takes slow steps of the same length rather
+  than fast steps that go nowhere. The rig is handed the speed it is ACTUALLY travelling at,
+  knockback included - a wizard sliding out of a hit is going somewhere and its legs should say
+  so.
+- **The swing is exaggerated.** `LEG_SWING` is 33 degrees where a real walk is about 20,
+  because at sixty pixels a true swing is three pixels of foot travel and reads as a slide.
+
+The rig owns which of its parts are cloth, so `main.gd._tint_fighter` calls `Player.set_tint`
+and knows nothing about the figure. It used to build a material and push it onto `Visual/Body`,
+which worked while a body was one capsule and stopped working the moment it was a dozen parts
+in four materials.
+
+The `Facing` block - a yellow bar poking out of the capsule's front - is gone. The staff does
+that job now, and it does it better: it is longer, it is asymmetric, and it is the part of the
+figure a player is already watching.
+
 ## Camera
 
 `arena/arena_camera.gd` is a rig that **derives** its framing. You set `pitch_degrees`,

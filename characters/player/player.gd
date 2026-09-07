@@ -127,6 +127,10 @@ var _hitstun := 0.0
 ## Seconds left rooted. Entangle.
 var _root_timer := 0.0
 
+## Set on the frame a spell leaves and consumed by the rig on the same tick. A flag rather
+## than a signal because exactly one thing reads it and it must not survive to a second frame.
+var _cast_tell := false
+
 ## A flat walking-speed bonus with its own clock, separate from the one Rush banks.
 ##
 ## Two of them, because they expire differently: Rush's is tied to the shield that earned
@@ -162,6 +166,7 @@ var _rewind_health := 0.0
 var _eliminated := false
 
 @onready var _visual: Node3D = $Visual
+@onready var _rig: WizardRig = get_node_or_null(^"Visual/Body") as WizardRig
 
 ## Optional, like the spellbook. A fighter without these simply shows nothing.
 @onready var _shield_visual: Node3D = get_node_or_null(^"Visual/Shield") as Node3D
@@ -216,6 +221,7 @@ func _physics_process(delta: float) -> void:
 	move_and_slide()
 	_decay_knockback(delta)
 	_face(delta)
+	_animate_rig(delta)
 	_service_casting()
 
 
@@ -271,6 +277,33 @@ func _apply_gravity(delta: float) -> void:
 		velocity.y = -0.1
 	else:
 		velocity.y -= _gravity * delta
+
+
+## Poses the wizard for this frame.
+##
+## It is handed the SPEED it is actually travelling at, knockback included, rather than what
+## the thumb asked for. A wizard sliding backwards out of a hit should have its legs moving -
+## it is going somewhere - and one pressing into a wall it cannot pass should not, because it
+## is not. The rig knows nothing about either situation; it only ever sees a number.
+func _animate_rig(delta: float) -> void:
+	if _rig == null:
+		return
+	var travel := Vector2(velocity.x, velocity.z).length()
+	_rig.animate(delta, travel, move_speed + _speed_bonus + _move_bonus, _cast_tell)
+	_cast_tell = false
+
+
+## Raises the staff. Called by the ability component the moment a spell leaves, so the pose
+## and the bolt begin on the same frame.
+func tell_cast() -> void:
+	_cast_tell = true
+
+
+## Recolours the wizard's cloth. One door, so the level does not have to know what a rig is
+## made of - which it did when the body was a single capsule with a single material.
+func set_tint(colour: Color) -> void:
+	if _rig != null:
+		_rig.set_tint(colour)
 
 
 func _face(delta: float) -> void:

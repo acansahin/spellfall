@@ -979,19 +979,15 @@ func _add_bot(title: String, team: int, at: Vector3, tint: Color) -> Player:
 	return fighter
 
 
-## Recolours a wizard's body. Four capsules in two shades of the same colour would be a fight
-## nobody can read, and the tint is the only thing telling them apart while everything is
-## untextured primitives.
+## Recolours a wizard's cloth. Four wizards in two shades of the same colour would be a fight
+## nobody can read, and the tint is the only thing telling them apart.
+##
+## Through the FIGHTER rather than by reaching into its scene. This used to build a material
+## and push it onto `Visual/Body`, which worked while a body was one capsule and stopped
+## working the moment it was a dozen parts in four materials. The wizard knows which of its
+## own parts are cloth; nothing else needs to.
 func _tint_fighter(fighter: Player, tint: Color) -> void:
-	var body := fighter.get_node_or_null(^"Visual/Body") as MeshInstance3D
-	if body == null:
-		return
-	# A fresh material rather than an edit of the scene's, which every instance of
-	# `bot_wizard.tscn` shares - recolouring it would recolour the opposition too.
-	var material := StandardMaterial3D.new()
-	material.albedo_color = tint
-	material.roughness = 0.55
-	body.set_surface_override_material(0, material)
+	fighter.set_tint(tint)
 
 
 ## What the SCORE calls a side. The player's side is "YOU" in both modes, so a caller that
@@ -1087,6 +1083,11 @@ func _on_cast_requested(ability: Ability, origin: Vector3, direction: Vector3, c
 		_last_cast_dir = direction
 		_last_cast_id = ability.id
 	_feel.cast(ability, caster == _player)
+	# The staff comes up on the same frame the spell leaves, so the pose is a TELL rather than
+	# a reaction - which is the whole of why a wizard reads as casting at sixty pixels tall.
+	var thrower := caster as Player
+	if thrower != null and is_instance_valid(thrower):
+		thrower.tell_cast()
 	match ability.cast_type:
 		Ability.CastType.PROJECTILE:
 			if ability.stream_count > 1:

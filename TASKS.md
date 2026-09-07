@@ -1062,3 +1062,52 @@ Ground and lava came back from the generator. Both were good; the checking still
 
 - [ ] Rock, bark and canopy are still flat colours. Their prompts are written
 - [ ] The wizards are still capsules, and the decision about what they become is still open
+
+### Session 24e - the wizard is a figure now
+
+"Kapsul istemiyorum. Baya hareket eden bir insan modeli istiyorum asasi ile."
+
+`characters/player/wizard_rig.gd` builds a hooded wizard with a staff out of cylinders, boxes
+and spheres and poses it every physics tick. Hood, hood-shadow, shoulder mantle, two arms, two
+legs, boots, a sash, a robe, and a staff with a lit orb.
+
+- [x] Legs swing, knees bend one way only, the body rises on each step, the hem lags a beat
+      behind, the figure leans into a walk and breathes when it stops
+- [x] **The staff comes up on the frame a spell LEAVES**, and the orb brightens with it, so
+      the pose is a tell rather than a reaction. `Player.tell_cast()`, called from
+      `_on_cast_requested`
+- [x] Built in code, not modelled or downloaded, and the reason is a measurement: the wizard is
+      about a twelfth of the screen's height - sixty pixels on a phone - where silhouette and
+      motion are the whole reading and polygon count is none of it
+
+### The two things that had to be learnt the hard way
+
+- [x] **The proportions have to be for a camera looking DOWN at 55 degrees.** The first attempt
+      was a figure you would see from the side - tall hood, floor-length robe, arms at the
+      sides - and it rendered as a coloured cone with a bead on top, because from above a cone
+      is all you can see of a cone. What reads from up there is WIDTH: shoulder span, arms held
+      out by a resting `rotation.z`, and the staff as a line across the ground plan
+- [x] **The mantle is the part that made it legible.** One wide shallow cone at the shoulders
+      puts a disc where the shoulders are, so the head reads as a separate spot on a body
+      rather than as the top of one long cone
+- [x] The cycle advances by DISTANCE, not time, so a slowed wizard takes slow steps of the same
+      length. It is handed the speed it is ACTUALLY travelling at, knockback included
+- [x] `LEG_SWING` is 33 degrees where a real walk is 20: at sixty pixels a true swing is three
+      pixels of foot travel and reads as a slide
+- [x] The staff had to be thickened and lightened twice - it spends half its time inside the
+      wizard's own shadow, where a thin dark line is nothing
+
+### Knock-on
+
+- [x] The `Facing` block is gone. The staff does that job and does it better - longer,
+      asymmetric, and the part of the figure a player is already watching
+- [x] `_tint_fighter` goes through `Player.set_tint` now. It used to push a material onto
+      `Visual/Body`, which worked while a body was one capsule and stopped working the moment
+      it was a dozen parts in four materials
+- [x] Eighteen suites green
+
+### Still open
+
+- [ ] `AbilityButton.cooldown_veil` is pure black, against this project's own "no black
+      anywhere" rule. It was easy to miss over a flat background and is not any more
+- [ ] Rock, bark and canopy are still flat colours. Their prompts are written

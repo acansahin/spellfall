@@ -221,6 +221,24 @@ They are placed point-symmetrically, and the lane between the two spawns is left
 is decoration: an arena that favours one spawn is a fight decided before it starts, and an
 opening lane full of rock is a round that starts with both players walking sideways.
 
+## What a wizard looks like
+
+A hooded figure in a coloured robe, carrying a staff with a lit orb on it, and it walks: legs
+that swing, a body that rises on each step, a hem that lags a beat behind, and a staff that
+comes up the instant a spell leaves. It is built out of cylinders and spheres in
+`characters/player/wizard_rig.gd` rather than modelled, for the same reason the sounds are
+synthesised and the spell icons are vector shapes - and for one specific to it: **the wizard
+is about a twelfth of the screen's height.** At sixty pixels, silhouette and motion are the
+whole of what a player can see, and neither of them is bought with polygons.
+
+Everything cloth-coloured takes the side's tint and everything skin-, wood- or metal-coloured
+deliberately does not, so four wizards in four tints are still four PEOPLE rather than four
+swatches.
+
+**The staff is also the facing indicator.** A yellow bar used to stick out of the capsule's
+front to say which way it was looking; the staff does that job now and does it better, being
+longer, asymmetric, and the part of the figure a player is already watching.
+
 ## Weight
 
 Movement is **momentum**, which is the reference map's own model rather than a ramp toward a
