@@ -1171,3 +1171,23 @@ legs, boots, a sash, a robe, and a staff with a lit orb.
       after. It is the suite documented as needing a REAL WINDOW and a real mouse warp, and it
       loses the focus it needs during a long run. Not a regression - but it means a batch of
       eighteen cannot be read as eighteen without re-running that one
+
+### Two flakes worth naming, both in the harness
+
+Neither is a gameplay defect: both were seen on a tree that had just run every suite green,
+and both passed on an immediate re-run. Recorded because an intermittent failure nobody wrote
+down is a failure somebody re-investigates from scratch in three months.
+
+- [ ] **`--pc-test` loses its window focus in a long unattended batch.** It failed three
+      assertions - the click landed at (5.04, 2.33) where it asked for (4.5, 0) - and passed
+      alone immediately after. It is the suite documented as needing a REAL WINDOW and a real
+      `Input.warp_mouse`. **A batch of eighteen therefore cannot be read as eighteen**; run
+      that one on its own
+- [ ] **`--roster-test`'s tether rate measured 10.8 once, against 3.8 on the three runs
+      after it.** That is 2.84x, and the cause is NOT established. Two candidates and neither
+      was confirmed: a stray projectile from an earlier section still in the air when the
+      window opened (two splinters at 3.0 would account for almost exactly the excess), or a
+      cold-start timing artifact - `_wait()` counts physics frames as 1/60 each while
+      `_tick_tethers` bleeds by the real delta, so anything that decouples those two would
+      show up here first. If it recurs, print the tether's own accounting rather than
+      re-deriving this
