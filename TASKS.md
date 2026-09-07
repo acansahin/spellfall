@@ -989,3 +989,34 @@ character inflates while the island shrinks under them.
       while the first fifteen went unchallenged
 - [x] GAME_DESIGN.md's "The camera comes in with it" section rewritten. It argued the opposite
       and the argument was reasoned rather than watched
+
+### Session 24c - the arena's textures, as prompts
+
+Everything on screen is still an untextured primitive with a flat colour.
+`docs/arena-art-prompt.md` is the prompt set for the WORLD half of that: ground, lava, rock,
+bark, canopy. The wizards are deliberately not in it - they are capsules, and what a capsule
+should become is easier to answer once the world around it has a look.
+
+- [x] Five prompts, generated one at a time. Ground and lava first: between them they are
+      every pixel of the screen
+- [x] **Every one asks for a SEAMLESS TILE, because the ground shrinks.** The platform closes
+      from 11m to 4.5m during a round, so a painted island would be squashed as it went. A
+      tile stays the same size on the grass whatever the ring does
+- [x] **Every one forbids a baked light direction.** There is a real DirectionalLight3D
+      casting real shadows; a sun painted into the texture means every rock is lit twice and
+      its own shadow falls the wrong way. Baked darkness in the crevices is wanted, a baked
+      sun is not
+- [x] Every measured number the generator needs is in the doc's table - camera pitch, the
+      wizard's height on screen, the current colour of each material - so a prompt can be
+      re-derived rather than re-guessed
+- [x] The wiring note carries the trap: the platform's UVs run 0..1 across the cap whatever
+      its radius, so a texture on it SCALES as the ring closes. `uv1_triplanar` is the fix,
+      and it is the same "everything changes size but the wizard" problem the camera had
+
+### Still open
+
+- [ ] No texture has been generated yet. Nothing is wired in
+- [ ] **The wizards.** Two routes and the doc names neither yet: a texture on the capsule that
+      keeps every bit of the 3D lighting and costs no code, or a billboard sprite that gives a
+      real character and costs a Sprite3D, a facing rule and a walk cycle. The camera is fixed
+      at 55 degrees and never rotates, so a pre-rendered sprite would fit it exactly
