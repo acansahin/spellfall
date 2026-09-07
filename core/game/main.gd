@@ -197,6 +197,8 @@ func _ready() -> void:
 	_report_input_mode()
 	_picks = LoadoutStore.load_picks(catalogue) if _show_loadout else _default_picks()
 	_team_match = LoadoutStore.load_mode() if _show_loadout else false
+	if _show_loadout:
+		_set_bot_skill_level(LoadoutStore.load_skill())
 	_arm_fighters(false)
 	_parse_harness_args()
 	if _show_loadout:
@@ -510,22 +512,30 @@ func _clear_cover() -> void:
 	print("[harness] cover cleared")
 
 
+## Sets the difficulty from a number, and is the ONE place that does.
+##
+## `--bot-skill` parses a word into this and the loadout screen hands it an index; neither owns
+## the rule that every brain in the match has to agree, and both used to be able to forget it.
+## Clamped, because it arrives from a config file the player can edit.
+func _set_bot_skill_level(level: int) -> void:
+	_brain.skill = clampi(level, 0, 2) as BotController.Skill
+	for brain in _brains:
+		brain.skill = _brain.skill
+
+
+## The same thing from a WORD, for `--bot-skill`. It parses and hands over; the rule that every
+## brain in the match has to agree lives in one place above, not in two.
 func _set_bot_skill(level: String) -> void:
 	match level.to_lower():
 		"calm":
-			_brain.skill = BotController.Skill.CALM
+			_set_bot_skill_level(BotController.Skill.CALM)
 		"steady":
-			_brain.skill = BotController.Skill.STEADY
+			_set_bot_skill_level(BotController.Skill.STEADY)
 		"sharp":
-			_brain.skill = BotController.Skill.SHARP
+			_set_bot_skill_level(BotController.Skill.SHARP)
 		_:
 			push_warning("unknown bot skill '%s'; leaving it alone" % level)
 			return
-	# Every opponent, not merely the one in the scene. `_add_bot` copies this off `_brain`, so
-	# ordering is covered either way - but a difficulty that reached one of three bots would be
-	# a difficulty setting that quietly did a third of what it said.
-	for brain in _brains:
-		brain.skill = _brain.skill
 	print("[harness] bot skill = %s" % level.to_upper())
 
 
@@ -1026,15 +1036,17 @@ func _open_loadout() -> void:
 	var waiting: Array[Player] = [_player, _bot]
 	for fighter in waiting:
 		fighter.accepts_input = false
-	_loadout.open(catalogue, _picks, _team_match, _control_hint())
+	_loadout.open(catalogue, _picks, _team_match, _control_hint(), int(_brain.skill))
 
 
-func _on_loadout_confirmed(picks: PackedInt32Array, team_match: bool) -> void:
+func _on_loadout_confirmed(picks: PackedInt32Array, team_match: bool,
+		bot_skill: int) -> void:
+	_set_bot_skill_level(bot_skill)
 	_picks = picks
 	# Saving BEFORE the match, not after it. A player who chose a loadout and then closed the
 	# game mid-round still chose it, and losing the pick because the round did not finish would
 	# be the kind of small betrayal nobody reports and everybody notices.
-	LoadoutStore.save_picks(catalogue, _picks, team_match)
+	LoadoutStore.save_picks(catalogue, _picks, team_match, bot_skill)
 	_mobile.visible = true
 	_hud.visible = true
 	_begin_match(team_match)
@@ -2618,7 +2630,12 @@ func _run_bot_tests() -> void:
 	# measuring the cooldown, not the bot. Two and a bit cooldowns is what "casts repeatedly"
 	# means for whatever spell the bot happens to be holding.
 	var primary := _bot.abilities().ability_in(0)
-	var window := primary.cooldown * 2.2 + 1.0
+	# The bot's real cycle is the cooldown PLUS the dawdle its difficulty gives it, and the
+	# dawdle stopped being negligible when the profiles were re-derived for the port's pace -
+	# Steady sits at 1.6s against a 4.8s cooldown. A window sized off the cooldown alone would
+	# be measuring the profile rather than the bot.
+	var gap: float = float(BotController.PROFILES[_brain.skill]["cast_gap"])
+	var window := (primary.cooldown + gap) * 2.2 + 1.0
 	var fighting := 0.0
 	while fighting < window:
 		_player.respawn_at(post)
@@ -4038,6 +4055,12 @@ func _run_loadout_tests() -> void:
 			_player.accepts_input, _bot.accepts_input, _mobile.visible])
 	_loadout.select(0, catalogue.columns[0].index_of(&"arc_lance"))
 	_loadout.select(2, catalogue.columns[2].index_of(&"rewind"))
+	# The difficulty rides out on the same confirm the spells do. Chosen here as CALM, which
+	# is not the default, so a value that silently fell back would read as STEADY below.
+	_loadout.select_skill(int(BotController.Skill.CALM))
+	_expect("the screen holds the difficulty it was given",
+		_loadout.bot_skill() == int(BotController.Skill.CALM),
+		"screen says %d" % _loadout.bot_skill())
 	_loadout.confirm()
 	await get_tree().physics_frame
 	_expect("what was picked is what the wizard carries",
@@ -4046,6 +4069,17 @@ func _run_loadout_tests() -> void:
 	_expect("the controls come back with the fight",
 		_mobile.visible and _hud.visible and not _loadout.is_open(),
 		"controls=%s hud=%s menu=%s" % [_mobile.visible, _hud.visible, _loadout.is_open()])
+	_expect("the difficulty reaches every brain in the match",
+		_brain.skill == BotController.Skill.CALM,
+		"brain says %d" % int(_brain.skill))
+	_expect("and it is remembered for next time",
+		LoadoutStore.load_skill() == int(BotController.Skill.CALM),
+		"stored %d" % LoadoutStore.load_skill())
+	# Put it back, or every suite that runs after this one in the same process fights a bot
+	# on a difficulty it did not ask for - and the stored file would hand the next RUN one too.
+	_loadout.open(catalogue, _picks, _team_match, "", int(BotController.Skill.STEADY))
+	_loadout.confirm()
+	await get_tree().physics_frame
 	_expect("and the picks are remembered for next time",
 		LoadoutStore.load_picks(catalogue) == _picks,
 		"stored %s" % str(catalogue.ids_from_picks(LoadoutStore.load_picks(catalogue))))

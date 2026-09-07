@@ -50,10 +50,43 @@ enum Skill { CALM, STEADY, SHARP }
 ##               edge, which is exactly what makes it easier to remove.
 ##   lead        how much of the target's velocity it aims ahead of. 0 shoots at where you
 ##               were, 1 at where you are going.
+##
+## RE-DERIVED FOR THE PORT'S PACE, and every number below moved because the world under it
+## did. Three of these knobs are stated in SECONDS, and seconds only mean something against
+## how far somebody travels in them and how often a spell is ready. Both of those changed by
+## more than a factor of two when the game took the reference map's numbers:
+##
+##   walk speed        4.0 -> 1.641 m/s      (/2.44)
+##   Fireball cooldown 0.9 -> 4.8 s          (x5.33)
+##   Fireball flight   15.5 -> 5.86 m/s      (/2.65)
+##
+## So the old table did not stay still - it got HARDER while nobody touched it:
+##
+## `reaction` is stale knowledge, and what matters is how far the target moved since the
+## last glance. At 0.28s and 4.0 m/s that was 1.12 metres of error; at 0.28s and 1.641 m/s
+## it is 0.46. **The same number made the bot two and a half times a better tracker.** Each
+## reaction below is the old one re-solved to keep its own staleness IN METRES: 2.00m for
+## Calm, 1.12m for Steady, 0.48m for Sharp.
+##
+## `cast_gap` is dawdle measured against a cooldown. 0.45s was half of the old 0.9s wait -
+## a real cut in the rate of fire. Against 4.8s it is nine percent, which is nothing. Each
+## one below is the old FRACTION of the cooldown, softened a little because a Fireball that
+## lands now carries eight metres on an eleven-metre ring and the second one is a kill.
+##
+## `aim_error` is degrees, and degrees do not care about pace - but DODGING does. A shot from
+## the holding range takes 0.94s to arrive where it used to take 0.35, which helps the
+## player; and the player accelerates for 0.6s from a standstill and tops out at 1.641 m/s,
+## which helps them a great deal less. Net, a dodge is harder. The old 7 degrees is 0.67m of
+## miss at 5.5m and a wizard is a metre wide with a 0.35m bolt coming at it - it could not
+## miss. These are the first values with real air in them.
+##
+## Nothing here is a stat bonus, and that has not changed: the bot moves at the same speed,
+## casts the same Fireball and takes the same knockback. It is better at NOTICING, AIMING,
+## SHOOTING OFTEN and RESPECTING THE EDGE, and worse at all four when it is calm.
 const PROFILES: Dictionary = {
-	Skill.CALM: {"reaction": 0.50, "aim_error": 14.0, "cast_gap": 1.10, "edge_margin": 0.70, "lead": 0.0},
-	Skill.STEADY: {"reaction": 0.28, "aim_error": 7.0, "cast_gap": 0.45, "edge_margin": 1.10, "lead": 0.6},
-	Skill.SHARP: {"reaction": 0.12, "aim_error": 2.5, "cast_gap": 0.05, "edge_margin": 1.60, "lead": 1.0},
+	Skill.CALM: {"reaction": 1.22, "aim_error": 24.0, "cast_gap": 3.60, "edge_margin": 0.35, "lead": 0.0},
+	Skill.STEADY: {"reaction": 0.68, "aim_error": 13.0, "cast_gap": 1.60, "edge_margin": 1.10, "lead": 0.45},
+	Skill.SHARP: {"reaction": 0.29, "aim_error": 4.0, "cast_gap": 0.20, "edge_margin": 1.60, "lead": 1.0},
 }
 
 @export var skill: Skill = Skill.STEADY

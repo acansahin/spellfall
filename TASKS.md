@@ -1172,7 +1172,75 @@ legs, boots, a sash, a robe, and a staff with a lit orb.
       loses the focus it needs during a long run. Not a regression - but it means a batch of
       eighteen cannot be read as eighteen without re-running that one
 
-### Two flakes worth naming, both in the harness
+### Session 24h - the bots got harder without anybody touching them
+
+"Botlarin zorluk seviyesini ayarlamaliyiz. Cok zorlu su an."
+
+Same class of problem as "the game feels too fast", one layer up: the difficulty table is
+mostly SECONDS, and seconds only mean something against how far somebody travels in them and
+how often a spell is ready. Both moved by more than 2x in the port, and the table did not.
+
+- [x] **`reaction` re-solved to keep its staleness in METRES.** 0.28s bought 1.12m of tracking
+      error at the old 4.0 m/s and 0.46m at 1.641 - the same number made the bot two and a half
+      times the tracker it was. Calm 0.50 -> 1.22, Steady 0.28 -> 0.68, Sharp 0.12 -> 0.29
+- [x] **`cast_gap` re-solved as a fraction of the COOLDOWN.** 0.45s was half of a 0.9s wait and
+      is nine percent of a 4.8s one. Calm 1.10 -> 3.60, Steady 0.45 -> 1.60, Sharp 0.05 -> 0.20
+- [x] **`aim_error` widened, because dodging got harder.** A shot from the holding range now
+      takes 0.94s to arrive where it took 0.35, which helps the player - and the player
+      accelerates for 0.6s and tops out at 1.641 m/s, which helps them much less. The old 7
+      degrees is 0.67m of miss at 5.5m against a wizard a metre wide with a 0.35m bolt coming
+      at it: it could not miss. 14/7/2.5 -> 24/13/4
+- [x] `--bot-test`'s window is sized off `cooldown + cast_gap` now, not the cooldown alone. It
+      would otherwise have been measuring the profile rather than the bot
+- [x] The derivation is written above the table, so the next pace change is arithmetic rather
+      than a fresh guess
+
+### And the player can now choose it
+
+Difficulty was reachable only from `--bot-skill`, which is a thing for measuring a bot with.
+"The bots are too hard" had no answer that was not a command-line flag.
+
+- [x] A CALM / STEADY / SHARP row on the loadout screen, above the 1v1 / 2v2 row - the reading
+      order the screen already has: what you carry, who you carry it against, how hard they
+      are, then go
+- [x] Saved beside the loadout and the mode, and **clamped on the way back in**: a config file
+      the player can edit must not be able to hand the game an index with no profile behind it
+- [x] `main.gd._set_bot_skill_level()` is now the ONE door. `--bot-skill` parses a word and
+      hands it over; neither it nor the screen owns the rule that every brain in the match has
+      to agree, and both used to be able to forget it
+- [x] `--loadout-test` asserts the round trip - screen, brains, and the stored file - and puts
+      the difficulty back afterwards, or every suite running later in the same process would
+      fight a bot on a difficulty it never asked for
+
+### Still open, and it may be the bigger half
+
+- [ ] **The bot may not be what is hard.** A clean Fireball carries 8.1m at zero damage points
+      on an 11m ring, so ONE hit near the rim is a kill regardless of how well the bot plays.
+      That number has been flagged since the port landed and is still unjudged. If the game
+      still feels brutal on CALM, the lever is `push_mult` per spell - not the drag, which is
+      the walk
+
+### Three flakes, and it is the RUNNER
+
+`--pc-test`, then `--roster-test`, then `--knockback-test`: three different suites, each
+failing once in an unattended shell-loop batch, each passing three times out of three when
+re-run on the identical tree seconds later. Three unrelated bugs do not behave like that.
+
+- [x] **`tools/run_suites.py`.** Runs each suite, re-runs any that fail, and reports three
+      outcomes as three different things: `PASS` first time, `FLAKY` failed-then-passed,
+      `FAIL` failed every attempt. A retry that swallowed the first failure would be worse
+      than the shell loop it replaces - it would hide a genuine intermittent bug. The point is
+      not a green batch, it is making "green" mean something again
+- [x] `--pc-test` is off the default list and has to be asked for by name. It needs a real
+      window with focus and reliably loses it partway through a long run, and it is the one
+      flake here whose cause IS understood
+- [ ] **The cause of the other two is still not known.** Both were timing-shaped - a tether
+      bleeding 2.84x its rate, a projectile not arriving inside a 2s window - which points at
+      something stretching wall-clock time per frame when a Godot window is unfocused. Not
+      established. `--log` keeps every attempt's output, so the next occurrence has evidence
+      instead of a memory
+
+### The two originally-named flakes
 
 Neither is a gameplay defect: both were seen on a tree that had just run every suite green,
 and both passed on an immediate re-run. Recorded because an intermittent failure nobody wrote

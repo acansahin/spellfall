@@ -947,6 +947,26 @@ moving player. The aim error is re-rolled on the same clock, because an error re
 frame twitches the wizard's head and averages out to a perfect shot over the flight of a
 projectile — noisy rather than wrong.
 
+**Three of those five knobs are in SECONDS, and that means the table does not hold still when
+the game's pace moves.** It moved: the port took the reference map's numbers and the walk
+speed fell by 2.44x while the Fireball cooldown rose by 5.33x. Nobody touched the profiles and
+the bot got harder anyway —
+
+- `reaction` is stale knowledge, and what it costs is how far the target moved since the last
+  glance. 0.28s bought the player 1.12m of error at 4.0 m/s and 0.46m at 1.641. **The same
+  number made the bot two and a half times the tracker it had been.**
+- `cast_gap` is dawdle measured against a cooldown. 0.45s was half of a 0.9s wait and is nine
+  percent of a 4.8s one.
+
+So the profiles are re-derived rather than re-guessed: each `reaction` keeps its own staleness
+**in metres**, each `cast_gap` keeps its own **fraction of the cooldown**. The derivation is
+written out above the table in `bot_controller.gd`, so the next time the pace moves the work is
+re-doing arithmetic instead of re-inventing a feel.
+
+The lesson generalises past the bot: **a tuning number in seconds is a number that will go
+stale the next time anything about speed changes.** Prefer stating it as a distance or as a
+fraction of something, and if it has to be seconds, write down what it was solved against.
+
 ### Aim now wins over travel for facing
 
 `Player` used to turn to face wherever it was moving. It now faces its `aim_dir` when it has
@@ -1166,6 +1186,24 @@ things touched. Real audio is Phase 4 work and will replace `play()` calls, not 
 reads this file.
 
 ## Testing without a human
+
+**Run the suites through `tools/run_suites.py`, not a shell loop.**
+
+```bash
+python tools/run_suites.py              # all of them, with one retry each
+python tools/run_suites.py knockback bot --log runs.log
+```
+
+Three different suites have each failed exactly once in an unattended shell-loop batch and
+then passed three times out of three, on the identical tree, seconds later. Three unrelated
+bugs do not behave like that, so **a batch result was not a verdict**: a red line might be the
+code and might be the runner. The runner reports `PASS`, `FLAKY` (failed then passed) and
+`FAIL` (failed every attempt) as three different things, which is what makes green mean
+something again. It does not swallow the first failure - a retry that hid a genuine
+intermittent bug would be worse than the loop it replaces.
+
+`--pc-test` is not in the default set and must be named. It needs a real window with focus and
+a real `Input.warp_mouse`, and it reliably loses that focus partway through a long run.
 
 Godot cannot be driven by injected input from an automated session, so `main.gd` carries an
 argument-gated harness. Everything after a bare `--` reaches `OS.get_cmdline_user_args()`:

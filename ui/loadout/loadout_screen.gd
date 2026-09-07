@@ -23,7 +23,7 @@ extends CanvasLayer
 ## The mode rides on the same signal rather than getting its own, because it is answered by the
 ## same press: there is exactly one moment the player is finished with this screen, and two
 ## signals would let a level act on half an answer.
-signal confirmed(picks: PackedInt32Array, team_match: bool)
+signal confirmed(picks: PackedInt32Array, team_match: bool, bot_skill: int)
 
 ## Height of one option's tap target. Comfortably past the ~48dp minimum a thumb wants, and
 ## sized so the longest column - four options - still leaves room for the title and the button
@@ -47,6 +47,10 @@ const DIM_TEXT := Color(0.72, 0.72, 0.80)
 ## twelfth spell sitting under the columns.
 const MODE_TINT := Color(1.0, 0.86, 0.45)
 
+## And its own again for the difficulty, for the same reason: it is a third KIND of choice,
+## and giving it a spell's colour would make it read as a spell.
+const SKILL_TINT := Color(0.66, 0.82, 1.0)
+
 ## Side of the square each option's glyph sits in. Matched to the two lines of text beside it,
 ## so the icon reads as the row's own mark rather than as a picture stuck next to one.
 const ICON_SIDE := 46.0
@@ -56,6 +60,12 @@ var _picks := PackedInt32Array()
 
 ## Two a side. Held here while the screen is open, and reported once on confirm.
 var _team_match := false
+
+## Which difficulty the bots play at, as a `BotController.Skill`. Held as a plain int so this
+## screen does not have to know what a bot is - it collects a choice and hands it on, the same
+## way it does with the spells.
+var _bot_skill := 1
+var _skill_panels: Array = []
 
 ## The two mode panels, so picking one can restyle both.
 var _mode_panels: Array = []
@@ -88,9 +98,10 @@ func _ready() -> void:
 ## hand-it-its-dependencies rule the stick, the bot and the HUD already follow. A screen that
 ## loaded its own catalogue would be a second place the roster is named.
 func open(catalogue: SpellCatalogue, picks: PackedInt32Array,
-		team_match: bool = false, controls: String = "") -> void:
+		team_match: bool = false, controls: String = "", bot_skill: int = 1) -> void:
 	_catalogue = catalogue
 	_team_match = team_match
+	_bot_skill = clampi(bot_skill, 0, 2)
 	_controls = controls
 	_picks = picks.duplicate()
 	while _picks.size() < catalogue.columns.size():
@@ -156,6 +167,7 @@ func _build() -> void:
 	for index in _catalogue.columns.size():
 		row.add_child(_build_column(index))
 
+	page.add_child(_build_skill_row())
 	page.add_child(_build_mode_row())
 	if _controls != "":
 		page.add_child(_heading(_controls, 13, DIM_TEXT))
@@ -214,6 +226,72 @@ func _build_mode_row() -> Control:
 	_mode_panels.append(_build_mode(row, true, "2 v 2", "You and a bot ally, against two."))
 	_restyle_modes()
 	return row
+
+
+## The three difficulties, as the same panels the modes use.
+##
+## ABOVE the mode row and below the columns, which is the reading order the screen already
+## has: what you carry, then who you are carrying it against, then how hard they are, then go.
+##
+## It exists because it did not, and "the bots are too hard" had no answer that was not a
+## command-line flag. Difficulty was reachable only from `--bot-skill`, which is a thing for
+## measuring a bot with, not a thing for playing against one with.
+func _build_skill_row() -> Control:
+	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 14)
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_skill_panels.clear()
+	_skill_panels.append(_build_skill(row, 0, "CALM", "Slow to notice, wide of the mark."))
+	_skill_panels.append(_build_skill(row, 1, "STEADY", "Tracks you, and misses a moving one."))
+	_skill_panels.append(_build_skill(row, 2, "SHARP", "Leads your walk. Stays off the rim."))
+	_restyle_skills()
+	return row
+
+
+func _build_skill(row: HBoxContainer, level: int, title: String,
+		note: String) -> PanelContainer:
+	var panel := PanelContainer.new()
+	panel.custom_minimum_size = Vector2(238.0, 46.0)
+	panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	panel.gui_input.connect(_on_skill_input.bind(level))
+
+	var lines := VBoxContainer.new()
+	lines.add_theme_constant_override("separation", 0)
+	lines.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	panel.add_child(lines)
+	lines.add_child(_heading(title, 16, Color(1, 1, 1)))
+	lines.add_child(_heading(note, 11, DIM_TEXT))
+	row.add_child(panel)
+	return panel
+
+
+func _on_skill_input(event: InputEvent, level: int) -> void:
+	if not _pressed(event):
+		return
+	select_skill(level)
+
+
+## Picks a difficulty. Public for the same reason `select` and `select_mode` are: a suite
+## drives this screen through its own surface rather than by inventing a touch on a panel
+## whose position it would have to know.
+func select_skill(level: int) -> void:
+	_bot_skill = clampi(level, 0, 2)
+	_restyle_skills()
+
+
+## Which difficulty is chosen, for a suite that wants to read it back.
+func bot_skill() -> int:
+	return _bot_skill
+
+
+func _restyle_skills() -> void:
+	for level in _skill_panels.size():
+		var panel: PanelContainer = _skill_panels[level]
+		if panel == null:
+			continue
+		panel.add_theme_stylebox_override("panel",
+			_panel_style(SKILL_TINT, level == _bot_skill))
 
 
 func _build_mode(row: HBoxContainer, team_match: bool, title: String,
@@ -461,7 +539,7 @@ func _on_start() -> void:
 ## only be a way of not testing the thing under test.
 func confirm() -> void:
 	close()
-	confirmed.emit(_picks.duplicate(), _team_match)
+	confirmed.emit(_picks.duplicate(), _team_match, _bot_skill)
 
 
 ## What is currently selected. For the harness and for the level, which saves it.

@@ -20,6 +20,7 @@ const PATH := "user://loadout.cfg"
 const SECTION := "loadout"
 const KEY := "spells"
 const MODE_KEY := "team_match"
+const SKILL_KEY := "bot_skill"
 
 
 ## The stored picks, or the catalogue's defaults.
@@ -38,13 +39,25 @@ static func load_picks(catalogue: SpellCatalogue) -> PackedInt32Array:
 ## Writes the picks and the mode. Returns false if it could not, which nothing is expected to
 ## act on - losing a preference is not worth interrupting a match for.
 static func save_picks(catalogue: SpellCatalogue, picks: PackedInt32Array,
-		team_match: bool = false) -> bool:
+		team_match: bool = false, bot_skill: int = 1) -> bool:
 	if catalogue == null:
 		return false
 	var config := ConfigFile.new()
 	config.set_value(SECTION, KEY, catalogue.ids_from_picks(picks))
 	config.set_value(SECTION, MODE_KEY, team_match)
+	config.set_value(SECTION, SKILL_KEY, bot_skill)
 	return config.save(PATH) == OK
+
+
+## Which difficulty the player last chose, as a `BotController.Skill`. Defaults to the middle
+## one on anything unreadable, and is CLAMPED rather than trusted: a file that has been edited
+## by hand, or written by a future version with a fourth difficulty in it, must not be able to
+## hand the game an index that has no profile behind it.
+static func load_skill() -> int:
+	var config := ConfigFile.new()
+	if config.load(PATH) != OK:
+		return 1
+	return clampi(int(config.get_value(SECTION, SKILL_KEY, 1)), 0, 2)
 
 
 ## Whether the last match was two a side. False on anything unreadable, so a corrupt file opens
