@@ -57,7 +57,16 @@ signal cast_released(slot: int)
 @export var backdrop := Color(0.07, 0.06, 0.13, 0.62)
 
 @export var idle_ring := Color(1, 1, 1, 0.45)
-@export var cooldown_veil := Color(0, 0, 0, 0.55)
+## The wedge that sweeps over a spell that is not ready yet.
+##
+## NOT BLACK, though it was for a long time. This project has one rule about colour - there is
+## no black anywhere on screen, because black reads as a hole punched in the picture rather
+## than as a dark thing in it - and this was the last place breaking it. It got away with it
+## while the background behind the buttons was flat orange; a textured world made it obvious.
+##
+## The same deep blue-violet the scene clears to, so a spell on cooldown reads as "covered
+## over" rather than as "burnt out".
+@export var cooldown_veil := Color(0.07, 0.06, 0.13, 0.68)
 @export var press_flash := Color(1, 1, 1, 0.22)
 ## The little marker that follows the drag, so the player can see the aim they are giving
 ## without looking away from their wizard.

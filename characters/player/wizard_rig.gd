@@ -137,8 +137,8 @@ func animate(delta: float, speed: float, top_speed: float, casting: bool) -> voi
 	# ADDED to the resting angle the arms are built with, not assigned over it - assigning
 	# drops the arm back against the body the moment a spell is cast, which is the opposite of
 	# the pose being a tell.
-	_shoulder_r.rotation.z = -0.34 + raised * 0.30
-	_shoulder_l.rotation.z = 0.34 - raised * 0.10
+	_shoulder_r.rotation.z = 0.34 + raised * 0.26
+	_shoulder_l.rotation.z = -0.34 + raised * 0.10
 
 	# Both feet push, so the body rises twice a cycle. Standing still it breathes instead.
 	var bob := absf(sin(_phase)) * BOB * drive
@@ -251,14 +251,20 @@ func _build() -> void:
 	#
 	# The Z rotations are what make the arms visible at all. Hanging straight down they sit
 	# inside the mantle's outline and the wizard has none.
+	# THE SIGNS ARE THE POINT. A limb hangs along -Y, and rotating it about +Z carries it
+	# toward +X - which is the wizard's RIGHT, because a body facing -Z with +Y up has its
+	# right hand at +X. So the right arm swings out on a POSITIVE z and the left on a negative
+	# one. They were the other way round for a while and it put both arms across the chest:
+	# the arms vanished into the robe's outline and the staff spent its whole length inside
+	# the skirt, which read as a wizard holding a floating bead.
 	_shoulder_l = _joint(_torso, "ShoulderL", Vector3(-0.235, 0.20, 0.0))
-	_shoulder_l.rotation.z = 0.34
+	_shoulder_l.rotation.z = -0.34
 	_limb(_shoulder_l, "ArmL", 0.44, 0.070, 0.052, _cloth)
 	var hand_l := _sphere(_shoulder_l, "HandL", 0.055, _skin)
 	hand_l.position = Vector3(0.0, -0.46, 0.0)
 
 	_shoulder_r = _joint(_torso, "ShoulderR", Vector3(0.235, 0.20, 0.0))
-	_shoulder_r.rotation.z = -0.34
+	_shoulder_r.rotation.z = 0.34
 	_limb(_shoulder_r, "ArmR", 0.44, 0.070, 0.052, _cloth)
 	var hand_r := _sphere(_shoulder_r, "HandR", 0.055, _skin)
 	hand_r.position = Vector3(0.0, -0.46, 0.0)
@@ -271,17 +277,27 @@ func _build() -> void:
 	# Long, and leaning across the body rather than standing upright. Upright, this camera sees
 	# a dot; leaning, it sees a line - and a line is the only thing at this size that says
 	# which way a wizard is facing before it has cast anything.
+	# AS TALL AS THE WIZARD, ground to head, and it was half a metre longer than that.
+	#
+	# The hand sits about 0.77m above the feet, so a staff whose butt is on the ground and
+	# whose head is level with the wizard's own reaches roughly 0.72 below the hand and 0.78
+	# above it. That is where the two numbers come from, and it is why they are not symmetric:
+	# more of a staff is below the hand than above it, which is how anyone actually holds one.
 	var staff := _joint(_shoulder_r, "Staff", Vector3(0.0, -0.44, 0.0))
-	staff.rotation = Vector3(0.34, 0.0, 0.20)
-	var shaft := _cylinder(staff, "Shaft", 1.90, 0.060, _wood)
-	shaft.position = Vector3(0.0, 0.48, 0.0)
-	_orb = _sphere(staff, "Orb", 0.10, _glow)
-	_orb.position = Vector3(0.0, 1.50, 0.0)
+	# The Z here CANCELS the shoulder's own -0.34 and then leans a little further out. The
+	# staff is a child of the arm, so without the cancellation it inherits the arm's angle and
+	# hangs INWARDS - its whole lower half ends up inside the robe, which is exactly what
+	# happened: the orb showed at head height and the shaft below the hand was nowhere.
+	staff.rotation = Vector3(0.28, 0.0, -0.22)
+	var shaft := _cylinder(staff, "Shaft", 1.50, 0.060, _wood)
+	shaft.position = Vector3(0.0, 0.03, 0.0)
+	_orb = _sphere(staff, "Orb", 0.095, _glow)
+	_orb.position = Vector3(0.0, 0.83, 0.0)
 	# Three prongs around the orb, so the head of the staff is a shape rather than a bead.
 	for i in 3:
 		var angle := TAU * float(i) / 3.0
-		var prong := _box(staff, "Prong%d" % i, Vector3(0.022, 0.19, 0.022), _wood)
-		prong.position = Vector3(sin(angle) * 0.085, 1.41, cos(angle) * 0.085)
+		var prong := _box(staff, "Prong%d" % i, Vector3(0.022, 0.17, 0.022), _wood)
+		prong.position = Vector3(sin(angle) * 0.080, 0.75, cos(angle) * 0.080)
 		prong.rotation = Vector3(cos(angle) * 0.55, 0.0, -sin(angle) * 0.55)
 
 	# --- head and hood ----------------------------------------------------------------------

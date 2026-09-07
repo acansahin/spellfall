@@ -124,6 +124,31 @@ present it on a card, at an angle, with a drop shadow, or as a swatch. No text, 
 watermark.
 ```
 
+## Three of these are generated in code now
+
+**Rock, bark and canopy are made by `tools/make_texture.py`, not by a picture model.** The
+three prompts below are kept because they still describe what those textures are FOR, and
+because a painted set would be better than a computed one the day anybody wants to paint them.
+
+The reasoning is a measurement rather than a preference. A boulder is about thirty pixels tall
+on this screen and a canopy about fifty, and at that size a texture's whole job is to break a
+flat colour into facets and clumps - which is arithmetic. The ground and the lava are a
+different case and were right to come from a painter: they are every pixel of the screen.
+
+What generating them buys, beyond not waiting for anything:
+
+- **They tile exactly**, not nearly. Worley cells and value-noise lattices are built to wrap.
+- **They carry no light direction at all**, rather than nearly none.
+- **The palette is a literal in the file**, so retinting a rock to match a repainted board is
+  a number rather than a new generation and a new download.
+
+They go through `check_texture.py` like anything else, and that mattered: the first bark
+measured a **13x seam left-to-right and a 67x seam top-to-bottom**, because its noise octaves
+sampled a frequency that was not a whole number of lattice cells. The tool found a bug in the
+generator, which is the same job it does on a download.
+
+---
+
 ## 3. Rock
 
 ```text

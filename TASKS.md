@@ -1111,3 +1111,63 @@ legs, boots, a sash, a robe, and a staff with a lit orb.
 - [ ] `AbilityButton.cooldown_veil` is pure black, against this project's own "no black
       anywhere" rule. It was easy to miss over a flat background and is not any more
 - [ ] Rock, bark and canopy are still flat colours. Their prompts are written
+
+### Session 24f - the two small ones
+
+- [x] **`AbilityButton.cooldown_veil` is no longer black.** It was the last place breaking this
+      project's one colour rule - no black anywhere, because black reads as a hole punched in
+      the picture rather than as a dark thing in it. The same deep blue-violet the scene
+      clears to, so a spell on cooldown reads as covered over rather than burnt out. It got
+      away with it while the background was flat orange
+- [x] **Rock, bark and canopy are textured**, and they are GENERATED - `tools/make_texture.py`,
+      stdlib, seeded, seamless. Worley cells for the rock's facets and the canopy's clumps,
+      anisotropic value noise for the bark's ridges
+- [x] The reasoning is the same measurement the wizard rig used: a boulder is thirty pixels on
+      this screen and a canopy fifty, and at that size a texture breaks a flat colour into
+      facets, which is arithmetic. The ground and the lava were right to come from a painter -
+      they are every pixel of the screen
+- [x] All three triplanar, mipmapped, VRAM-compressed, and through `check_texture.py`
+
+### What the checker found this time - in my own generator
+
+- [x] **The first bark did not tile at all**: 13x seam left-to-right, 67x top-to-bottom, where
+      the rock and the canopy measured 1.01x and 1.00x. The cause was real and worth writing
+      down: an fBm octave only wraps if its sample frequency is a whole number of its lattice's
+      cells, and an 18-wide sweep against an 8-wide lattice is not. `octaves()` now builds each
+      band's lattice AT its own frequency, in both axes independently - which is also what lets
+      bark be eighteen bands across and three down, and that stretch is the ridges
+- [x] Worth noting for its own sake: the tool was written to check downloads and caught a bug
+      in code instead. It has no idea where an image came from, which is the point
+
+### Session 24g - the obstacles have shapes, and the staff is the right length
+
+- [x] **`arena/obstacles/rock.gd`** - three angular lumps at different sizes and angles rather
+      than one seven-sided cylinder. Every sphere is cut with SIX segments and THREE rings, so
+      the facets read as the flat planes of broken stone, which is the same job the painted
+      highlight does in a Warcraft III texture
+- [x] **`arena/obstacles/tree.gd`** - a trunk in two segments with a bend and a flare at the
+      root, under FIVE overlapping leaf masses. One sphere has the most regular outline there
+      is, and an irregular outline is the whole of what reads as a tree from above
+- [x] Both seeded from where they STAND, so two rocks are two rocks and neither changes shape
+      between runs - a screenshot taken twice has to be the same screenshot
+- [x] **The collision shapes are untouched.** What an obstacle blocks is a gameplay number that
+      four suites measure and it must not drift because the art changed
+
+### The staff
+
+- [x] **As tall as the wizard, ground to head.** It was 2.07m against a 1.64m figure. The hand
+      sits 0.77m up, so the shaft runs 0.72 below it and 0.78 above - deliberately asymmetric,
+      because more of a staff is below the hand than above it
+- [x] **Both arms had their Z sign backwards**, and that was the real bug behind three rounds
+      of the staff hiding. A limb hangs along -Y and rotating about +Z carries it toward +X,
+      which is the wizard's RIGHT - so the right arm swings out on a POSITIVE z. They were
+      reversed, which crossed both arms over the chest, buried them in the robe's outline and
+      put the staff's whole length inside the skirt. It read as a wizard holding a floating
+      bead, and no amount of adjusting the staff's own angle was ever going to fix it
+
+### Still open
+
+- [ ] `--pc-test` failed three assertions in one unattended batch and passed alone immediately
+      after. It is the suite documented as needing a REAL WINDOW and a real mouse warp, and it
+      loses the focus it needs during a long run. Not a regression - but it means a batch of
+      eighteen cannot be read as eighteen without re-running that one
