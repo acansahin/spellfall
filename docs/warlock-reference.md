@@ -217,11 +217,55 @@ shape of the map's spell is intact, the direction of its falloff is intact, and 
 this port's. It is recorded here rather than in a comment because it is the only place the
 port and the map disagree about a number.
 
+## 7c. The arena's shrink - CORRECTING WHAT THIS FILE USED TO SAY
+
+This file listed the shrink under "what is not in here" and said **the map shrinks between
+rounds, not during one**. That was wrong, and it was wrong because nobody had looked rather
+than because the script hid it. Here is the whole mechanism:
+
+```jass
+function WY takes nothing returns nothing        // one shrink tick
+  set LG = LG - 1                                // the radius, IN TILES, minus one
+  call PY(LG)                                    // repaint the arena at that radius
+  if LG > 0 then
+    call TimerStart(KG, NN * SquareRoot(UH), false, function WY)
+  else
+    call PauseTimer(KG)
+  endif
+```
+
+`PY(radius)` paints ground out to `radius` and leaves everything past it as `'Idki'` - lava.
+`LG` is a radius in TILES, and a Warcraft III tile is 128 units, which is **one metre on this
+port's scale**. `NN` is 10. `UH` is how many wizards are still ALIVE this round; `SH` is how
+many are in the game at all.
+
+| | the map |
+|---|---|
+| Starting radius | `9 + SH/2` tiles - **10m** at two players, 11 at four, 13 at eight |
+| Step | **one tile at a time**, discrete, not a smooth close |
+| Interval | `10 * sqrt(alive)` seconds - **14.1s** at two alive, 20s at four, 28.3s at eight |
+| Grace before the first step | none as such, but the first interval is a full 14.1s |
+| Floor | **zero.** It closes all the way |
+| Between rounds | reset to `8 + UH/2` and the timer paused |
+
+Three things in there are worth more than the numbers:
+
+- **It speeds up as people die.** The interval is recomputed from `UH` on every tick, so the
+  last two alive in an eight-player game are on a 14.1s clock rather than a 28.3s one. The
+  closing ring is the loser's punishment and the winner's reward in one number.
+- **It STEPS.** A whole ring of ground turns to lava at one moment. That is a different kind
+  of pressure from a rim creeping inward - you can be standing somewhere safe and be standing
+  in lava a moment later without having moved.
+- **It never stops.** There is no minimum radius, so a round always ends.
+
+**This port closes 4.2x faster than the map.** Ours takes 11m down to 4.5m in 21.7 seconds of
+shrinking (0.3 m/s after 12s of grace); at the map's two-player rate the same 6.5 metres takes
+91.7 seconds. Whether to match that is a design decision rather than a porting one - this game
+shrinks during a round for a reason of its own, recorded in GAME_DESIGN.md.
+
 ## 8. What is NOT in here
 
-- **Lava damage per second.** The arena and its lava are built by triggers whose constants
-  are behind the script's obfuscation. This port keeps its own 22/s until someone digs it out.
-- **The per-round arena shrink schedule.** Same reason. The map shrinks between rounds; this
-  game shrinks during one, for a recorded reason of its own.
+- **Lava damage per second.** The lava's damage is applied by a trigger whose constant has
+  not been found. This port keeps its own 22/s until someone digs it out.
 - **The shop.** Gold, items and the per-level spell scaling are the `BH`/`CH`/`DH`/`BC`/`EC`/
   `NC`/`VC` multipliers above. This port pins every one of them at 1.
