@@ -59,7 +59,8 @@ res://
   vfx/             spell_glyph.gd - 22 icons, as vector shapes in a unit box;
                    ground_shapes.gd - flat meshes; spell_flash.gd - the fan Scourge
                    draws; aim_indicator.gd - what a spell will do, before it does it;
-                   impact_burst.gd - sparks; ground_streak.gd - the smear a Teleport leaves
+                   impact_burst.gd - sparks; ground_streak.gd - the smear a Teleport leaves;
+                   blast_ring.gd - the circle a blast opens, at the blast's own radius
   audio/           sound_bank.gd - every sound, synthesized. There are no audio files
   tests/  assets/
 ```
@@ -624,6 +625,8 @@ new arrangement. `--roster-test` has one section per mechanic for exactly that r
 | drain / mend | `heal_caster`, `ally_heal` | `_apply_hit`, `_burst` | the only healing in the game, and neither works alone — one needs a victim, the other an ally |
 | pull | `pull_force` / `pull_radius` | `Projectile._pull` → `Player.apply_pull` | an acceleration on the knockback channel, ACCUMULATED rather than replaced |
 | tether | `tether_seconds` / `tether_dps` | `_tick_tethers` in `main.gd` | health only, keyed by the victim, so a second link refreshes rather than stacks |
+| loop | `curve_speed` / `curve_reach` | `Projectile._arm_curve` → `_curve` | a CONSTANT acceleration solved once at launch: forward speed reaches zero at `curve_reach`, the lateral term closes at the same instant, and the return leg mirrors it. The turn is one assignment, not a decision |
+| fall | `drop_height` | `Projectile._arm_drop`, `_drop_shadow` | born overhead and descending at `drop_height / lifetime`, so the flight TIME is fixed and the horizontal speed is what varies with range. The ring on the ground is the only warning a spell from off-screen can give |
 
 **Twenty-two spells need twenty-two SHAPES, and that is more drawing than the comparison is
 worth.** `Ability.glyph` picks one of `SpellGlyph`'s vector icons, drawn into the spell button
@@ -853,6 +856,7 @@ type draws its own shape, built by `GroundShapes` from the ability's own numbers
 | Cast type | Drawn | Reach |
 |---|---|---|
 | `PROJECTILE` | a lane, starting at `spawn_offset` | `speed x lifetime`, **trimmed at the rim** |
+| `PROJECTILE` with `drop_height` | a thin line to a ring the size of `area` | where it comes down |
 | `CONE` | the fan, at the spell's own half-angle | `area`, never trimmed |
 | `DASH` | a line to a ring on the landing spot | the **clamped** landing distance |
 | `BUFF` | a ring around the caster | none — it has no direction to give |
@@ -863,6 +867,10 @@ Two of those are decisions rather than drawings:
   honest lane is a stripe over a void where there is nothing left to hit.
 - **The fan is NOT trimmed**, because a wave cast at the edge really does catch someone hanging
   over it. Shortening it would be a lie about who gets hit.
+- **A falling spell draws a SPOT, not a lane.** Nothing along a meteor's path is dangerous -
+  it is seven metres over everyone's head for most of the flight - so a lane under one promises
+  a threat that is not there. It gets the dash's picture instead, a line to a marked spot, with
+  the ring sized to `area` so the circle sighted and the circle that goes off are the same one.
 - **The dash line ends where the dash ends.** `main.gd._blink_landing()` answers that question
   once and both the preview and the cast ask it, so the line cannot promise a landing spot the
   spell then refuses. `--aim-test` measures the drawn length and the travelled distance and
@@ -1130,6 +1138,16 @@ Every OTHER suite calls `_clear_cover()` first. Third in the family after `_free
 empty arena and pick the spot they measure from by hand.
 
 ## Game feel
+
+**A blast is reported separately from the hits it causes**, and reported when it causes none.
+`_on_projectile_spent` calls `GameFeel.blast(at, colour, area)` before `_burst` resolves the
+damage, so a meteor landing on empty ground opens a ring at its own radius and throws sparks to
+its own rim. That was the gap: `_burst` resolves at the SPOT a projectile died rather than on
+what it touched, so the frame where a blast caught nobody used to have no picture at all - and
+"was I inside it?" is the only question a blast asks. `--feel-test` asserts the empty case
+specifically. The size comes from `Ability.area` and nothing else, which is the reference map's
+own rule: it scales its explosion model to the blast radius on the frame it plays. See
+docs/warlock-reference.md section 9a.
 
 `systems/feel/game_feel.gd` is one node holding hitstop, camera shake, sparks, sound and
 haptics. One node because these are **one decision**: "that hit was heavy" has to mean the

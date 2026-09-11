@@ -7,6 +7,7 @@ watching a video. **Change a number in this port only against this file or a fre
 ```
 python tools/warlock_dump.py units       # the wizard
 python tools/warlock_dump.py abilities   # the 22 spells, with the map's own tooltips
+python tools/warlock_dump.py effects     # how they LOOK and MOVE: models, height, curves
 python tools/warlock_dump.py hits        # every damage/push call site
 python tools/warlock_dump.py speeds      # every per-second constant
 python tools/warlock_dump.py metres      # all of it converted at 128 units / metre
@@ -268,6 +269,124 @@ It used to close **4.2x faster** - 11m down to a 4.5m floor in 21.7 seconds at 0
 12 seconds of grace. None of those three numbers survived: the rate, the floor and the grace
 were all invented here, and the grace turned out to be something the map gets for free by not
 having stepped yet.
+
+---
+
+## 9. How the spells LOOK and MOVE
+
+`python tools/warlock_dump.py effects`. Read the same way as the rest of this file: these are
+the calls the script makes, not a description of the spells from watching them.
+
+The first finding is where the answer is NOT. `war3map.w3a` carries a missile art for **three**
+of fifty ability records and a missile speed for three; the object editor is empty. The map
+builds every projectile itself - a dummy unit with a model attached, moved by the same 0.03 s
+timer that moves the wizards - which is the same shape as this port's hand-moved `Area3D`. So
+the whole vocabulary is in the script: 39 missile spawns, 58 effects played at a point, 55
+attached to a body, 30 rescales.
+
+### 9a. Meteor falls, and its flight time is fixed
+
+`T3` is the cast and `S3` is its per-tick:
+
+```jass
+call SetUnitFlyHeight(F[D2],$3E8,0)                  // born 1000 u = 7.81 m UP
+call SetUnitScale(F[D2],U3,U3,U3)                    // U3 = .8 at base
+set OV[D2]=1.35                                      // it lives 1.35 s
+set TN=UN/ 1.35*.03                                  // horizontal speed = DISTANCE / 1.35
+// every tick:
+call SetUnitFlyHeight(F[PN],GetUnitFlyHeight(F[PN])-740.741*.03,0)
+```
+
+| | map | at 128 u/m |
+|---|---|---|
+| Spawn height | 1000 u, above the CASTER | **7.81 m** |
+| Fall rate | 740.741 u/s | **5.787 m/s** |
+| Flight time | 1.35 s | **1.35 s**, and 1000 / 740.741 = 1.35 exactly |
+| Horizontal speed | distance / 1.35 | derived, not stated |
+| Blast radius `EY` | 210 u | 1.64 m |
+
+Three things in there outrank the numbers:
+
+- **The flight time is fixed and the speed is not.** However far you throw it, the meteor lands
+  1.35 seconds after the cast. That is a telegraph you can count, and it is the opposite of
+  every other spell in the map, where the speed is fixed and the time varies.
+- **It is not on the ground plane.** No other spell in the map leaves it. The rock and the
+  shadow Warcraft III draws under it are the whole telegraph - there is no decal, no ring, no
+  marked landing spot.
+- **The explosion is scaled to the blast**: `SetUnitScale(F[PN],.006*EY,...)` immediately
+  before `ExplosionBIG.mdl` is attached to it. 0.006 x 210 = 1.26. The picture of the damage is
+  the size of the damage, which is the rule this repo already applies to a projectile's
+  cross-section.
+
+It has no collision callback at all (`XE` is never set), so **nothing can block a meteor**. It
+passes over everybody and detonates on its timer.
+
+### 9b. Boomerang is a parabola, not an out-and-back
+
+`C3`, and this is the one worth reading twice:
+
+```jass
+local real D3=$5DC*.03      // forward  1500 u/s = 11.72 m/s - the fastest thing in the map
+local real F3=300*.03       // SIDEWAYS 300 u/s  =  2.34 m/s
+local real J3=800*(...)     // reach clamped to [300, 800] u = [2.34, 6.25] m
+set G3=-(D3*D3)/(2*BQ)      // constant deceleration along the throw
+set H3=2*G3*F3/ D3          // constant acceleration across it
+if EG[DC] then ... endif    // and the side ALTERNATES between casts
+set OV[D2]=-D3/ G3          // = 2*BQ/D3
+```
+
+It is a projectile under constant acceleration in the plane. Work the algebra and three
+properties fall out, all three of them design rather than arithmetic:
+
+- **Forward velocity reaches zero exactly at `BQ`** - the distance you aimed at. The glaive
+  stops where you pointed and `G3` pulls it back. The aim is a POINT, not a direction.
+- **Lateral offset returns to zero at the same instant.** It bulges out by `s*R/(2v)` at the
+  halfway mark - 0.62 m at this port's numbers - and comes back to the line at the turn.
+- **The return leg mirrors the lateral acceleration** (`B3` swaps `U,W` for `Z,VV`), so it comes
+  home down the OTHER side. The path is a leaf, not a line. Its own turn point and its caster
+  are the only two places both legs pass through.
+
+Then a third leg. `R3` zeroes the acceleration and hands over to `N3`, which steers the glaive
+at its caster - **7.81 m/s wanted, corrected at 7.81 m/s²**, caught inside **75 u = 0.586 m**.
+The parabola returns it to where the caster STOOD; the homing leg covers the walking they did
+meanwhile. If the caster is dead it coasts 1.5 s and dies.
+
+And on contact (`I3`) it does not carry on: it plays `BallistaImpact` at itself and
+`StampedeMissileDeath` on the victim, deals its damage, is **repositioned just clear of the
+body it hit**, has its velocity reversed, and calls `R3()` - straight into the homing leg.
+`R3()` is outside the "was it a wizard" test, so hitting anything at all sends it home.
+
+### 9c. The rest of the vocabulary
+
+- **Fireball is two models at once**: `RedDragonMissile.mdl` and a custom `fb2.mdl` on the same
+  spawn. Layering is how a primitive is made to look composed.
+- **A hit is drawn in two places**: one effect where the projectile is, one on the body it hit.
+- **Effects hang off bones**, not off the ground: `"origin"`, `"chest"`, `"overhead"`,
+  `"right hand"`, `"left foot"`. 55 of the 113 effect spawns are attached to a unit.
+- **The boomerang is tinted to its caster** (`SetUnitColor(F[D2],GetPlayerColor(...))`). Whose
+  spell it is, is information, and this map has teams.
+- **Consecutive casts differ**: the `EG` toggle above is one bit of state that makes the same
+  spell look different twice in a row, for free.
+
+### 9d. What this port took, and what it did not
+
+| | map | this port |
+|---|---|---|
+| Meteor spawn height | 1000 u above the caster | **7.81 m**, same |
+| Meteor fall rate | 740.741 u/s | **5.787 m/s**, same |
+| Meteor flight time | 1.35 s, fixed | **1.35 s**, same |
+| Meteor lands where | the aimed POINT | at `effective_range()` along the aim - **the port's aim carries no distance** |
+| Meteor blast | 210 u = 1.64 m | 3.2 m - unchanged, and a balance number rather than an effects one |
+| Boomerang forward / lateral | 11.72 / 2.34 m/s | same |
+| Boomerang reach | the aimed distance, clamped [2.34, 6.25] m | **fixed at 6.25 m**, same reason |
+| Boomerang side alternates | per CASTER (`EG[DC]`) | per CAST, one shared toggle - a 16 s cooldown makes the difference unobservable |
+| Boomerang on contact | recoils clear and flies home | same |
+| Catch radius | 75 u = 0.586 m | same |
+
+The one departure that changes a spell rather than a number: the port's Boomerang used to
+`pierce` and its blurb promised it could "catch them twice". Under the real path that promise
+cannot be kept - the outward and return arcs cross at exactly two points, the caster and the
+turn - so the spell now does what the map's does instead, and the blurb says so.
 
 ## 8. What is NOT in here
 

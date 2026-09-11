@@ -192,10 +192,124 @@ def cmd_metres(archive: w3x.Archive, strings, args) -> None:
 			f"{impulse:5.2f} m/s, carries {carry:5.2f} m")
 
 
+def _calls(script: str, name: str) -> list[str]:
+	"""Every argument list passed to `name(`, with brackets balanced.
+
+	Splitting on "," would cut `EQ(2,DC,'e000',K[FC],L[FC],GetUnitFacing(F[FC]),"...")` in the
+	middle of its own nested call. Walking to the matching bracket does not.
+	"""
+	out: list[str] = []
+	for match in re.finditer(r"(?<![A-Za-z0-9_])" + re.escape(name) + r"\(", script):
+		start = match.end()
+		depth, index = 1, start
+		while depth and index < len(script):
+			if script[index] == "(":
+				depth += 1
+			elif script[index] == ")":
+				depth -= 1
+			index += 1
+		out.append(script[start:index - 1])
+	return out
+
+
+def _functions(script: str) -> list[tuple[int, int, str]]:
+	"""(start, end, whole text) for every function in the script, in file order."""
+	return [(m.start(), m.end(), m.group(0))
+		for m in re.finditer(r"function [A-Za-z0-9_]+ takes .*?endfunction", script)]
+
+
+def _enclosing(spans, offset: int) -> str:
+	for start, end, body in spans:
+		if start <= offset < end:
+			return body
+	return ""
+
+
+def cmd_effects(archive: w3x.Archive, strings, args) -> None:
+	"""What the map's spells LOOK like, and how they MOVE.
+
+	WHY THIS EXISTS. `abilities` reads the object editor, and the object editor is nearly
+	empty here: of 22 spells only three carry a missile art at all. That is not the map being
+	sparse, it is the map doing its own projectiles - a dummy unit with a model attached,
+	moved by the same 0.03 s timer that moves the wizards, exactly as this port moves an
+	Area3D by hand. So the whole visual and motion vocabulary lives in the script, and none of
+	it is reachable except by reading the calls.
+
+	Everything below is a call site, printed verbatim. The interpretation belongs in
+	docs/warlock-reference.md; this only says what the code passes.
+	"""
+	script = archive.read(SCRIPT).decode("utf-8", "replace")
+	spans = _functions(script)
+
+	print("=" * 78)
+	print("MISSILES - the map's own projectile factory. The last argument is the model.")
+	print("=" * 78)
+	seen: dict[str, None] = {}
+	for match in re.finditer(r"(?<![A-Za-z0-9_])EQ\(", script):
+		call = _enclosing(spans, match.start())
+		if call and call not in seen:
+			seen[call] = None
+	for call in _calls(script, "EQ"):
+		print(f"  EQ({call})")
+	print()
+	print(f"  ...launched by {len(seen)} cast functions. Each one, verbatim:")
+	for body in seen:
+		print()
+		print("  " + body.replace("endfunction", "\n  endfunction"))
+
+	print()
+	print("=" * 78)
+	print("HEIGHT - the vertical axis. A spell here is not on the ground plane.")
+	print("=" * 78)
+	for call in _calls(script, "SetUnitFlyHeight"):
+		print(f"  SetUnitFlyHeight({call})")
+
+	print()
+	print("=" * 78)
+	print("EFFECTS - a model played once and thrown away.")
+	print("=" * 78)
+	world = collections.Counter(_calls(script, "AddSpecialEffect"))
+	body = collections.Counter(_calls(script, "AddSpecialEffectTarget"))
+	print(f"  at a POINT ({sum(world.values())} calls):")
+	for call, uses in world.most_common():
+		print(f"    x{uses}  {call}")
+	print(f"  on a BODY ({sum(body.values())} calls) - note the attachment points:")
+	for call, uses in body.most_common():
+		print(f"    x{uses}  {call}")
+
+	print()
+	print("=" * 78)
+	print("SIZE AND TINT - what the map changes about a thing already on screen.")
+	print("=" * 78)
+	for name in ("SetUnitScale", "SetUnitColor", "SetUnitVertexColor"):
+		for call in _calls(script, name):
+			print(f"  {name}({call})")
+
+	print()
+	print("=" * 78)
+	print("THE OBJECT EDITOR'S SHARE - almost nothing, which is the finding.")
+	print("=" * 78)
+	art = {
+		b"amat": "missile art", b"amsp": "missile speed", b"amac": "missile arc",
+		b"acat": "caster art", b"atat": "target art", b"aeat": "effect art",
+		b"asat": "special art", b"aare": "area", b"ata0": "attach",
+	}
+	records = w3x.parse_object_data(archive.read("war3map.w3a"), has_level=True)
+	for _original, new, mods in records:
+		name = w3x.strip_colour(resolve(list(mods.get(b"anam", {}).values() or [""])[0], strings))
+		if not name:
+			continue
+		row = [f"{label}={list(mods[key].values())[0]}"
+			for key, label in art.items() if key in mods and str(list(mods[key].values())[0]).strip()]
+		if row:
+			print(f"  {new.decode('utf-8', 'replace'):6} {name:22} " + "  ".join(row))
+
+
 COMMANDS = {
 	"files": cmd_files,
 	"units": cmd_units,
 	"abilities": cmd_abilities,
+	"effects": cmd_effects,
 	"hits": cmd_hits,
 	"speeds": cmd_speeds,
 	"metres": cmd_metres,

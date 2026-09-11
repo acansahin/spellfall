@@ -174,6 +174,12 @@ var _eliminated := false
 @onready var _aim: AimIndicator = get_node_or_null(^"AimIndicator") as AimIndicator
 @onready var _bar: HealthBar = get_node_or_null(^"HealthBar") as HealthBar
 
+const SpellAuraVisual = preload("res://vfx/spell_aura.gd")
+const BurningHemVisual = preload("res://vfx/burning_hem.gd")
+var _spell_aura: Node3D
+var _burning_hem: Node3D
+var _shield_material: StandardMaterial3D
+
 ## Optional: a wizard without a spellbook simply never casts, which is what a training
 ## dummy or a not-yet-armed character wants.
 @onready var _abilities: AbilityComponent = get_node_or_null(^"Abilities") as AbilityComponent
@@ -182,6 +188,16 @@ var _gravity: float = ProjectSettings.get_setting("physics/3d/default_gravity", 
 
 
 func _ready() -> void:
+	_spell_aura = SpellAuraVisual.new()
+	_visual.add_child(_spell_aura)
+	_burning_hem = BurningHemVisual.new()
+	_visual.add_child(_burning_hem)
+	if _shield_visual is MeshInstance3D:
+		var shield_mesh := _shield_visual as MeshInstance3D
+		var source := shield_mesh.get_active_material(0) as StandardMaterial3D
+		if source != null:
+			_shield_material = source.duplicate() as StandardMaterial3D
+			shield_mesh.material_override = _shield_material
 	# The fighter points its own bar at its own burn. This is internal wiring, not the class
 	# reaching upward: it is the only thing that certainly knows which HealthComponent is its,
 	# and doing it here means a third fighter gets a working bar by existing.
@@ -346,6 +362,7 @@ func respawn_at(point: Vector3) -> void:
 	_move_bonus = 0.0
 	_move_bonus_timer = 0.0
 	_rewind_timer = 0.0
+	set_lava_burning(false)
 	_drop_shield()
 	global_position = point
 	var inst := instability()
@@ -459,7 +476,8 @@ func apply_pull(impulse: Vector3) -> void:
 ## knockback itself uses, and for the same reason. Two shields multiplying into near
 ## invulnerability is not a mechanic anybody designed.
 func apply_shield(seconds: float, factor: float,
-		speed_per_absorbed: float = 0.0, speed_cap: float = 0.0) -> void:
+		speed_per_absorbed: float = 0.0, speed_cap: float = 0.0,
+		tint: Color = Color(0.6, 1.0, 0.85)) -> void:
 	if _shield_timer > 0.0:
 		_shield_factor = minf(_shield_factor, factor)
 	else:
@@ -473,6 +491,15 @@ func apply_shield(seconds: float, factor: float,
 	_shield_timer = maxf(_shield_timer, seconds)
 	if _shield_visual != null:
 		_shield_visual.visible = true
+	if _shield_material != null:
+		_shield_material.albedo_color = Color(tint.r, tint.g, tint.b, 0.22)
+		_shield_material.emission = tint
+
+
+## Gives each self-cast spell its own moving rings and motes around the wizard.
+func play_spell_aura(ability: Ability) -> void:
+	if _spell_aura != null:
+		_spell_aura.play(ability)
 
 
 ## Turns the knockback a buff just swallowed into walking speed.
@@ -605,6 +632,16 @@ func health() -> HealthComponent:
 	return get_node_or_null(^"Health") as HealthComponent
 
 
+## Keeps the robe fire attached to this fighter and out of the arena's gameplay rules.
+func set_lava_burning(active: bool) -> void:
+	if _burning_hem != null:
+		_burning_hem.set_burning(active)
+
+
+func has_lava_flames() -> bool:
+	return _burning_hem != null and _burning_hem.is_burning()
+
+
 ## Takes the fighter out of the round: no input, no physics, no collision, not drawn.
 ##
 ## Physics processing stops rather than merely being ignored, so an eliminated body cannot
@@ -622,6 +659,7 @@ func eliminate() -> void:
 	# physics processing stops here, it would resolve on the NEXT round instead, teleporting a
 	# fighter to where they died in the last one.
 	_rewind_timer = 0.0
+	set_lava_burning(false)
 	visible = false
 	set_physics_process(false)
 	# Stop being a valid target while out. Deferred because this can be reached from inside

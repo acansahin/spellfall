@@ -19,7 +19,7 @@ extends RefCounted
 ##
 ## The shapes are named for what they LOOK like, not for the spell that uses them, so two
 ## spells may share one and a new spell picks the closest fit rather than forcing a new
-## drawing - the same reason `Ability.returns_after` is named after the behaviour and not
+## drawing - the same reason `Ability.curve_speed` is named after the behaviour and not
 ## after Boomerang.
 
 ## How far the arrowheads stick out, in unit-box terms.

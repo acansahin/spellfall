@@ -22,6 +22,18 @@ A retry that silently swallowed the first failure would be worse than the shell 
 replaces, because it would hide a genuine intermittent bug. The point is not to make the batch
 green; it is to make "green" mean something again.
 
+DO NOT EDIT THE TREE WHILE A BATCH IS RUNNING. Each suite is a fresh Godot process that parses
+the project when it starts, so a `.gd`, `.tscn` or `.tres` saved halfway through a run is parsed
+by every suite after it and by none before. That reports as `SCRIPT ERROR` against whichever
+suites happened to start during the edit - which reads exactly like a real regression in code
+those suites never touch. Cost a confused re-run once: `team` and `button` failed while
+`loadout` and `roster`, run minutes earlier from the same batch, passed.
+
+A `class_name` that is NEW to the project needs `Godot.exe --headless --path . --import` before
+anything can refer to it. Without it the class is missing from
+`.godot/global_script_class_cache.cfg` and every reference is a parse error - "Could not find
+type X in the current scope" - which looks like a typo and is not one.
+
 `--pc-test` is excluded from the default set and has to be asked for by name. It needs a REAL
 WINDOW with focus and a real `Input.warp_mouse`, and it reliably loses that focus partway
 through a long unattended run - which is the one flake here whose cause IS understood.

@@ -529,6 +529,10 @@ a loadout screen, and it is the shape this session built.
         walking across its nose still loses it
   - [x] **Loopshot** - `returns_after` 0.5 of its life, then flies at the caster; `pierces`
         lets it catch the same wizard going and coming
+        - SUPERSEDED. Both fields are gone: it is `curve_speed` / `curve_reach` now, the
+          reference map's own parabola, and a hit sends it home rather than through. The
+          straight out-and-back was what made "twice from one cast" reachable, and a real
+          loop crosses itself at only two points. See docs/warlock-reference.md section 9b
   - [x] **Lunge** - `dash_hits`: the corridor is swept and everyone in it goes through
         `_apply_hit`, the same door a projectile uses
   - [x] **Warp Bolt** - `swaps_places`. Hurts nobody; takes the ground they were standing on

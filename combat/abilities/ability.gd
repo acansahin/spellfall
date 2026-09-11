@@ -10,9 +10,9 @@ extends Resource
 ##
 ## The claim has been tested twice now. Seven spells were added at once and only two needed a
 ## line of runtime; eleven more were added after that and eight mechanics covered all of them.
-## Where a field DID have to be added it says what the spell DOES - `returns_after` is the
-## whole of a boomerang, `falloff_over` the whole of a meteor - rather than naming the spell,
-## so the next one that wants to come back or fall off gets it free.
+## Where a field DID have to be added it says what the spell DOES - `curve_speed` is the
+## whole of a boomerang, `drop_height` the whole of a meteor - rather than naming the spell,
+## so the next one that wants to loop or fall gets it free.
 ##
 ## Not every field applies to every cast type - `projectile_speed` means nothing to a buff.
 ## Unused fields are simply left at their defaults; a runtime reads only what its cast type
@@ -261,13 +261,46 @@ enum Bolt {
 ## it flies straight, which is what keeps a seeker aimed rather than fired.
 @export var homing_radius: float = 8.0
 
-## Fraction of the lifetime spent flying out before the spell turns and comes back to its
-## caster. 0 never turns.
+## Metres per second SIDEWAYS at launch. Above zero, the spell stops flying straight and
+## becomes a boomerang: out along one side, home down the other.
 ##
-## Stated as a FRACTION and not in seconds, so the turn cannot drift out of the lifetime when
-## the spell is retuned: 0.5 is always "halfway", whatever the flight now lasts.
-## `effective_range()` reads it, so the aim lane and the bot's own reach shorten with it.
-@export_range(0.0, 1.0, 0.01) var returns_after: float = 0.0
+## This replaced a `returns_after` fraction that turned the spell around at a point in its
+## lifetime, and the replacement is the reference map's own model rather than a nicer version
+## of ours. There, a boomerang is a projectile under CONSTANT ACCELERATION in the plane: a
+## deceleration along the throw that brings its forward speed to zero after exactly
+## `curve_reach` metres and then pulls it back, and a lateral acceleration in fixed ratio to
+## it that bows the flight out and returns it to the line at the same instant. The return leg
+## mirrors the lateral term, so the path is a leaf rather than a line - and the two legs cross
+## at only two places, the caster and the turn.
+##
+## `Projectile` does the algebra; the two numbers here are all a spell states.
+## See docs/warlock-reference.md section 9b.
+@export var curve_speed: float = 0.0
+
+## Metres out the curve reaches before it turns, for a spell with `curve_speed` above zero.
+##
+## A DISTANCE and not a time, because it is the distance that the flight is solved for: the
+## deceleration is derived as `-speed² / (2 * reach)`, so retuning either number keeps the
+## turn exactly here. It is also what `effective_range()` returns, so the aim lane and the
+## bot's reach check are the outward leg rather than the whole loop.
+##
+## The map takes this from where the caster aimed, clamped to 2.34-6.25m. This port's aim
+## carries a direction and no distance, so it is fixed per spell.
+@export var curve_reach: float = 6.25
+
+## Metres above the launch point the projectile is BORN, falling to the launch height over
+## exactly its lifetime. 0 flies flat, which is every spell but one.
+##
+## The whole of a meteor, and the only thing in the game that leaves the ground plane. The
+## fall rate is derived rather than stated - `drop_height / lifetime` - because the two are
+## one fact in the map as well: it spawns its meteor 1000 units up and drops it at 740.741
+## units a second, and 1000 / 740.741 is the 1.35 second lifetime it also states. Deriving
+## keeps a retuned height or lifetime from landing the rock early or late.
+##
+## Note what this makes true: the flight TIME is fixed and the horizontal speed is what
+## varies with range. That is a telegraph a player can count, and it is the opposite of every
+## other projectile here. See docs/warlock-reference.md section 9a.
+@export var drop_height: float = 0.0
 
 ## Keeps flying after catching a fighter instead of expiring. Each fighter is caught at most
 ## once per leg, and a returning spell gets a clean list when it turns - so it can hit the
@@ -409,13 +442,13 @@ enum Bolt {
 func effective_range() -> float:
 	match cast_type:
 		CastType.PROJECTILE:
-			# A returning spell only threatens as far as its TURN. Measuring the whole flight
-			# would draw an aim lane twice the length of the one the boomerang actually
-			# reaches, and would have the bot hold a range from which it cannot connect.
-			var flight := lifetime
-			if returns_after > 0.0:
-				flight = lifetime * returns_after
-			return _travel(flight)
+			# A returning spell only threatens as far as its TURN, and its turn is a stated
+			# distance rather than something to integrate. Measuring the whole flight would
+			# draw an aim lane twice the length of the one the boomerang actually reaches, and
+			# would have the bot hold a range from which it cannot connect.
+			if curve_speed > 0.0:
+				return curve_reach
+			return _travel(lifetime)
 		CastType.CONE:
 			return area
 		CastType.DASH:

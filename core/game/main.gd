@@ -258,21 +258,24 @@ func _tick_tethers(delta: float) -> void:
 ## them, and burning through the interlude would be a fine way to lose a round you have not
 ## started yet.
 func _tick_lava(delta: float) -> void:
-	if not _rounds.is_live():
-		return
 	for fighter in _fighters:
-		if fighter == null or fighter.is_eliminated():
+		if fighter == null:
+			continue
+		if not _rounds.is_live() or fighter.is_eliminated():
+			fighter.set_lava_burning(false)
 			continue
 		var hp := fighter.health()
-		if hp == null or not hp.is_alive():
+		var in_lava := hp != null and hp.is_alive() \
+			and _radius_of(fighter.global_position) > _arena_edge
+		fighter.set_lava_burning(in_lava)
+		if not in_lava:
 			continue
 		# Stone no longer mends. A trip into the lava, or a hit that drains health directly,
 		# costs something for the rest of the round - reset() between rounds is the only way
 		# back to full, which is what makes the total a budget rather than a bar that refills
 		# between exchanges.
-		if _radius_of(fighter.global_position) > _arena_edge:
-			hp.burn(delta)
-			_feel.burning(fighter.global_position, fighter == _player, delta)
+		hp.burn(delta)
+		_feel.burning(fighter.global_position, fighter == _player, delta)
 
 
 ## How far the camera stands back, as a multiple of the radius. 3.14 is what the framing that
@@ -1166,6 +1169,12 @@ func _on_projectile_hit(body: Node3D, direction: Vector3, ability: Ability,
 func _on_projectile_spent(at: Vector3, direction: Vector3, ability: Ability,
 		shooter: Node3D) -> void:
 	if ability.area > 0.0:
+		# Announced BEFORE the damage is applied, and announced whether or not it catches
+		# anybody. A blast that hit nobody used to produce no picture at all, which made
+		# "was I inside it?" a question the game never answered.
+		var effect_colour := Color(1.0, 0.28, 0.035) if ability.id == &"meteor" else ability.colour
+		_feel.blast(at, effect_colour, ability.area, ability.id == &"meteor",
+			Vector2(at.x, at.z).length() <= _arena.radius)
 		_burst(at, direction, ability, shooter)
 	if ability.splits_into > 0 and ability.split_child is Ability:
 		_split(at, direction, ability, shooter)
@@ -1288,7 +1297,7 @@ func _cast_cone(ability: Ability, direction: Vector3, caster: Node3D) -> void:
 		if flash != null:
 			# The drawing takes its shape from the same two numbers the hit test uses, so the
 			# fan on screen cannot disagree with the fan that hits.
-			flash.play(ability.area, ability.cone_angle, ability.colour, direction)
+			flash.play(ability.area, ability.cone_angle, ability.colour, direction, ability.id)
 	# A burst that catches its own caster is a BURST, not a fan, and it resolves through the
 	# same door a blast does - which is also the only door that knows how to hit the caster and
 	# how to mend an ally. A fan keeps the cone query, because a fan has a direction and a
@@ -1322,7 +1331,7 @@ func _cast_dash(ability: Ability, direction: Vector3, caster: Node3D) -> void:
 	if ability.dash_hits:
 		caught = _dash_targets(from, landing, ability, fighter)
 	fighter.blink_to(landing)
-	_feel.dashed(from, landing, ability.colour)
+	_feel.dashed(from, landing, ability.colour, ability.id)
 	for body in caught:
 		# Thrown along the charge, which is the direction the caster travelled and not the line
 		# out from where they ended up. A charge shoves what it ran through forward.
@@ -1389,6 +1398,7 @@ func _cast_buff(ability: Ability, caster: Node3D) -> void:
 	var fighter := caster as Player
 	if fighter == null:
 		return
+	fighter.play_spell_aura(ability)
 	if ability.rewind:
 		fighter.begin_rewind(ability.duration)
 		print("[buff] %s -> %s | back to here in %.1fs" % [
@@ -1397,7 +1407,7 @@ func _cast_buff(ability: Ability, caster: Node3D) -> void:
 	if ability.move_bonus > 0.0:
 		fighter.grant_speed(ability.move_bonus, ability.duration)
 	fighter.apply_shield(ability.duration, ability.knockback_resist,
-		ability.speed_per_absorbed, ability.speed_cap)
+		ability.speed_per_absorbed, ability.speed_cap, ability.colour)
 	print("[buff] %s -> %s | %.0f%% of a hit gets through, for %.1fs" % [
 		ability.id, fighter.name, ability.knockback_resist * 100.0, ability.duration])
 
@@ -1489,7 +1499,7 @@ func _swap_places(caster: Player, victim: Player, ability: Ability) -> void:
 	var mine := caster.global_position
 	caster.blink_to(theirs)
 	victim.blink_to(mine)
-	_feel.dashed(mine, theirs, ability.colour)
+	_feel.dashed(mine, theirs, ability.colour, ability.id)
 	print("[swap] %s <-> %s" % [caster.name, victim.name])
 
 
@@ -1506,6 +1516,7 @@ func _wire_feel() -> void:
 	_feel.sounds = $Sounds as SoundBank
 	_feel.sparks = $Sparks as ImpactBurst
 	_feel.streak = $Streak as GroundStreak
+	_feel.ring = $BlastRing as BlastRing
 
 
 # ---------------------------------------------------------------------------------------
@@ -3339,9 +3350,11 @@ func _run_feel_tests() -> void:
 
 	_expect("the feel layer has all four channels",
 		_feel.camera != null and _feel.sounds != null and _feel.sparks != null
+			and _feel.ring != null
 			and _feel.streak != null,
-		"camera=%s sounds=%s sparks=%s streak=%s" % [
+		"camera=%s sounds=%s sparks=%s ring=%s streak=%s" % [
 			_feel.camera != null, _feel.sounds != null, _feel.sparks != null,
+			_feel.ring != null,
 			_feel.streak != null])
 	for id in [&"cast", &"hit", &"heavy", &"fall", &"tick", &"go", &"win", &"lose", &"blink"]:
 		_expect("the bank has a %s" % id, sounds.has(id), "")
@@ -3390,6 +3403,30 @@ func _run_feel_tests() -> void:
 		on_bot < heavy_shake * 0.9 and on_bot > 0.0,
 		"you %.3f, them %.3f" % [heavy_shake, on_bot])
 
+	# --- a blast draws its own reach, even with nobody in it ---------------------------------
+	#
+	# The case worth asserting is the EMPTY one. A blast resolves at the spot a projectile
+	# died rather than on what it touched, so the frame where it catches nobody is exactly the
+	# frame that used to show nothing at all - and it is the frame a player needs, because the
+	# question a blast asks is "was I inside it?".
+	var ring := $BlastRing as BlastRing
+	while ring.active_count() > 0:
+		await get_tree().process_frame
+	var lone := _spell(&"meteor")
+	_expect("the roster still has a blast to draw", lone != null and lone.area > 0.0,
+		"meteor=%s" % lone)
+	if lone != null:
+		_feel.blast(Vector3(0.0, 1.2, 0.0), lone.colour, lone.area)
+		await get_tree().process_frame
+		_expect("a blast that caught nobody still draws its reach", ring.active_count() == 1,
+			"%d rings open" % ring.active_count())
+		var open_for := 0.0
+		while ring.active_count() > 0 and open_for < 2.0:
+			await get_tree().process_frame
+			open_for += get_process_delta_time()
+		_expect("and closes on its own", ring.active_count() == 0,
+			"still open after %.2fs" % open_for)
+
 	# --- a dash leaves a streak, and takes it away again ------------------------------------
 	var dash := book.ability_in(_slot_with(book, Ability.CastType.DASH))
 	_cast_dash(dash, Vector3(1.0, 0.0, 0.0), _player)
@@ -3410,6 +3447,9 @@ func _run_feel_tests() -> void:
 	_apply_hit(_player, Vector3(1.0, 0.0, 0.0), heavy)
 	_expect("a parked feel throws no sparks", sparks.active_count() == 0,
 		"active=%d" % sparks.active_count())
+	_feel.blast(Vector3(0.0, 1.2, 0.0), Color(1, 1, 1), 3.2)
+	_expect("a parked feel opens no blast ring", ring.active_count() == 0,
+		"%d rings open" % ring.active_count())
 	_expect("a parked feel does not shake", _camera_rig.shake_level() <= 0.001,
 		"shake=%.3f" % _camera_rig.shake_level())
 	_expect("a parked feel leaves time alone", is_equal_approx(Engine.time_scale, 1.0),
@@ -3894,8 +3934,8 @@ func _run_shrink_tests() -> void:
 ## Split into two halves. The first is pure data - what the catalogue holds, and that picks
 ## survive a round trip through ids - and needs neither a window nor a live round. The second
 ## casts each new spell and measures the ONE rule that makes it that spell: a lance that
-## out-reaches a fireball, a seeker that turns, a loopshot that comes home and can catch the
-## same wizard twice, a lunge that hits what it runs through, a bolt that trades places, a
+## out-reaches a fireball, a seeker that turns, a loopshot that bows off its own line and
+## comes home, a lunge that hits what it runs through, a bolt that trades places, a
 ## rewind that undoes where you are but not what you took, and a buff that pays for a hit in
 ## walking speed.
 ##
@@ -4162,34 +4202,58 @@ func _run_loadout_tests() -> void:
 	await _equip(&"loopshot", &"blink", &"arcane_shield")
 	var loop := _spell(&"loopshot")
 	_expect("its stated reach is the outward leg, not the whole flight",
-		absf(loop.effective_range()
-			- loop.projectile_speed * loop.lifetime * loop.returns_after) < 0.2,
-		"%.1fm for a %.1fs flight at %.1f m/s" % [
+		is_equal_approx(loop.effective_range(), loop.curve_reach)
+			and loop.effective_range() < loop.projectile_speed * loop.lifetime * 0.5,
+		"%.1fm out of a %.1fs flight at %.1f m/s" % [
 			loop.effective_range(), loop.lifetime, loop.projectile_speed])
 	# Thrown at nobody, so the only thing that can bring it back is the spell.
 	await _place_fighters(Vector3(0.0, 1.2, 9.0), Vector3(0.0, 1.2, 0.0))
 	book.reset()
 	book.try_cast(1, Vector3(1, 0, 0))
+	await get_tree().physics_frame
+	# The projectile is held by REFERENCE for the rest of this section rather than re-read as
+	# `in_flight()[0]` every tick. The pool's list is whatever happens to be in the air, so a
+	# spell left over from the section above is silently measured instead - which is exactly
+	# what happened: one batch reported a 3.11m bow on a flight whose own algebra solves to
+	# 0.62m, and the same assertion read 0.64m when it was watching the right object.
+	var away := _pool.in_flight()
+	_expect("the boomerang is away", away.size() == 1, "%d in flight" % away.size())
+	var glaive: Projectile = away[0] if away.size() == 1 else null
 	var furthest := 0.0
 	var nearest := INF
+	var widest := 0.0
 	var turned := false
 	var ticks := 0
 	while ticks < int(loop.lifetime * 60.0) + 6:
-		await get_tree().physics_frame
-		ticks += 1
-		var air := _pool.in_flight()
-		if air.is_empty():
+		if glaive == null or not glaive.is_active():
 			break
-		var gap: float = air[0].global_position.distance_to(_player.global_position)
+		var travel := glaive.global_position - _player.global_position
+		var gap := Vector2(travel.x, travel.z).length()
 		furthest = maxf(furthest, gap)
+		# Cast along +x, so anything on z is the bow. A straight out-and-back has none of it,
+		# which is the whole difference between the old spell and this one.
+		widest = maxf(widest, absf(travel.z))
 		if furthest > 1.0 and gap < furthest - 0.5:
 			turned = true
 		if turned:
 			nearest = minf(nearest, gap)
+		await get_tree().physics_frame
+		ticks += 1
 	_expect("a loopshot turns around", turned, "flew out to %.1fm" % furthest)
 	_expect("and comes back to the hand", nearest < furthest * 0.5,
 		"out to %.1fm, back to %.1fm" % [furthest, nearest])
+	# The map's own bow is curve_speed * curve_reach / (2 * speed) at the halfway mark, which
+	# is 0.62m here. Asserted against the spell's own numbers rather than against 0.62, so a
+	# retuned boomerang moves this with it.
+	var bow := loop.curve_speed * loop.curve_reach / (2.0 * loop.projectile_speed)
+	_expect("and bows off the line rather than flying straight there and back",
+		widest > bow * 0.6, "widest %.2fm off the line, the curve solves to %.2fm" % [
+			widest, bow])
 
+	# What it catches, it BOUNCES OFF. The spell used to pierce and the claim here used to be
+	# that one cast could catch the same wizard twice - which a straight out-and-back can do
+	# and a real loop cannot, because the two legs cross at only the caster and the turn. This
+	# is the reference map's own behaviour instead: hit, recoil clear, come straight home.
 	var hits := [0]
 	var counter := func(_b: Node3D, _d: Vector3, a: Ability, _s: Node3D) -> void:
 		if a.id == &"loopshot":
@@ -4198,17 +4262,27 @@ func _run_loadout_tests() -> void:
 	await _place_fighters(Vector3(4.0, 1.2, 0.0), Vector3(0.0, 1.2, 0.0))
 	book.reset()
 	book.try_cast(1, Vector3(1, 0, 0))
+	await get_tree().physics_frame
+	var thrown := _pool.in_flight()
+	var second: Projectile = thrown[0] if thrown.size() == 1 else null
 	# Pinned by writing the position, not by respawning - a respawn would clear the very
 	# instability this is about to read. See ARCHITECTURE.md.
 	var held := Vector3(4.0, 1.2, 0.0)
 	var waited := 0.0
+	var came_home := false
 	while waited < loop.lifetime + 0.2:
 		_bot.global_position = held
 		await get_tree().physics_frame
 		waited += 1.0 / 60.0
+		if hits[0] > 0 and (second == null or not second.is_active()):
+			came_home = true
+			break
 	_pool.projectile_hit.disconnect(counter)
-	_expect("and can catch the same wizard going and coming", hits[0] >= 2,
+	_expect("a loopshot that connects does not carry on through", hits[0] == 1,
 		"%d hits from one cast" % hits[0])
+	_expect("and is back in the hand well inside its own lifetime", came_home
+			and waited < loop.lifetime,
+		"home after %.2fs of a %.1fs flight" % [waited, loop.lifetime])
 
 	# --- Thrust: a charge that hits what it runs through --------------------------------------------
 	await _equip(&"force_wave", &"lunge", &"arcane_shield")
@@ -4348,7 +4422,8 @@ func _run_roster_tests() -> void:
 	await _equip(&"meteor", &"blink", &"arcane_shield")
 	var meteor := _spell(&"meteor")
 	_expect("a meteor has a blast", meteor.area > 0.0, "%.1fm" % meteor.area)
-	# Where it will come down: the spawn offset plus a whole lifetime of flight.
+	# Where it will come down: the spawn offset plus a whole lifetime of flight. The lifetime
+	# IS the flight time for a falling spell - it is born overhead and lands as it expires.
 	var lands_at := meteor.spawn_offset + meteor.projectile_speed * meteor.lifetime
 	var aside := 2.0
 	var watching := Vector3(lands_at, 1.2, aside)
@@ -4357,6 +4432,16 @@ func _run_roster_tests() -> void:
 	var book := _player.abilities()
 	book.reset()
 	book.try_cast(1, Vector3(1, 0, 0))
+	await get_tree().physics_frame
+	# FALL: it is not on the ground plane, which nothing else in the game can say. Measured
+	# against the caster's own height, so a moved spawn point cannot make this pass by accident.
+	var air := _pool.in_flight()
+	var overhead := 0.0
+	if not air.is_empty():
+		overhead = air[0].global_position.y - _player.global_position.y
+	_expect("a meteor is born overhead rather than at the hand",
+		overhead > meteor.drop_height * 0.8,
+		"%.1fm above the caster, spell says %.1fm" % [overhead, meteor.drop_height])
 	await _pin_while({_bot: watching}, meteor.lifetime + 0.3)
 	var edge_hit := _instability_of(_bot) - before
 	_expect("a blast catches a wizard it never touched", edge_hit > 0.0,

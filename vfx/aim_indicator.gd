@@ -31,6 +31,13 @@ enum Shape {
 	FAN,
 	## A line to the spot a dash lands on, with that spot marked.
 	DASH,
+	## A thin line to where a FALLING spell comes down, and the circle it will hurt.
+	##
+	## Separate from LANE because a lane is a promise about the whole line and a lob is a
+	## promise about one spot: nothing along a meteor's path is dangerous, and drawing a lane
+	## under one says the opposite. The ring is `Ability.area`, so what is sighted and what
+	## goes off are the same circle.
+	LOB,
 	## A ring around the caster: this one affects you and needs no aim.
 	SELF,
 }
@@ -94,13 +101,13 @@ func show_for(ability: Ability, aim: Vector3, reach: float) -> void:
 		rotation.y = atan2(-flat.x, -flat.y)
 	_reach = maxf(reach, 0.0)
 	_half_angle = ability.cone_angle
-	_kind = _shape_for(ability.cast_type)
+	_kind = _shape_for(ability)
 	_rebuild(ability)
 	var tint := ability.colour
 	_shape_mat.albedo_color = Color(tint.r, tint.g, tint.b, shape_alpha)
 	_marker_mat.albedo_color = Color(tint.r, tint.g, tint.b, marker_alpha)
 	visible = true
-	_marker.visible = _kind == Shape.DASH
+	_marker.visible = _kind == Shape.DASH or _kind == Shape.LOB
 
 
 func clear() -> void:
@@ -108,9 +115,15 @@ func clear() -> void:
 	visible = false
 
 
-func _shape_for(cast_type: Ability.CastType) -> Shape:
-	match cast_type:
+## Which drawing an ability wants.
+##
+## Takes the whole ability rather than its cast type, because two PROJECTILES can want
+## different pictures: one flies down a lane and one falls on a spot.
+func _shape_for(ability: Ability) -> Shape:
+	match ability.cast_type:
 		Ability.CastType.PROJECTILE:
+			if ability.drop_height > 0.0:
+				return Shape.LOB
 			return Shape.LANE
 		Ability.CastType.CONE:
 			return Shape.FAN
@@ -121,7 +134,8 @@ func _shape_for(cast_type: Ability.CastType) -> Shape:
 
 
 func _rebuild(ability: Ability) -> void:
-	var key := "%d|%.3f|%.3f|%.3f" % [_kind, _reach, _half_angle, ability.projectile_radius]
+	var key := "%d|%.3f|%.3f|%.3f|%.3f" % [
+		_kind, _reach, _half_angle, ability.projectile_radius, ability.area]
 	if key == _built:
 		return
 	_built = key
@@ -135,6 +149,13 @@ func _rebuild(ability: Ability) -> void:
 		Shape.DASH:
 			_shape.mesh = GroundShapes.strip(_reach, dash_line_width, 0.0)
 			_marker.mesh = GroundShapes.ring(marker_radius, 0.12)
+			_marker.position = Vector3(0.0, 0.0, -_reach)
+		Shape.LOB:
+			# The line is the arc's SHADOW, drawn thin: it says which way the thing is going,
+			# and nothing more, because nothing along it is dangerous. The ring is the spell.
+			_shape.mesh = GroundShapes.strip(_reach, dash_line_width, ability.spawn_offset)
+			var blast := maxf(ability.area, marker_radius)
+			_marker.mesh = GroundShapes.ring(blast, blast * 0.09)
 			_marker.position = Vector3(0.0, 0.0, -_reach)
 		_:
 			_shape.mesh = GroundShapes.ring(marker_radius * 1.6, 0.16)

@@ -1,7 +1,7 @@
 class_name Arena
 extends Node3D
 
-## The stone ring, and the only thing that knows how big it is right now.
+## The glacier arena, and the only thing that knows how big it is right now.
 ##
 ## The radius used to be a number typed into a collision shape, read once at startup and
 ## copied to whoever needed it. It is a moving value now - the ring closes during a round -
@@ -86,6 +86,9 @@ var radius: float = 0.0
 @onready var _shore: MeshInstance3D = $Lava/Shore
 @onready var _obstacles: Node3D = $Obstacles
 
+const LavaAmbienceVisual = preload("res://arena/lava_ambience.gd")
+var _lava_ambience: Node3D
+
 ## Seconds since the last step, or since the round began.
 var _elapsed := 0.0
 
@@ -99,6 +102,11 @@ var _obstacle_spots: Array = []
 
 
 func _ready() -> void:
+	# The shelf edge itself is the boundary now; decorative rings made it read as a tray.
+	_rim.hide()
+	_shore.hide()
+	_lava_ambience = LavaAmbienceVisual.new()
+	$Lava.add_child(_lava_ambience)
 	# Sub-resources are shared by every instance of a scene, and these get written to every
 	# frame the ring is closing. Duplicating is the same precaution projectile.gd takes with
 	# its mesh and shape, and for the same reason: one arena editing another's geometry would
@@ -184,6 +192,8 @@ func _set_radius(value: float) -> void:
 
 ## Moves every piece of geometry that describes the ring.
 func _apply() -> void:
+	if _lava_ambience != null:
+		_lava_ambience.set_arena_radius(radius)
 	var mesh := _platform_mesh.mesh as CylinderMesh
 	if mesh != null:
 		mesh.top_radius = radius
@@ -194,13 +204,21 @@ func _apply() -> void:
 		shape.radius = radius
 	var rim := _rim.mesh as TorusMesh
 	if rim != null:
-		rim.inner_radius = maxf(radius - rim_width * 0.5, 0.05)
-		rim.outer_radius = radius + rim_width * 0.5
+		_set_ring_radii(rim, maxf(radius - rim_width * 0.5, 0.05), radius + rim_width * 0.5)
 	var shore := _shore.mesh as TorusMesh
 	if shore != null:
-		shore.inner_radius = radius + shore_gap
-		shore.outer_radius = radius + shore_gap + shore_width
+		_set_ring_radii(shore, radius + shore_gap, radius + shore_gap + shore_width)
 	for spot in _obstacle_spots:
 		var body: Node3D = spot[0]
 		var fraction: Vector3 = spot[1]
 		body.position = fraction * radius
+
+
+## Update the growing boundary first so the intermediate mesh never has equal radii.
+func _set_ring_radii(mesh: TorusMesh, inner: float, outer: float) -> void:
+	if outer > mesh.outer_radius:
+		mesh.outer_radius = outer
+		mesh.inner_radius = inner
+	else:
+		mesh.inner_radius = inner
+		mesh.outer_radius = outer

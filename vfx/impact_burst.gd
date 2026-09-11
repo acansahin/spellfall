@@ -36,6 +36,14 @@ const POOL := 6
 ## sized against the screen rather than against the world.
 @export var spark_size := 0.13
 
+## Degrees off vertical the spray covers, for a hit and for a blast.
+##
+## A hit is a spray from a point of contact and leans upward; a blast went off ON the ground
+## and belongs to a circle, so it is thrown almost flat. The two spreads are what keep a
+## meteor landing from reading as a very large punch.
+const HIT_SPREAD := 75.0
+const BLAST_SPREAD := 86.0
+
 var _emitters: Array[CPUParticles3D] = []
 var _next := 0
 var _mesh: SphereMesh = null
@@ -72,7 +80,9 @@ func _build() -> CPUParticles3D:
 	# arena rather than as light coming off it. Caught in a screenshot; invisible in the code.
 	particles.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	particles.direction = Vector3.UP
-	particles.spread = 75.0
+	# Set per burst as well, because `blast` widens it. Left here so a fresh emitter is never
+	# waiting on its first call to be given a shape.
+	particles.spread = HIT_SPREAD
 	particles.gravity = Vector3(0.0, -7.0, 0.0)
 	particles.initial_velocity_min = speed_min
 	particles.initial_velocity_max = speed_max
@@ -101,8 +111,30 @@ func burst(at: Vector3, tint: Color, strength: float) -> void:
 	var scale := clampf(strength / 8.0, 0.5, 2.0)
 	particles.initial_velocity_min = speed_min * scale
 	particles.initial_velocity_max = speed_max * scale
+	particles.spread = HIT_SPREAD
 	# Restart rather than merely enable: an emitter still finishing a previous burst ignores
 	# `emitting = true` and the hit is silently not drawn.
+	particles.restart()
+
+
+## The spray for an AREA effect: thrown to the rim of `radius` rather than by a fixed strength.
+##
+## The difference from `burst` above is the whole point. A hit's spray says how HARD; a blast's
+## says how FAR, because the only question a player has about a blast is whether they were
+## inside it. Sizing the picture to `Ability.area` is the same rule the aim indicator and the
+## cast flash keep, and it is what the reference map does - it scales its explosion model to
+## the blast radius on the frame it plays. See docs/warlock-reference.md section 9a.
+func blast(at: Vector3, tint: Color, radius: float) -> void:
+	var particles := _emitters[_next]
+	_next = (_next + 1) % _emitters.size()
+	particles.global_position = at
+	particles.color = tint
+	# Metres per second that puts a spark at the rim as its life runs out. The slower half
+	# fills the middle, so the shape reads as a disc rather than as a hollow shell.
+	var rim := maxf(radius, 0.3) / maxf(lifetime, 0.01)
+	particles.initial_velocity_min = rim * 0.5
+	particles.initial_velocity_max = rim * 1.05
+	particles.spread = BLAST_SPREAD
 	particles.restart()
 
 

@@ -306,8 +306,8 @@ reason: a blast, a split, a stream, a bounce, a root, a drain, a pull and a teth
 |---|---|---|---|---|
 | **Lightning** | Flat, 13.3 m/s, 12m | 7.0 | 1.2 | Crosses the ring almost instantly and shoves hard. The answer to someone who will not come close, and it costs you a sixteen-second wait. 16.5s. |
 | **Homing** | Slow projectile, turns 220°/s, 9.4m | 7.0 | 1.0 | Corrects an aim that was wrong, and still loses somebody who walks across its nose. 14.0s. |
-| **Boomerang** | Flies out 8.4m, returns, pierces | 7.2 | 1.2 | Two chances at the same wizard from one cast — if you are still standing where it comes home. 16.0s. |
-| **Meteor** | Lands at 6.3m, 3.2m blast | 10.0 | 1.0 | The only spell that does not need to touch anybody. Falls off to nothing at the edge of its own blast, so the middle is the worst place to stand. 20.0s. |
+| **Boomerang** | Loops out 6.3m and home down the other side | 7.2 | 1.2 | 11.7 m/s, the fastest thing in the game, on a path that bows out one side and back the other. What it catches it bounces off and comes straight home from. 16.0s. |
+| **Meteor** | Falls from 7.8m up onto a point 6.3m out, 3.2m blast | 10.0 | 1.0 | The only spell that does not need to touch anybody, and the only one that is not on the ground. **1.35s from cast to impact whatever the range** — a count, not a speed — with a ring on the ground under it the whole way down. Falls off to nothing at the edge of its own blast, so the middle is the worst place to stand. 20.0s. |
 | **Splitter** | Breaks into six at the end of its flight | 3.0 | 1.4 | Weak on its own and dangerous where it lands. The six carry the heaviest push in the roster. 30.0s. |
 | **Fire Spray** | Six shots down one line, 0.16s apart | 2.6 | **0.6** | One cast, six chances, and an aim you committed to before the first one left. The map's own "60% knockback". 16.0s. |
 | **Bouncer** | Finds the next enemy within 7m, three times | 6.0 | 1.0 | A single-target spell in a 1v1 and the best spell in the column in a 2v2. A fifth weaker each hop. 20.0s. |

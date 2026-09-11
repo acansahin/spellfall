@@ -49,6 +49,10 @@ extends Node
 ## Shake for a hit at `heavy_speed`, 0..1.
 @export_range(0.0, 1.0, 0.05) var shake_on_hit := 0.55
 
+## Shake for a blast at its full reach, 0..1. A shade under a heavy hit: a blast is a bigger
+## event on screen and needs less help from the camera to be noticed.
+@export_range(0.0, 1.0, 0.05) var shake_on_blast := 0.45
+
 ## What a hit on someone ELSE is worth, as a fraction of a hit on you.
 ##
 ## Not zero and not one. The camera is the room, so an impact anywhere in it should register;
@@ -72,6 +76,15 @@ var camera: ArenaCamera = null
 var sounds: SoundBank = null
 var sparks: ImpactBurst = null
 var streak: GroundStreak = null
+var ring: BlastRing = null
+
+const MeteorImpact = preload("res://vfx/meteor_impact.gd")
+var _meteor_impact: MeteorImpact
+
+
+func _ready() -> void:
+	_meteor_impact = MeteorImpact.new()
+	add_child(_meteor_impact)
 
 ## When the hitstop ends, in engine milliseconds.
 ##
@@ -126,6 +139,33 @@ func hit(at: Vector3, tint: Color, speed: float, on_player: bool) -> void:
 		_buzz(buzz_heavy if heavy else buzz_light)
 
 
+## A blast went off at `at`, reaching `radius` metres.
+##
+## Reported SEPARATELY from the hits it caused, and reported even when it caused none. That is
+## the case this exists for: `_burst` resolves at the spot a projectile died rather than on
+## what it touched, so a meteor landing on empty ground was a real event with no picture at
+## all - and "was I inside it?" is the only question a blast asks the player.
+##
+## No hitstop. Whoever it caught is already getting one through `hit` above, and a blast that
+## stopped the world for landing on nobody would be the game flinching at nothing.
+func blast(at: Vector3, tint: Color, radius: float, meteor: bool = false,
+		on_ice: bool = true) -> void:
+	if not enabled:
+		return
+	if sparks != null:
+		sparks.blast(at, tint, radius)
+	if ring != null:
+		ring.play(at, tint, radius)
+	if meteor and _meteor_impact != null:
+		_meteor_impact.play(Vector3(at.x, 0.08, at.z), radius, on_ice)
+	if sounds != null:
+		sounds.play(&"heavy")
+	if camera != null:
+		# Scaled by the reach rather than by the damage, because the reach is what the shake
+		# is reporting. A 3.2m meteor is the biggest thing in the roster and shakes like it.
+		camera.shake(shake_on_blast * clampf(radius / 3.2, 0.3, 1.0))
+
+
 ## A spell went off. Sound only: the cast already has a fan, a lane or a projectile to look
 ## at, and a screen shake on something you did every 0.9 seconds is noise.
 func cast(ability: Ability, by_player: bool) -> void:
@@ -143,10 +183,10 @@ func cast(ability: Ability, by_player: bool) -> void:
 
 
 ## A dash happened: draw the line it took.
-func dashed(from: Vector3, to: Vector3, tint: Color) -> void:
+func dashed(from: Vector3, to: Vector3, tint: Color, style: StringName = &"blink") -> void:
 	if not enabled or streak == null:
 		return
-	streak.play(from, to, tint)
+	streak.play(from, to, tint, style)
 
 
 ## Somebody went over the edge.

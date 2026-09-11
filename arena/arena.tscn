@@ -4,7 +4,7 @@
 [ext_resource type="Script" path="res://arena/arena.gd" id="4_arena"]
 [ext_resource type="PackedScene" path="res://arena/obstacles/rock.tscn" id="2_rock"]
 [ext_resource type="PackedScene" path="res://arena/obstacles/tree.tscn" id="3_tree"]
-[ext_resource type="Texture2D" path="res://assets/materials/ground_grass.png" id="5_grass"]
+[ext_resource type="Shader" path="res://arena/glacier.gdshader" id="5_ice"]
 [ext_resource type="Texture2D" path="res://assets/materials/lava_crust.png" id="6_lava"]
 
 [sub_resource type="CylinderMesh" id="CylinderMesh_lava"]
@@ -51,16 +51,11 @@ size = Vector3(120, 4, 120)
 top_radius = 10.0
 bottom_radius = 9.0
 height = 2.0
-radial_segments = 48
+radial_segments = 128
 rings = 1
 
-[sub_resource type="StandardMaterial3D" id="Mat_floor"]
-albedo_color = Color(1, 1, 1, 1)
-albedo_texture = ExtResource("5_grass")
-roughness = 0.95
-metallic_specular = 0.05
-uv1_scale = Vector3(0.18, 0.18, 0.18)
-uv1_triplanar = true
+[sub_resource type="ShaderMaterial" id="Mat_floor"]
+shader = ExtResource("5_ice")
 
 [sub_resource type="CylinderShape3D" id="CylinderShape3D_floor"]
 height = 2.0
@@ -73,10 +68,10 @@ rings = 48
 ring_segments = 8
 
 [sub_resource type="StandardMaterial3D" id="Mat_rim"]
-albedo_color = Color(0.470588, 0.360784, 0.788235, 1)
+albedo_color = Color(0.67, 0.88, 0.97, 1)
 emission_enabled = true
 emission = Color(0.490196, 0.882353, 1, 1)
-emission_energy_multiplier = 1.6
+emission_energy_multiplier = 0.45
 roughness = 0.4
 
 [sub_resource type="TorusMesh" id="TorusMesh_centre"]
@@ -86,11 +81,12 @@ rings = 32
 ring_segments = 6
 
 [sub_resource type="StandardMaterial3D" id="Mat_centre"]
-albedo_color = Color(0.301961, 0.254902, 0.454902, 1)
+albedo_color = Color(0.58, 0.79, 0.88, 1)
 roughness = 1.0
 
 [node name="Arena" type="Node3D"]
 script = ExtResource("4_arena")
+rim_width = 0.35
 
 [node name="Lava" type="StaticBody3D" parent="."]
 collision_layer = 1
@@ -106,6 +102,7 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.33, 0)
 shape = SubResource("CylinderShape3D_lava")
 
 [node name="Shore" type="MeshInstance3D" parent="Lava"]
+visible = false
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.1, 0)
 mesh = SubResource("TorusMesh_shore")
 surface_material_override/0 = SubResource("Mat_shore")
@@ -124,6 +121,7 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -1, 0)
 shape = SubResource("CylinderShape3D_floor")
 
 [node name="Rim" type="MeshInstance3D" parent="."]
+visible = false
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.05, 0)
 mesh = SubResource("TorusMesh_rim")
 surface_material_override/0 = SubResource("Mat_rim")
