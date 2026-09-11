@@ -274,7 +274,7 @@ enum Bolt {
 ## at only two places, the caster and the turn.
 ##
 ## `Projectile` does the algebra; the two numbers here are all a spell states.
-## See docs/warlock-reference.md section 9b.
+## See docs/warlock-reference.md section 8b.
 @export var curve_speed: float = 0.0
 
 ## Metres out the curve reaches before it turns, for a spell with `curve_speed` above zero.
@@ -299,7 +299,7 @@ enum Bolt {
 ##
 ## Note what this makes true: the flight TIME is fixed and the horizontal speed is what
 ## varies with range. That is a telegraph a player can count, and it is the opposite of every
-## other projectile here. See docs/warlock-reference.md section 9a.
+## other projectile here. See docs/warlock-reference.md section 8a.
 @export var drop_height: float = 0.0
 
 ## Keeps flying after catching a fighter instead of expiring. Each fighter is caught at most

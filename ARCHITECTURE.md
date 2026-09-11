@@ -1147,7 +1147,7 @@ what it touched, so the frame where a blast caught nobody used to have no pictur
 "was I inside it?" is the only question a blast asks. `--feel-test` asserts the empty case
 specifically. The size comes from `Ability.area` and nothing else, which is the reference map's
 own rule: it scales its explosion model to the blast radius on the frame it plays. See
-docs/warlock-reference.md section 9a.
+docs/warlock-reference.md section 8a.
 
 `systems/feel/game_feel.gd` is one node holding hitstop, camera shake, sparks, sound and
 haptics. One node because these are **one decision**: "that hit was heavy" has to mean the

@@ -272,7 +272,7 @@ having stepped yet.
 
 ---
 
-## 9. How the spells LOOK and MOVE
+## 8. How the spells LOOK and MOVE
 
 `python tools/warlock_dump.py effects`. Read the same way as the rest of this file: these are
 the calls the script makes, not a description of the spells from watching them.
@@ -284,7 +284,7 @@ timer that moves the wizards - which is the same shape as this port's hand-moved
 the whole vocabulary is in the script: 39 missile spawns, 58 effects played at a point, 55
 attached to a body, 30 rescales.
 
-### 9a. Meteor falls, and its flight time is fixed
+### 8a. Meteor falls, and its flight time is fixed
 
 `T3` is the cast and `S3` is its per-tick:
 
@@ -321,7 +321,7 @@ Three things in there outrank the numbers:
 It has no collision callback at all (`XE` is never set), so **nothing can block a meteor**. It
 passes over everybody and detonates on its timer.
 
-### 9b. Boomerang is a parabola, not an out-and-back
+### 8b. Boomerang is a parabola, not an out-and-back
 
 `C3`, and this is the one worth reading twice:
 
@@ -356,7 +356,7 @@ And on contact (`I3`) it does not carry on: it plays `BallistaImpact` at itself 
 body it hit**, has its velocity reversed, and calls `R3()` - straight into the homing leg.
 `R3()` is outside the "was it a wizard" test, so hitting anything at all sends it home.
 
-### 9c. The rest of the vocabulary
+### 8c. The rest of the vocabulary
 
 - **Fireball is two models at once**: `RedDragonMissile.mdl` and a custom `fb2.mdl` on the same
   spawn. Layering is how a primitive is made to look composed.
@@ -368,7 +368,7 @@ body it hit**, has its velocity reversed, and calls `R3()` - straight into the h
 - **Consecutive casts differ**: the `EG` toggle above is one bit of state that makes the same
   spell look different twice in a row, for free.
 
-### 9d. What this port took, and what it did not
+### 8d. What this port took, and what it did not
 
 | | map | this port |
 |---|---|---|
@@ -388,7 +388,7 @@ The one departure that changes a spell rather than a number: the port's Boomeran
 cannot be kept - the outward and return arcs cross at exactly two points, the caster and the
 turn - so the spell now does what the map's does instead, and the blurb says so.
 
-## 8. What is NOT in here
+## 9. What is NOT in here
 
 - **Lava damage per second.** The lava's damage is applied by a trigger whose constant has
   not been found. This port keeps its own 22/s until someone digs it out.

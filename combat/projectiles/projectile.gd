@@ -8,7 +8,7 @@ extends Area3D
 ## a projectile has no business being pushed around by a physics solver. That is also how the
 ## reference map does it - every one of its spells is a dummy unit moved by the same tick that
 ## moves the wizards, and its object editor carries a missile art for three abilities out of
-## fifty. See docs/warlock-reference.md section 9.
+## fifty. See docs/warlock-reference.md section 8.
 ##
 ## The model is a VELOCITY and an ACCELERATION, integrated once a tick, and it stops when it
 ## touches something. It used to be a direction and a speed, which is the same thing for
@@ -123,9 +123,6 @@ var _spin := 0.0
 var _shadow: MeshInstance3D = null
 var _shadow_material: StandardMaterial3D = null
 
-## The specks left behind in flight. See `_build_trail`.
-var _trail: CPUParticles3D = null
-
 const FlightVisual = preload("res://vfx/spell_flight_visual.gd")
 var _flight_visual: FlightVisual
 
@@ -185,17 +182,6 @@ const SHADOW_THICKNESS := 0.16
 const SHADOW_ALPHA_FAR := 0.10
 const SHADOW_ALPHA_NEAR := 0.45
 
-## The trail: how many specks are alive behind a spell at once, how long each lasts, and how
-## big it is as a fraction of the spell's own radius.
-##
-## Cheap on purpose. Ten CPU particles per projectile at eight pooled projectiles is eighty at
-## the very worst, which is a fifth of what one impact burst already costs, and the target is
-## a mid-range Android. What it buys is the thing a still frame cannot show: which way a spell
-## came from, and how fast - and for the boomerang, that its path is a curve at all.
-const TRAIL_COUNT := 10
-const TRAIL_LIFE := 0.26
-const TRAIL_SIZE := 0.55
-
 ## One mesh per shape, built on first use and shared by every projectile that ever flies with
 ## it. Authored at RADIUS 1 and scaled by the node, so `projectile_radius` is the only number
 ## that decides how big a spell looks - the same contract `SpellGlyph`'s unit box gives the
@@ -204,10 +190,6 @@ static var _bolt_meshes: Dictionary = {}
 
 ## The shadow ring, authored at radius 1 like everything else and scaled by the node.
 static var _shadow_mesh: ArrayMesh = null
-
-## The speck the trail is made of, authored at radius 1 and sized per spell by the emitter's
-## own scale, so one mesh serves a fireball and a mote alike.
-static var _trail_mesh: SphereMesh = null
 
 ## Which way the next curving spell bows. Flipped on every launch, so two boomerangs in a row
 ## loop opposite ways and the same spell does not look identical twice.
@@ -263,7 +245,6 @@ func _ready() -> void:
 	_material.emission_energy_multiplier = 1.15
 	_mesh.material_override = _material
 	_build_shadow()
-	_build_trail()
 	_flight_visual = FlightVisual.new()
 	add_child(_flight_visual)
 	body_entered.connect(_on_body_entered)
@@ -283,48 +264,6 @@ func _build_shadow() -> void:
 	_shadow.material_override = _shadow_material
 	_shadow.visible = false
 	add_child(_shadow)
-
-
-## The specks a spell leaves behind it.
-##
-## `local_coords = false` is the whole of it: the particles are emitted into WORLD space and
-## stay where they were dropped, so the trail marks the path rather than riding along with the
-## thing that made it. With it left true the specks travel with the projectile and the effect
-## is a slightly fatter projectile.
-##
-## No velocity, no gravity, no spread. A trail that drifted would be smoke, and smoke behind a
-## fireball is a second moving thing to read on a board the size of a phone screen.
-func _build_trail() -> void:
-	if _trail_mesh == null:
-		_trail_mesh = SphereMesh.new()
-		_trail_mesh.radius = 1.0
-		_trail_mesh.height = 2.0
-		_trail_mesh.radial_segments = 6
-		_trail_mesh.rings = 3
-		var mat := StandardMaterial3D.new()
-		# Unshaded and reading the particle's own colour, for the reason ImpactBurst gives:
-		# these are light, and light that needs the key lamp is light you lose on half the
-		# board.
-		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		mat.vertex_color_use_as_albedo = true
-		_trail_mesh.material = mat
-	_trail = CPUParticles3D.new()
-	_trail.emitting = false
-	_trail.local_coords = false
-	_trail.amount = TRAIL_COUNT
-	_trail.lifetime = TRAIL_LIFE
-	_trail.mesh = _trail_mesh
-	_trail.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	_trail.direction = Vector3.ZERO
-	_trail.spread = 0.0
-	_trail.initial_velocity_min = 0.0
-	_trail.initial_velocity_max = 0.0
-	_trail.gravity = Vector3.ZERO
-	var curve := Curve.new()
-	curve.add_point(Vector2(0.0, 1.0))
-	curve.add_point(Vector2(1.0, 0.0))
-	_trail.scale_amount_curve = curve
-	add_child(_trail)
 
 
 func _physics_process(delta: float) -> void:
@@ -674,15 +613,7 @@ func launch(ability: Ability, from: Vector3, direction: Vector3, shooter: Node3D
 	_aim_mesh()
 	_material.albedo_color = ability.colour
 	_material.emission = ability.colour
-	_trail.color = ability.colour
-	# Sized off the spell, not off the mesh, so a mote's trail is a mote's and a meteor's is a
-	# meteor's without a second mesh existing.
-	_trail.scale_amount_min = radius * TRAIL_SIZE * 0.7
-	_trail.scale_amount_max = radius * TRAIL_SIZE
-	_trail.restart()
-	_trail.emitting = true
-	if _flight_visual.configure(ability, _mesh):
-		_trail.emitting = false
+	_flight_visual.configure(ability, _mesh)
 	_flight_visual.update_flight(0.0, _velocity - Vector3.UP * _fall)
 	_active = true
 	visible = true
@@ -694,11 +625,11 @@ func launch(ability: Ability, from: Vector3, direction: Vector3, shooter: Node3D
 ## reference map rather than invented:
 ##
 ##     along  = -speed² / (2 * reach)      forward speed reaches zero after `reach` metres
-##     across = -speed * curve_speed / reach   in fixed ratio, so the bow closes at the same instant
+##     across = -speed * curve_speed / reach   in fixed ratio, so the bow closes with it
 ##     out    = 2 * reach / speed          which is how long that takes
 ##
 ## Both accelerations are constant for a leg, so nothing per-tick has to know what shape the
-## path is. See docs/warlock-reference.md section 9b for the map's own version.
+## path is. See docs/warlock-reference.md section 8b for the map's own version.
 func _arm_curve(ability: Ability) -> void:
 	var forward := _direction
 	var reach := maxf(ability.curve_reach, 0.5)
@@ -849,20 +780,13 @@ func _park() -> void:
 	_direction = Vector3.ZERO
 	if _shadow != null:
 		_shadow.visible = false
-	# The trail goes out WITH the projectile, not after it.
+	# The flight visual goes out WITH the projectile, not after it.
 	#
-	# Measured, not assumed: a fireball photographed 0.1s after it expired has no tail at all,
-	# though a speck lives 0.26s. The emitter is a child of this node and `visible = false`
-	# above hides every descendant with it, so parking takes the specks already dropped as
-	# well as the ones still to come.
-	#
-	# Left that way on purpose rather than worked around. Freeing the tail from the projectile
-	# means a second pool of world-space emitters owned by the level, and the moment it would
-	# buy is the one moment already covered - an impact burst goes off in the same place on the
-	# same frame. The reference map does the same thing for the same reason: `KillUnit` takes
-	# the missile's model and its attached effect together.
-	if _trail != null:
-		_trail.emitting = false
+	# `stop()` above rather than a wait: it is a child of this node, and a tail left running on
+	# a node about to be re-launched somewhere else draws a line between the two places. The
+	# moment a lingering tail would buy is one already covered - an impact burst goes off in the
+	# same place on the same frame. The reference map does the same thing for the same reason:
+	# `KillUnit` takes the missile's model and its attached effect together.
 	global_position = PARKED_POSITION
 
 

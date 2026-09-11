@@ -13,7 +13,7 @@ extends Node3D
 ## cone and `AimIndicator` for a lane: a shape drawn from the ability's own numbers cannot
 ## promise a different reach from the one that hits. The reference map does this too - it
 ## scales its explosion model to the blast radius on the frame it plays, `SetUnitScale(F[PN],
-## .006*EY, ...)`. See docs/warlock-reference.md section 9a.
+## .006*EY, ...)`. See docs/warlock-reference.md section 8a.
 ##
 ## Pooled like `ImpactBurst` and for the same reason: two blasts can overlap, and building a
 ## mesh mid-fight is the allocation the projectile pool exists to avoid.

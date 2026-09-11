@@ -123,7 +123,7 @@ func burst(at: Vector3, tint: Color, strength: float) -> void:
 ## says how FAR, because the only question a player has about a blast is whether they were
 ## inside it. Sizing the picture to `Ability.area` is the same rule the aim indicator and the
 ## cast flash keep, and it is what the reference map does - it scales its explosion model to
-## the blast radius on the frame it plays. See docs/warlock-reference.md section 9a.
+## the blast radius on the frame it plays. See docs/warlock-reference.md section 8a.
 func blast(at: Vector3, tint: Color, radius: float) -> void:
 	var particles := _emitters[_next]
 	_next = (_next + 1) % _emitters.size()

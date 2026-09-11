@@ -183,7 +183,14 @@ func _particles(smoke: bool) -> CPUParticles3D:
 	return particles
 
 
-func configure(ability: Ability, body: MeshInstance3D) -> bool:
+## Dresses `body` for the spell it is about to fly as.
+##
+## Returns nothing, and that is the contract: EVERY branch below ends with something shown -
+## a bespoke model for the two that have one, the rings-and-motes set for everything else -
+## so there is no spell this leaves undressed and no caller that needs to ask whether it did.
+## It used to return `bool` and `Projectile.launch` read it as "did you take over?", which was
+## always true and silently switched off a speck trail that then never drew once.
+func configure(ability: Ability, body: MeshInstance3D) -> void:
 	stop()
 	_kind = ability.id
 	_radius = ability.projectile_radius
@@ -215,13 +222,13 @@ func configure(ability: Ability, body: MeshInstance3D) -> bool:
 		_configure_extras()
 		_magic.color = _tint
 		_magic.scale_amount_min = _radius * 0.32
-		_magic.scale_amount_max = _radius * (0.95 if _kind in [&"fireball", &"fire_spray", &"splinter"] else 0.62)
+		var fat: bool = _kind in [&"fireball", &"fire_spray", &"splinter"]
+		_magic.scale_amount_max = _radius * (0.95 if fat else 0.62)
 		_magic.show()
 		_magic.restart()
 		_magic.emitting = true
 		_ribbon.show()
 	show()
-	return true
 
 
 func _configure_extras() -> void:
@@ -255,10 +262,12 @@ func _configure_extras() -> void:
 func update_flight(age: float, velocity: Vector3) -> void:
 	if _kind == &"meteor":
 		# Only the drawing tumbles. The projectile continues its original flight exactly.
-		_body.basis = Basis.from_euler(Vector3(age * 1.7, age * 0.9, age * 0.6)).scaled(Vector3.ONE * _radius)
-		var horizontal_velocity := Vector3(velocity.x, 0.0, velocity.z)
-		var backwards := -horizontal_velocity.normalized() if horizontal_velocity.length_squared() > 0.001 \
-			else Vector3.BACK
+		var tumble := Basis.from_euler(Vector3(age * 1.7, age * 0.9, age * 0.6))
+		_body.basis = tumble.scaled(Vector3.ONE * _radius)
+		var flat := Vector3(velocity.x, 0.0, velocity.z)
+		var backwards := Vector3.BACK
+		if flat.length_squared() > 0.001:
+			backwards = -flat.normalized()
 		backwards = (backwards + Vector3.UP * 0.18).normalized()
 		_flame.basis = Basis(Quaternion(Vector3.UP, backwards)).scaled(Vector3.ONE * _radius)
 		_embers.direction = backwards
